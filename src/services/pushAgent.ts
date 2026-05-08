@@ -9,11 +9,18 @@ interface PushResult {
   filesChanged?: string[];
 }
 
+function findRepoRoot(dir: string): string {
+  if (fs.existsSync(path.join(dir, ".git"))) return dir;
+  const parent = path.dirname(dir);
+  if (parent === dir) throw new Error("No git repository found");
+  return findRepoRoot(parent);
+}
+
 export function autoPush(
   message: string,
   files?: string[]
 ): PushResult {
-  const repoPath = path.resolve(__dirname, "../../..");
+  const repoPath = findRepoRoot(__dirname);
 
   try {
     if (files && files.length > 0) {
@@ -39,16 +46,15 @@ export function autoPush(
       return { success: true, message: "Nothing to commit." };
     }
 
-    const commitHash = execSync(
-      `git commit -m "${message.replace(/"/g, '\\"')}"`,
-      { cwd: repoPath, encoding: "utf-8" }
-    );
+    execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+      cwd: repoPath,
+      stdio: "pipe",
+    });
 
     execSync("git push", { cwd: repoPath, stdio: "pipe" });
 
     return {
       success: true,
-      commitHash: commitHash.trim().split(/\s+/).pop(),
       message: `Pushed ${filesChanged.length} file(s): ${message}`,
       filesChanged,
     };
