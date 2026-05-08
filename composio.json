@@ -1,0 +1,17 @@
+{
+  "name": "launchforge",
+  "version": "1.0.0",
+  "integrations": {
+    "github": {
+      "enabled": true,
+      "autoCommit": true,
+      "autoPush": true
+    }
+  },
+  "mcp": {
+    "server": {
+      "url": "github",
+      "client": "opencode"
+    }
+  }
+}

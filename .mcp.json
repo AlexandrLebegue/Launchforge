@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "composio-github": {
+      "command": "npx",
+      "args": [
+        "@composio/mcp@latest",
+        "start",
+        "--url",
+        "github"
+      ],
+      "env": {
+        "npm_config_yes": "true",
+        "COMPOSIO_API_KEY": "${COMPOSIO_API_KEY}"
+      }
+    }
+  }
+}
