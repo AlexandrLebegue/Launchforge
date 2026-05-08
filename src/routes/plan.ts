@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { createLaunchPlan, getLaunchPlan, getPlansByUserId } from '../services/planGenerator';
 import { validatePlanInput } from '../middleware/validation';
+import { storage } from '../services/storage';
 import { requireAuth, optionalAuth } from '../middleware/auth';
-import { PlanInput, ApiResponse, LaunchPlan, AuthPayload } from '../types';
+import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState } from '../types';
 
 const router = Router();
 
@@ -56,6 +57,48 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
     const response: ApiResponse<null> = {
       success: false,
       error: err instanceof Error ? err.message : 'An unexpected error occurred',
+    };
+    res.status(500).json(response);
+  }
+});
+
+router.patch('/:id/kanban', requireAuth, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const plan = getLaunchPlan(id);
+    if (!plan) {
+      const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
+      res.status(404).json(response);
+      return;
+    }
+    const kanbanState = req.body as KanbanState;
+    storage.updateKanbanState(id, kanbanState);
+    const response: ApiResponse<KanbanState> = { success: true, data: kanbanState };
+    res.json(response);
+  } catch (err) {
+    const response: ApiResponse<null> = {
+      success: false, error: err instanceof Error ? err.message : 'An unexpected error occurred',
+    };
+    res.status(500).json(response);
+  }
+});
+
+router.patch('/:id/kanban', requireAuth, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const plan = getLaunchPlan(id);
+    if (!plan) {
+      const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
+      res.status(404).json(response);
+      return;
+    }
+    const kanbanState = req.body as KanbanState;
+    storage.updateKanbanState(id, kanbanState);
+    const response: ApiResponse<KanbanState> = { success: true, data: kanbanState };
+    res.json(response);
+  } catch (err) {
+    const response: ApiResponse<null> = {
+      success: false, error: err instanceof Error ? err.message : 'An unexpected error occurred',
     };
     res.status(500).json(response);
   }

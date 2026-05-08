@@ -105,6 +105,7 @@ export interface LaunchPlan {
   launch_sequencing: LaunchSequencing[];
   validation_checklist: ValidationChecklist[];
   first_users_tactics: FirstUsersTactic[];
+  kanbanState?: KanbanState;
 }
 
 export async function register(
@@ -153,4 +154,51 @@ export async function getPlan(
   id: string
 ): Promise<ApiResponse<LaunchPlan>> {
   return request(`/plan/${id}`);
+}
+
+export interface ResearchResult {
+  productName: string;
+  competitors: { name: string; description: string }[];
+  communities: { name: string; url: string; relevance: string }[];
+  trends: string[];
+  potentialAngles: string[];
+}
+
+export async function researchProduct(
+  productName: string,
+  description: string,
+  niche: string
+): Promise<ApiResponse<ResearchResult>> {
+  return request('/research', {
+    method: 'POST',
+    body: JSON.stringify({ productName, description, niche }),
+  });
+}
+
+export interface KanbanCard {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  effort: 'low' | 'medium' | 'high';
+  column: 'backlog' | 'todo' | 'in_progress' | 'done';
+  week?: number;
+  order: number;
+  createdAt: string;
+}
+
+export interface KanbanState {
+  columns: {
+    backlog: KanbanCard[];
+    todo: KanbanCard[];
+    in_progress: KanbanCard[];
+    done: KanbanCard[];
+  };
+}
+
+export async function updateKanban(planId: string, state: KanbanState): Promise<ApiResponse<KanbanState>> {
+  return request(`/plan/${planId}/kanban`, {
+    method: 'PATCH',
+    body: JSON.stringify(state),
+  });
 }

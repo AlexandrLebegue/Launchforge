@@ -71,6 +71,14 @@ function runMigrations(database: SqlJsDatabase): void {
       FOREIGN KEY (userId) REFERENCES users(id)
     );
   `);
+
+  // Add kanban_state column if missing
+  const cols = database.exec(`PRAGMA table_info(plans)`);
+  const hasKanban = cols[0]?.values?.some((v: any) => v[1] === 'kanban_state');
+  if (!hasKanban) {
+    try { database.run(`ALTER TABLE plans ADD COLUMN kanban_state TEXT NOT NULL DEFAULT '{}'`); } catch {}
+  }
+
   database.run(`
     CREATE TABLE IF NOT EXISTS feedback (
       id TEXT PRIMARY KEY,

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
 import { getMe, User, setToken } from './api/client';
 import Layout from './components/Layout';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
@@ -43,33 +44,26 @@ export default function App() {
   return (
     <Routes>
       <Route
+        path="/"
+        element={user ? <Layout user={user} onLogout={handleLogout} /> : <LandingPage />}
+      >
+        {user && (
+          <>
+            <Route index element={<DashboardPage />} />
+            <Route path="new" element={<CreatePlanPage />} />
+            <Route path="plan/:id" element={<PlanViewPage />} />
+          </>
+        )}
+      </Route>
+      <Route
         path="/login"
-        element={
-          user ? <Navigate to="/" replace /> : (
-            <LoginPage onLogin={(u) => setUser(u)} />
-          )
-        }
+        element={user ? <Navigate to="/" replace /> : <LoginPage onLogin={(u) => setUser(u)} />}
       />
       <Route
         path="/register"
-        element={
-          user ? <Navigate to="/" replace /> : <RegisterPage onRegister={(u) => setUser(u)} />
-        }
+        element={user ? <Navigate to="/" replace /> : <RegisterPage onRegister={(u) => setUser(u)} />}
       />
-      <Route
-        path="/"
-        element={
-          user ? (
-            <Layout user={user} onLogout={handleLogout} />
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      >
-        <Route index element={<DashboardPage />} />
-        <Route path="new" element={<CreatePlanPage />} />
-        <Route path="plan/:id" element={<PlanViewPage />} />
-      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

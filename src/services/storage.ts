@@ -37,9 +37,10 @@ export class Storage {
 
   savePlan(plan: LaunchPlan): void {
     const db = getDb();
+    const kanbanRaw = (plan as any).kanbanState ? JSON.stringify((plan as any).kanbanState) : '{}';
     db.run(
-      `INSERT INTO plans (id, userId, input, weekly_plan, community_targets, content_angles, outreach_strategy, launch_sequencing, validation_checklist, first_users_tactics, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO plans (id, userId, input, weekly_plan, community_targets, content_angles, outreach_strategy, launch_sequencing, validation_checklist, first_users_tactics, createdAt, kanban_state)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         plan.id,
         plan.userId,
@@ -52,8 +53,15 @@ export class Storage {
         JSON.stringify(plan.validation_checklist),
         JSON.stringify(plan.first_users_tactics),
         plan.createdAt,
+        kanbanRaw,
       ]
     );
+    saveDb();
+  }
+
+  updateKanbanState(planId: string, kanbanState: any): void {
+    const db = getDb();
+    db.run('UPDATE plans SET kanban_state = ? WHERE id = ?', [JSON.stringify(kanbanState), planId]);
     saveDb();
   }
 
@@ -126,6 +134,10 @@ export class Storage {
   }
 
   private rowToPlan(row: any): LaunchPlan {
+    let kanbanState: any = undefined;
+    try {
+      if (row.kanban_state) kanbanState = JSON.parse(row.kanban_state);
+    } catch {}
     return {
       id: row.id,
       userId: row.userId,
@@ -138,6 +150,7 @@ export class Storage {
       launch_sequencing: JSON.parse(row.launch_sequencing),
       validation_checklist: JSON.parse(row.validation_checklist),
       first_users_tactics: JSON.parse(row.first_users_tactics),
+      kanbanState,
     };
   }
 

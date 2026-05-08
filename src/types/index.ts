@@ -64,6 +64,7 @@ export interface LaunchPlan {
   launch_sequencing: LaunchSequencing[];
   validation_checklist: ValidationChecklist[];
   first_users_tactics: FirstUsersTactic[];
+  kanbanState?: KanbanState;
 }
 
 export interface FeedbackInput {
@@ -104,6 +105,27 @@ export interface TemplateMeta {
   name: string;
   description: string;
   sections: string[];
+}
+
+export interface KanbanCard {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  effort: 'low' | 'medium' | 'high';
+  column: 'backlog' | 'todo' | 'in_progress' | 'done';
+  week?: number;
+  order: number;
+  createdAt: string;
+}
+
+export interface KanbanState {
+  columns: {
+    backlog: KanbanCard[];
+    todo: KanbanCard[];
+    in_progress: KanbanCard[];
+    done: KanbanCard[];
+  };
 }
 
 export interface ApiResponse<T> {
