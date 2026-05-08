@@ -113,7 +113,7 @@ export interface KanbanCard {
   description: string;
   category: string;
   effort: 'low' | 'medium' | 'high';
-  column: 'backlog' | 'todo' | 'in_progress' | 'done';
+  column: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
   week?: number;
   order: number;
   createdAt: string;

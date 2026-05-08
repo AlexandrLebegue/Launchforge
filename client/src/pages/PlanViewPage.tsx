@@ -32,7 +32,7 @@ function buildKanbanFromPlan(plan: LaunchPlan): KanbanState {
   });
 
   return {
-    columns: { backlog: [], todo: cards, in_progress: [], done: [] },
+    columns: { backlog: [], todo: cards, in_progress: [], review: [], done: [] },
   };
 }
 
@@ -42,6 +42,19 @@ function isValidKanbanState(state: any): state is KanbanState {
     Array.isArray(state.columns.todo) &&
     Array.isArray(state.columns.in_progress) &&
     Array.isArray(state.columns.done);
+}
+
+function ensureKanbanState(state: any): KanbanState {
+  const base = isValidKanbanState(state) ? state : buildKanbanFromPlan(state?.input || {});
+  return {
+    columns: {
+      backlog: base.columns.backlog || [],
+      todo: base.columns.todo || [],
+      in_progress: base.columns.in_progress || [],
+      review: base.columns.review || [],
+      done: base.columns.done || [],
+    },
+  };
 }
 
 export default function PlanViewPage() {
@@ -57,7 +70,7 @@ export default function PlanViewPage() {
       const res = await getPlan(id);
       if (res.success && res.data) {
         setPlan(res.data);
-        setKanban(isValidKanbanState(res.data.kanbanState) ? res.data.kanbanState : buildKanbanFromPlan(res.data));
+        setKanban(ensureKanbanState(res.data.kanbanState));
       } else {
         setError(res.error || 'Plan not found');
       }

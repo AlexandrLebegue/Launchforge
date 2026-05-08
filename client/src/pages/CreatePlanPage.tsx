@@ -96,12 +96,12 @@ export default function CreatePlanPage() {
     }
   };
 
-  const selectNiche = (value: string) => {
+const selectNiche = (value: string) => {
     const label = niches.find((n) => n.value === value)?.label || value;
     addUser(label);
     setForm((f) => ({ ...f, niche: value }));
     setWaitingForNiche(false);
-    setStep(4);
+    setStep(3);
     setTimeout(() => addBot(questions[3].bot), 500);
   };
 
