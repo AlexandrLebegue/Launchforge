@@ -27,7 +27,10 @@ interface Props {
 }
 
 export default function KanbanBoard({ planId, initialKanban }: Props) {
-  const [kanban, setKanban] = useState<KanbanState>(initialKanban);
+  const safeInitial: KanbanState = initialKanban?.columns
+    ? initialKanban
+    : { columns: { backlog: [], todo: [], in_progress: [], done: [] } };
+  const [kanban, setKanban] = useState<KanbanState>(safeInitial);
   const [dragCard, setDragCard] = useState<KanbanCard | null>(null);
   const [filter, setFilter] = useState('All');
   const [showAdd, setShowAdd] = useState<KanbanCard['column'] | null>(null);
