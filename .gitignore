@@ -4,3 +4,6 @@ dist/
 *.log
 .DS_Store
 coverage/
+data/
+client/dist/
+client/node_modules/

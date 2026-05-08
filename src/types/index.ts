@@ -54,6 +54,7 @@ export interface FirstUsersTactic {
 
 export interface LaunchPlan {
   id: string;
+  userId: string;
   createdAt: string;
   input: PlanInput;
   weekly_plan: WeeklyAction[];
@@ -74,9 +75,28 @@ export interface FeedbackInput {
 export interface Feedback {
   id: string;
   planId: string;
+  userId: string;
   rating: number;
   comment: string | null;
   createdAt: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface AuthRequest {
+  email: string;
+  password: string;
+  name?: string;
+}
+
+export interface AuthPayload {
+  userId: string;
+  email: string;
 }
 
 export interface TemplateMeta {
@@ -90,4 +110,12 @@ export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthPayload;
+    }
+  }
 }

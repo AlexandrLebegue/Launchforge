@@ -3,11 +3,12 @@ import { PlanInput, LaunchPlan } from '../types';
 import { generatePlan } from '../templates';
 import { storage } from './storage';
 
-export function createLaunchPlan(input: PlanInput): LaunchPlan {
+export function createLaunchPlan(input: PlanInput, userId: string = 'anonymous'): LaunchPlan {
   const planData = generatePlan(input);
 
   const plan: LaunchPlan = {
     id: uuidv4(),
+    userId,
     createdAt: new Date().toISOString(),
     input,
     ...planData,
@@ -19,6 +20,10 @@ export function createLaunchPlan(input: PlanInput): LaunchPlan {
 
 export function getLaunchPlan(id: string): LaunchPlan | undefined {
   return storage.getPlan(id);
+}
+
+export function getPlansByUserId(userId: string): LaunchPlan[] {
+  return storage.getPlansByUserId(userId);
 }
 
 export function getAllLaunchPlans(): LaunchPlan[] {

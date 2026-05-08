@@ -1,0 +1,156 @@
+const API_BASE = '/api';
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+function getToken(): string | null {
+  return localStorage.getItem('launchforge_token');
+}
+
+export function setToken(token: string | null): void {
+  if (token) localStorage.setItem('launchforge_token', token);
+  else localStorage.removeItem('launchforge_token');
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const json = await res.json();
+  return json;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface PlanInput {
+  productName: string;
+  description: string;
+  targetAudience: string;
+  niche: string;
+  goals: string[];
+  pricing: string;
+}
+
+export interface WeeklyAction {
+  week: number;
+  theme: string;
+  actions: string[];
+  kpis: string[];
+}
+
+export interface CommunityTarget {
+  platform: string;
+  communities: string[];
+  approach: string;
+  frequency: string;
+}
+
+export interface ContentAngle {
+  title: string;
+  format: string;
+  platforms: string[];
+  description: string;
+}
+
+export interface OutreachStrategy {
+  phase: string;
+  tactics: string[];
+  target: string;
+}
+
+export interface LaunchSequencing {
+  phase: string;
+  timeline: string;
+  activities: string[];
+}
+
+export interface ValidationChecklist {
+  item: string;
+  status: 'pending' | 'done';
+  details: string;
+}
+
+export interface FirstUsersTactic {
+  tactic: string;
+  effort: 'low' | 'medium' | 'high';
+  expectedResult: string;
+}
+
+export interface LaunchPlan {
+  id: string;
+  userId: string;
+  createdAt: string;
+  input: PlanInput;
+  weekly_plan: WeeklyAction[];
+  community_targets: CommunityTarget[];
+  content_angles: ContentAngle[];
+  outreach_strategy: OutreachStrategy[];
+  launch_sequencing: LaunchSequencing[];
+  validation_checklist: ValidationChecklist[];
+  first_users_tactics: FirstUsersTactic[];
+}
+
+export async function register(
+  email: string,
+  password: string,
+  name: string
+): Promise<ApiResponse<{ user: User; token: string }>> {
+  return request('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, name }),
+  });
+}
+
+export async function login(
+  email: string,
+  password: string
+): Promise<ApiResponse<{ user: User; token: string }>> {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function getMe(): Promise<ApiResponse<User>> {
+  return request('/auth/me');
+}
+
+export async function getTemplates(): Promise<ApiResponse<any[]>> {
+  return request('/templates');
+}
+
+export async function createPlan(
+  input: PlanInput
+): Promise<ApiResponse<LaunchPlan>> {
+  return request('/plan', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getPlans(): Promise<ApiResponse<LaunchPlan[]>> {
+  return request('/plan');
+}
+
+export async function getPlan(
+  id: string
+): Promise<ApiResponse<LaunchPlan>> {
+  return request(`/plan/${id}`);
+}
