@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { PlanInput, LaunchPlan } from '../types';
 import { generatePlan } from '../templates';
+import { generateAIPlan } from './aiPlanGenerator';
 import { storage } from './storage';
 
 export function createLaunchPlan(input: PlanInput, userId: string = 'anonymous'): LaunchPlan {
@@ -16,6 +17,23 @@ export function createLaunchPlan(input: PlanInput, userId: string = 'anonymous')
 
   storage.savePlan(plan);
   return plan;
+}
+
+export async function createAILaunchPlan(input: PlanInput, userId: string = 'anonymous'): Promise<LaunchPlan> {
+  try {
+    const planData = await generateAIPlan(input);
+    const plan: LaunchPlan = {
+      id: uuidv4(),
+      userId,
+      createdAt: new Date().toISOString(),
+      input,
+      ...planData,
+    };
+    storage.savePlan(plan);
+    return plan;
+  } catch {
+    return createLaunchPlan(input, userId);
+  }
 }
 
 export function getLaunchPlan(id: string): LaunchPlan | undefined {

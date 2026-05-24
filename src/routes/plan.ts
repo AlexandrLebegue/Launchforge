@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createLaunchPlan, getLaunchPlan, getPlansByUserId } from '../services/planGenerator';
+import { createLaunchPlan, createAILaunchPlan, getLaunchPlan, getPlansByUserId } from '../services/planGenerator';
 import { validatePlanInput } from '../middleware/validation';
 import { storage } from '../services/storage';
 import { requireAuth, optionalAuth } from '../middleware/auth';
@@ -7,11 +7,15 @@ import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState } from '..
 
 const router = Router();
 
-router.post('/', requireAuth, validatePlanInput, (req: Request, res: Response) => {
+router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Response) => {
   try {
     const input = req.body as PlanInput;
     const user = req.user as AuthPayload;
-    const plan = createLaunchPlan(input, user.userId);
+    const mode = (req.body as any).mode || 'template';
+
+    const plan = mode === 'ai'
+      ? await createAILaunchPlan(input, user.userId)
+      : createLaunchPlan(input, user.userId);
 
     const response: ApiResponse<LaunchPlan> = { success: true, data: plan };
     res.status(201).json(response);
