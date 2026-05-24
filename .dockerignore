@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .dockerignore — Exclude from Docker build context
+# Keeps the image lean and prevents secrets from leaking into layers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dependencies (installed fresh inside the image per stage)
+node_modules/
+client/node_modules/
+
+# Build artifacts (rebuilt inside the image)
+dist/
+client/dist/
+client/.vite/
+
+# Environment & secrets — NEVER bake into image
+.env
+.env.*
+!.env.example
+
+# Data & database
+data/
+*.db
+*.db-journal
+
+# Tests
+tests/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+coverage/
+
+# Dev tooling
+.mcp.json
+composio.json
+scripts/
+
+# Version control
+.git/
+.gitignore
+
+# Docs
+README.md
+*.md
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
