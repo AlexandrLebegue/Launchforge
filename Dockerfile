@@ -3,17 +3,23 @@
 # Inspired by AlexandrLebegue/domotique_ia
 #
 # Stages:
-#   1. base          — Node 20 Alpine with shared tooling
+#   1. base          — Node 20 Alpine + build tools (needed for better-sqlite3)
 #   2. client-deps   — Install frontend dependencies
 #   3. client-build  — Build Vite/React frontend → client/dist
-#   4. server-deps   — Install backend dependencies
+#   4. server-deps   — Install & compile backend prod deps (incl. better-sqlite3)
 #   5. server-build  — Compile TypeScript backend → dist/
-#   6. runner        — Minimal production image (no dev deps)
+#   6. runner        — Minimal production image (no dev deps, no build tools)
+#
+# better-sqlite3 is a native Node addon — it needs python3 + make + g++ to
+# compile during `npm ci`. The build tools are only in the build stages;
+# the final runner image stays lean.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── 1. Base ──────────────────────────────────────────────────────────────────
+# ── 1. Base (shared — includes native build tools) ───────────────────────────
 FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat
+# libc6-compat: glibc shim for musl (Alpine); build-base + python3: compile
+# better-sqlite3 native addon
+RUN apk add --no-cache libc6-compat build-base python3
 WORKDIR /app
 
 # ── 2. Client deps ───────────────────────────────────────────────────────────
@@ -29,13 +35,15 @@ COPY client/ ./
 RUN npm run build
 # Result: /app/client/dist
 
-# ── 4. Server deps ───────────────────────────────────────────────────────────
+# ── 4. Server deps (prod only — compiles better-sqlite3 native module) ────────
 FROM base AS server-deps
 WORKDIR /app
 COPY package*.json ./
+# --omit=dev keeps only production deps in node_modules
 RUN npm ci --prefer-offline --omit=dev
+# Result: /app/node_modules (includes prebuilt better-sqlite3 .node binary)
 
-# ── 5. Server build ──────────────────────────────────────────────────────────
+# ── 5. Server build (TypeScript → JS) ────────────────────────────────────────
 FROM base AS server-build
 WORKDIR /app
 COPY package*.json tsconfig.json ./
@@ -44,9 +52,12 @@ COPY src/ ./src/
 RUN npm run build
 # Result: /app/dist
 
-# ── 6. Runner (production) ───────────────────────────────────────────────────
-FROM base AS runner
+# ── 6. Runner (production — lean, no build tools) ────────────────────────────
+FROM node:20-alpine AS runner
 WORKDIR /app
+
+# Runtime-only native libs (better-sqlite3 needs these at runtime on Alpine)
+RUN apk add --no-cache libc6-compat
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -55,17 +66,17 @@ ENV PORT=3000
 RUN addgroup --system --gid 1001 launchforge \
  && adduser  --system --uid 1001 --ingroup launchforge appuser
 
-# Backend: compiled JS + prod node_modules
-COPY --from=server-deps   /app/node_modules ./node_modules
-COPY --from=server-build  /app/dist         ./dist
+# Backend: compiled JS + prod node_modules (incl. better-sqlite3 .node binary)
+COPY --from=server-deps  /app/node_modules ./node_modules
+COPY --from=server-build /app/dist         ./dist
 
 # Frontend: pre-built static files served by Express
-COPY --from=client-build  /app/client/dist  ./client/dist
+COPY --from=client-build /app/client/dist  ./client/dist
 
-# package.json needed by some deps (sql.js wasm lookup etc.)
+# package.json needed for module resolution
 COPY package.json ./
 
-# Persist SQLite database between restarts
+# Persistent SQLite data directory — mount a volume here
 RUN mkdir -p /app/data && chown appuser:launchforge /app/data
 VOLUME ["/app/data"]
 

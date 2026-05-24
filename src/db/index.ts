@@ -1,103 +1,121 @@
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+/**
+ * Database layer — better-sqlite3
+ *
+ * Why better-sqlite3 instead of sql.js:
+ *   • sql.js loads the entire DB into RAM and flushes to disk manually
+ *     (saveDb()) — crash between writes = data loss.
+ *   • better-sqlite3 uses the real SQLite C library: every db.prepare().run()
+ *     is atomically committed to the WAL file on disk immediately.
+ *     No saveDb(), no in-memory risk, crash-safe.
+ */
+
+import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-let db: SqlJsDatabase | null = null;
-let dbPath: string | null = null;
-let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+let db: Database.Database | null = null;
 
-export async function initEngine(): Promise<void> {
-  if (!SQL) {
-    SQL = await initSqlJs();
-  }
-}
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
-export function getDb(dbFile?: string): SqlJsDatabase {
+/**
+ * Returns the singleton DB connection, creating it on first call.
+ * Compatible with the old initEngine() + getDb() call pattern.
+ */
+export function getDb(): Database.Database {
   if (db) return db;
 
-  dbPath = dbFile || process.env.DB_PATH || path.join(process.cwd(), 'data', 'launchforge.db');
+  const dbPath =
+    process.env.DB_PATH ?? path.join(process.cwd(), 'data', 'launchforge.db');
 
-  if (!SQL) {
-    throw new Error('SQL.js engine not initialized. Call await initEngine() first.');
-  }
+  // Create parent directory if needed (e.g. /app/data inside Docker)
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-  if (dbPath === ':memory:') {
-    db = new SQL.Database();
-  } else {
-    const dir = path.dirname(dbPath);
-    fs.mkdirSync(dir, { recursive: true });
-    if (fs.existsSync(dbPath)) {
-      const buffer = fs.readFileSync(dbPath);
-      db = new SQL.Database(buffer);
-    } else {
-      db = new SQL.Database();
-    }
-  }
+  db = new Database(dbPath);
+
+  // WAL mode: readers never block writers, crash-safe atomic commits
+  db.pragma('journal_mode = WAL');
+  // Enforce FK constraints
+  db.pragma('foreign_keys = ON');
+  // Faster writes — OS crash could corrupt, but process crash is safe
+  db.pragma('synchronous = NORMAL');
 
   runMigrations(db);
+
+  console.log(`📦 Database: ${dbPath}`);
   return db;
 }
 
-export function saveDb(): void {
-  if (!db || !dbPath || dbPath === ':memory:') return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(dbPath, buffer);
+/**
+ * Kept for API compatibility with existing callers (routes, index.ts).
+ * better-sqlite3 opens synchronously — no async init needed.
+ */
+export async function initEngine(): Promise<void> {
+  getDb(); // open + migrate eagerly
 }
 
-function runMigrations(database: SqlJsDatabase): void {
-  database.run(`
+/**
+ * No-op — kept so existing storage.ts callers don't break.
+ * better-sqlite3 writes atomically on every statement; no manual flush needed.
+ */
+export function saveDb(): void {}
+
+/** Gracefully close the connection (useful in tests / process teardown). */
+export function closeDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Migrations
+// ---------------------------------------------------------------------------
+
+function runMigrations(database: Database.Database): void {
+  database.exec(`
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL DEFAULT '',
-      password TEXT NOT NULL,
+      id        TEXT PRIMARY KEY,
+      email     TEXT UNIQUE NOT NULL,
+      name      TEXT NOT NULL DEFAULT '',
+      password  TEXT NOT NULL,
       createdAt TEXT NOT NULL
     );
-  `);
-  database.run(`
+
     CREATE TABLE IF NOT EXISTS plans (
-      id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      input TEXT NOT NULL,
-      weekly_plan TEXT NOT NULL,
-      community_targets TEXT NOT NULL,
-      content_angles TEXT NOT NULL,
-      outreach_strategy TEXT NOT NULL,
-      launch_sequencing TEXT NOT NULL,
-      validation_checklist TEXT NOT NULL,
-      first_users_tactics TEXT NOT NULL,
-      createdAt TEXT NOT NULL,
+      id                   TEXT PRIMARY KEY,
+      userId               TEXT NOT NULL,
+      input                TEXT NOT NULL,
+      weekly_plan          TEXT NOT NULL DEFAULT '[]',
+      community_targets    TEXT NOT NULL DEFAULT '[]',
+      content_angles       TEXT NOT NULL DEFAULT '[]',
+      outreach_strategy    TEXT NOT NULL DEFAULT '[]',
+      launch_sequencing    TEXT NOT NULL DEFAULT '[]',
+      validation_checklist TEXT NOT NULL DEFAULT '[]',
+      first_users_tactics  TEXT NOT NULL DEFAULT '[]',
+      kanban_state         TEXT NOT NULL DEFAULT '{}',
+      createdAt            TEXT NOT NULL,
       FOREIGN KEY (userId) REFERENCES users(id)
     );
-  `);
 
-  // Add kanban_state column if missing
-  const cols = database.exec(`PRAGMA table_info(plans)`);
-  const hasKanban = cols[0]?.values?.some((v: any) => v[1] === 'kanban_state');
-  if (!hasKanban) {
-    try { database.run(`ALTER TABLE plans ADD COLUMN kanban_state TEXT NOT NULL DEFAULT '{}'`); } catch {}
-  }
-
-  database.run(`
     CREATE TABLE IF NOT EXISTS feedback (
-      id TEXT PRIMARY KEY,
-      planId TEXT NOT NULL,
-      userId TEXT NOT NULL,
-      rating INTEGER NOT NULL,
-      comment TEXT,
+      id        TEXT PRIMARY KEY,
+      planId    TEXT NOT NULL,
+      userId    TEXT NOT NULL,
+      rating    INTEGER NOT NULL,
+      comment   TEXT,
       createdAt TEXT NOT NULL,
       FOREIGN KEY (planId) REFERENCES plans(id),
       FOREIGN KEY (userId) REFERENCES users(id)
     );
   `);
-  saveDb();
-}
 
-export function closeDb(): void {
-  if (db) {
-    saveDb();
-    db.close();
-    db = null;
+  // Additive migration: add kanban_state column to existing DBs (idempotent)
+  const cols = database.pragma('table_info(plans)') as { name: string }[];
+  if (!cols.some((c) => c.name === 'kanban_state')) {
+    database.exec(
+      `ALTER TABLE plans ADD COLUMN kanban_state TEXT NOT NULL DEFAULT '{}'`
+    );
   }
 }
