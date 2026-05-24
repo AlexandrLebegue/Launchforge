@@ -7,10 +7,10 @@ interface Props {
 }
 
 export default function LoginPage({ onLogin }: Props) {
-  const [email, setEmail] = useState('');
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [error,    setError]    = useState('');
+  const [busy,     setBusy]     = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
@@ -32,40 +32,51 @@ export default function LoginPage({ onLogin }: Props) {
   };
 
   return (
-    <div className="auth-page">
-      <h1>Welcome back</h1>
-      <p>Sign in to your LaunchForge account</p>
+    <div className="auth-wrapper">
+      <div className="auth-page">
+        <div className="auth-page-logo">🚀</div>
+        <h1>Welcome back</h1>
+        <p>Sign in to your LaunchForge account</p>
 
-      {error && <div className="error">{error}</div>}
+        {error && <div className="error">{error}</div>}
 
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label>Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            required
-          />
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required
+            />
+          </div>
+          <button
+            className="btn btn-primary"
+            type="submit"
+            disabled={busy}
+            style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+          >
+            {busy ? '⏳ Signing in…' : '→ Sign In'}
+          </button>
+        </form>
+
+        <div className="footer-link">
+          Don&apos;t have an account?{' '}
+          <Link to="/register">Create one free</Link>
         </div>
-        <div className="form-group">
-          <label>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-          />
-        </div>
-        <button className="btn btn-primary" type="submit" disabled={busy}>
-          {busy ? 'Signing in...' : 'Sign In'}
-        </button>
-      </form>
-
-      <div className="footer-link">
-        Don&apos;t have an account? <Link to="/register">Create one</Link>
       </div>
     </div>
   );

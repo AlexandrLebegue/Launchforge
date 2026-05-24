@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# LaunchForge — Docker Compose
+# Inspired by AlexandrLebegue/domotique_ia
+#
+# Usage:
+#   cp .env.example .env          # fill in your secrets
+#   docker compose up --build     # first run
+#   docker compose up -d          # background
+#   docker compose logs -f app    # follow logs
+#
+# Env vars can be overridden inline or via the .env file.
+# Never commit .env — it is listed in .gitignore.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: launchforge
+    restart: unless-stopped
+
+    ports:
+      - "${PORT:-3000}:3000"
+
+    environment:
+      # ── Server ────────────────────────────────────────────────
+      NODE_ENV: production
+      PORT: "3000"
+
+      # ── Database ──────────────────────────────────────────────
+      DB_PATH: /app/data/launchforge.db
+
+      # ── Auth ──────────────────────────────────────────────────
+      # Generate a strong secret: openssl rand -hex 32
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+
+      # ── AI — OpenRouter ───────────────────────────────────────
+      # Get your key at https://openrouter.ai/keys
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+
+      # ── Composio (optional — for auto-push agent) ─────────────
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+
+    volumes:
+      # Persist SQLite database across container restarts
+      - launchforge_data:/app/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  launchforge_data:
+    driver: local
