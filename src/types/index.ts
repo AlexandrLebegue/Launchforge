@@ -128,6 +128,54 @@ export interface KanbanState {
   };
 }
 
+// ── Agents ────────────────────────────────────────────────────────────────────
+
+export type AgentPlatform =
+  | 'reddit'
+  | 'twitter'
+  | 'linkedin'
+  | 'instagram'
+  | 'producthunt'
+  | 'hackernews'
+  | 'indiehackers'
+  | 'discord'
+  | 'slack'
+  | 'github';
+
+export type AgentStatus = 'active' | 'inactive' | 'error';
+export type RunStatus   = 'pending' | 'running' | 'done' | 'failed';
+
+export interface Agent {
+  id: string;
+  userId: string;
+  name: string;
+  platform: AgentPlatform;
+  apiKey: string;
+  status: AgentStatus;
+  lastRunAt: string | null;
+  createdAt: string;
+}
+
+export interface AgentRun {
+  id: string;
+  agentId: string;
+  planId: string;
+  cardId: string;
+  cardTitle: string;
+  status: RunStatus;
+  result: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface AgentTemplate {
+  platform: AgentPlatform;
+  name: string;
+  icon: string;
+  description: string;
+  composioApp: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;

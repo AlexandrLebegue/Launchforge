@@ -203,3 +203,86 @@ export async function updateKanban(planId: string, state: KanbanState): Promise<
     body: JSON.stringify(state),
   });
 }
+
+// ── Agents ────────────────────────────────────────────────────────────────────
+
+export type AgentPlatform =
+  | 'reddit' | 'twitter' | 'linkedin' | 'instagram'
+  | 'producthunt' | 'hackernews' | 'indiehackers'
+  | 'discord' | 'slack' | 'github';
+
+export type AgentStatus = 'active' | 'inactive' | 'error';
+export type RunStatus   = 'pending' | 'running' | 'done' | 'failed';
+
+export interface Agent {
+  id: string;
+  userId: string;
+  name: string;
+  platform: AgentPlatform;
+  apiKey: string;
+  status: AgentStatus;
+  lastRunAt: string | null;
+  createdAt: string;
+}
+
+export interface AgentRun {
+  id: string;
+  agentId: string;
+  planId: string;
+  cardId: string;
+  cardTitle: string;
+  status: RunStatus;
+  result: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface AgentTemplate {
+  platform: AgentPlatform;
+  name: string;
+  icon: string;
+  description: string;
+  composioApp: string;
+}
+
+export async function getAgents(): Promise<ApiResponse<Agent[]>> {
+  return request('/agents');
+}
+
+export async function getCatalog(): Promise<ApiResponse<AgentTemplate[]>> {
+  return request('/agents/catalog');
+}
+
+export async function createAgent(data: {
+  platform: AgentPlatform;
+  name?: string;
+  apiKey?: string;
+}): Promise<ApiResponse<Agent>> {
+  return request('/agents', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateAgent(id: string, data: Partial<Pick<Agent, 'name' | 'apiKey' | 'status'>>): Promise<ApiResponse<Agent>> {
+  return request(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteAgent(id: string): Promise<ApiResponse<null>> {
+  return request(`/agents/${id}`, { method: 'DELETE' });
+}
+
+export async function getAgentRuns(agentId: string): Promise<ApiResponse<AgentRun[]>> {
+  return request(`/agents/${agentId}/runs`);
+}
+
+export async function assignCardToAgent(
+  agentId: string,
+  data: {
+    planId:          string;
+    cardId:          string;
+    cardTitle:       string;
+    cardDescription: string;
+    cardCategory:    string;
+    cardEffort:      'low' | 'medium' | 'high';
+  }
+): Promise<ApiResponse<AgentRun>> {
+  return request(`/agents/${agentId}/runs`, { method: 'POST', body: JSON.stringify(data) });
+}

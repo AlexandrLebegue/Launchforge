@@ -11,7 +11,7 @@
  */
 
 import { getDb } from '../db';
-import { LaunchPlan, Feedback, User } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -170,6 +170,133 @@ export class Storage {
       rating:    row.rating,
       comment:   row.comment,
       createdAt: row.createdAt,
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Agents
+  // ──────────────────────────────────────────────────────────────
+
+  saveAgent(agent: Agent): void {
+    getDb()
+      .prepare(
+        `INSERT INTO agents (id, userId, name, platform, api_key, status, lastRunAt, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        agent.id,
+        agent.userId,
+        agent.name,
+        agent.platform,
+        agent.apiKey,
+        agent.status,
+        agent.lastRunAt,
+        agent.createdAt
+      );
+  }
+
+  getAgentById(id: string): Agent | undefined {
+    const row = getDb()
+      .prepare(`SELECT * FROM agents WHERE id = ?`)
+      .get(id) as any;
+    return row ? this.rowToAgent(row) : undefined;
+  }
+
+  getAgentsByUserId(userId: string): Agent[] {
+    const rows = getDb()
+      .prepare(`SELECT * FROM agents WHERE userId = ? ORDER BY createdAt DESC`)
+      .all(userId) as any[];
+    return rows.map((r) => this.rowToAgent(r));
+  }
+
+  updateAgent(id: string, patch: Partial<Pick<Agent, 'name' | 'apiKey' | 'status' | 'lastRunAt'>>): void {
+    const fields: string[] = [];
+    const vals: any[]      = [];
+
+    if (patch.name      !== undefined) { fields.push('name = ?');      vals.push(patch.name); }
+    if (patch.apiKey    !== undefined) { fields.push('api_key = ?');   vals.push(patch.apiKey); }
+    if (patch.status    !== undefined) { fields.push('status = ?');    vals.push(patch.status); }
+    if (patch.lastRunAt !== undefined) { fields.push('lastRunAt = ?'); vals.push(patch.lastRunAt); }
+
+    if (fields.length === 0) return;
+    vals.push(id);
+    getDb()
+      .prepare(`UPDATE agents SET ${fields.join(', ')} WHERE id = ?`)
+      .run(...vals);
+  }
+
+  deleteAgent(id: string): void {
+    getDb().prepare(`DELETE FROM agents WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Agent Runs
+  // ──────────────────────────────────────────────────────────────
+
+  saveAgentRun(run: AgentRun): void {
+    getDb()
+      .prepare(
+        `INSERT INTO agent_runs
+           (id, agentId, planId, cardId, cardTitle, status, result, startedAt, completedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        run.id,
+        run.agentId,
+        run.planId,
+        run.cardId,
+        run.cardTitle,
+        run.status,
+        run.result,
+        run.startedAt,
+        run.completedAt
+      );
+  }
+
+  getRunsByAgentId(agentId: string): AgentRun[] {
+    const rows = getDb()
+      .prepare(`SELECT * FROM agent_runs WHERE agentId = ? ORDER BY startedAt DESC`)
+      .all(agentId) as any[];
+    return rows.map((r) => this.rowToRun(r));
+  }
+
+  getRunsByPlanId(planId: string): AgentRun[] {
+    const rows = getDb()
+      .prepare(`SELECT * FROM agent_runs WHERE planId = ? ORDER BY startedAt DESC`)
+      .all(planId) as any[];
+    return rows.map((r) => this.rowToRun(r));
+  }
+
+  updateRunStatus(id: string, status: AgentRun['status'], result?: string): void {
+    getDb()
+      .prepare(`UPDATE agent_runs SET status = ?, result = ?, completedAt = ? WHERE id = ?`)
+      .run(status, result ?? null, new Date().toISOString(), id);
+  }
+
+  private rowToAgent(row: any): Agent {
+    return {
+      id:        row.id,
+      userId:    row.userId,
+      name:      row.name,
+      platform:  row.platform,
+      apiKey:    row.api_key,
+      status:    row.status,
+      lastRunAt: row.lastRunAt ?? null,
+      createdAt: row.createdAt,
+    };
+  }
+
+  private rowToRun(row: any): AgentRun {
+    return {
+      id:          row.id,
+      agentId:     row.agentId,
+      planId:      row.planId,
+      cardId:      row.cardId,
+      cardTitle:   row.cardTitle,
+      status:      row.status,
+      result:      row.result ?? null,
+      startedAt:   row.startedAt,
+      completedAt: row.completedAt ?? null,
     };
   }
 }

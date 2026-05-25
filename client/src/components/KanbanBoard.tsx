@@ -1,5 +1,5 @@
-import { useState, useRef, DragEvent } from 'react';
-import { KanbanState, KanbanCard, updateKanban } from '../api/client';
+import { useState, useRef, useEffect, DragEvent } from 'react';
+import { KanbanState, KanbanCard, updateKanban, getAgents, assignCardToAgent, Agent } from '../api/client';
 
 const COLUMNS: { key: KanbanCard['column']; label: string }[] = [
   { key: 'backlog', label: 'Backlog' },
@@ -24,6 +24,12 @@ const COLORS: Record<string, string> = {
   Growth: '#14b8a6',
 };
 
+const PLATFORM_ICONS: Record<string, string> = {
+  reddit: '🟠', twitter: '🐦', linkedin: '💼', instagram: '📸',
+  producthunt: '🐱', hackernews: '🟧', indiehackers: '🔨',
+  discord: '💬', slack: '💛', github: '🐙',
+};
+
 interface Props {
   planId: string;
   initialKanban: KanbanState;
@@ -38,20 +44,36 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
     initialKanban?.columns?.backlog && initialKanban.columns.todo
       ? initialKanban
       : EMPTY_STATE;
-  const [kanban, setKanban] = useState<KanbanState>(safeInitial);
-  const [dragCard, setDragCard] = useState<KanbanCard | null>(null);
-  const [filter, setFilter] = useState('All');
-  const [showAdd, setShowAdd] = useState<KanbanCard['column'] | null>(null);
-  const [addForm, setAddForm] = useState<{ title: string; category: string; effort: 'low' | 'medium' | 'high' }>({
+
+  const [kanban,       setKanban]       = useState<KanbanState>(safeInitial);
+  const [dragCard,     setDragCard]     = useState<KanbanCard | null>(null);
+  const [filter,       setFilter]       = useState('All');
+  const [showAdd,      setShowAdd]      = useState<KanbanCard['column'] | null>(null);
+  const [addForm,      setAddForm]      = useState<{ title: string; category: string; effort: 'low' | 'medium' | 'high' }>({
     title: '', category: 'Marketing', effort: 'medium',
   });
-  const [swipeCardId, setSwipeCardId] = useState<string | null>(null);
-  const touchStart = useRef(0);
-  const touchCardId = useRef<string | null>(null);
-  const touchCol = useRef<KanbanCard['column'] | null>(null);
-  const swipeDx = useRef(0);
-  const dragCol = useRef<string | null>(null);
-  const dragIdx = useRef<number>(0);
+  const [swipeCardId,  setSwipeCardId]  = useState<string | null>(null);
+  const [agents,       setAgents]       = useState<Agent[]>([]);
+  // openAssign: id de la carte dont le menu agent est ouvert
+  const [openAssign,   setOpenAssign]   = useState<string | null>(null);
+  // assignedRuns: cardId → { agentName, status }
+  const [assignedRuns, setAssignedRuns] = useState<Record<string, { agentName: string; platform: string; status: string }>>({});
+
+  const touchStart   = useRef(0);
+  const touchCardId  = useRef<string | null>(null);
+  const touchCol     = useRef<KanbanCard['column'] | null>(null);
+  const swipeDx      = useRef(0);
+  const dragCol      = useRef<string | null>(null);
+  const dragIdx      = useRef<number>(0);
+
+  // Charger les agents actifs au montage
+  useEffect(() => {
+    getAgents().then((res) => {
+      if (res.success && res.data) {
+        setAgents(res.data.filter((a) => a.status === 'active'));
+      }
+    });
+  }, []);
 
   const persist = (newState: KanbanState) => {
     setKanban(newState);
@@ -61,7 +83,7 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
   const moveCard = (card: KanbanCard, fromCol: KanbanCard['column'], toCol: KanbanCard['column']) => {
     if (toCol === fromCol) return;
     const fromList = [...kanban.columns[fromCol]];
-    const toList = [...kanban.columns[toCol]];
+    const toList   = [...kanban.columns[toCol]];
     const idx = fromList.findIndex((c) => c.id === card.id);
     if (idx === -1) return;
     const [moved] = fromList.splice(idx, 1);
@@ -85,14 +107,14 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
 
   const handleAdd = (col: KanbanCard['column']) => {
     const card: KanbanCard = {
-      id: `card-${Date.now()}`,
-      title: addForm.title,
+      id:          `card-${Date.now()}`,
+      title:       addForm.title,
       description: '',
-      category: addForm.category,
-      effort: addForm.effort,
-      column: col,
-      order: kanban.columns[col].length,
-      createdAt: new Date().toISOString(),
+      category:    addForm.category,
+      effort:      addForm.effort,
+      column:      col,
+      order:       kanban.columns[col].length,
+      createdAt:   new Date().toISOString(),
     };
     const newCol = [...kanban.columns[col], card];
     persist({ columns: { ...kanban.columns, [col]: newCol } });
@@ -108,12 +130,12 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
   const filterCard = (card: KanbanCard): boolean =>
     filter === 'All' || card.category === filter;
 
-  // Touch swipe handlers — swipe left advances column, swipe right goes back
+  // Touch swipe handlers
   const handleTouchStart = (card: KanbanCard, col: KanbanCard['column'], e: React.TouchEvent) => {
-    touchStart.current = e.touches[0].clientX;
-    touchCardId.current = card.id;
-    touchCol.current = col;
-    swipeDx.current = 0;
+    touchStart.current   = e.touches[0].clientX;
+    touchCardId.current  = card.id;
+    touchCol.current     = col;
+    swipeDx.current      = 0;
     setSwipeCardId(card.id);
   };
 
@@ -123,9 +145,9 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
   };
 
   const handleTouchEnd = () => {
-    const id = touchCardId.current;
+    const id  = touchCardId.current;
     const col = touchCol.current;
-    const dx = swipeDx.current;
+    const dx  = swipeDx.current;
     if (!id || !col) { setSwipeCardId(null); return; }
 
     const fromIdx = COL_ORDER.indexOf(col);
@@ -133,22 +155,53 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
 
     if (dx < -threshold && fromIdx < COL_ORDER.length - 1) {
       const toCol = COL_ORDER[fromIdx + 1];
-      const card = kanban.columns[col]?.find((c) => c.id === id);
+      const card  = kanban.columns[col]?.find((c) => c.id === id);
       if (card) moveCard(card, col, toCol as KanbanCard['column']);
     } else if (dx > threshold && fromIdx > 0) {
       const toCol = COL_ORDER[fromIdx - 1];
-      const card = kanban.columns[col]?.find((c) => c.id === id);
+      const card  = kanban.columns[col]?.find((c) => c.id === id);
       if (card) moveCard(card, col, toCol as KanbanCard['column']);
     }
 
     setSwipeCardId(null);
     touchCardId.current = null;
-    touchCol.current = null;
-    swipeDx.current = 0;
+    touchCol.current    = null;
+    swipeDx.current     = 0;
+  };
+
+  // ── Assign card to agent ──────────────────────────────────────────────────
+
+  const handleAssign = async (card: KanbanCard, agent: Agent) => {
+    setOpenAssign(null);
+    setAssignedRuns((prev) => ({
+      ...prev,
+      [card.id]: { agentName: agent.name, platform: agent.platform, status: 'running' },
+    }));
+
+    const res = await assignCardToAgent(agent.id, {
+      planId,
+      cardId:          card.id,
+      cardTitle:       card.title,
+      cardDescription: card.description,
+      cardCategory:    card.category,
+      cardEffort:      card.effort,
+    });
+
+    if (res.success) {
+      setAssignedRuns((prev) => ({
+        ...prev,
+        [card.id]: { agentName: agent.name, platform: agent.platform, status: res.data?.status ?? 'running' },
+      }));
+    } else {
+      setAssignedRuns((prev) => ({
+        ...prev,
+        [card.id]: { agentName: agent.name, platform: agent.platform, status: 'failed' },
+      }));
+    }
   };
 
   return (
-    <div>
+    <div onClick={() => openAssign && setOpenAssign(null)}>
       {/* Filters */}
       <div className="kanban-filters">
         {CATEGORIES.map((c) => (
@@ -179,7 +232,9 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
             <div className="kanban-cards">
               {kanban.columns[col.key].filter(filterCard).map((card) => {
                 const isSwiping = swipeCardId === card.id;
-                const swipedX = isSwiping ? swipeDx.current : 0;
+                const swipedX   = isSwiping ? swipeDx.current : 0;
+                const run       = assignedRuns[card.id];
+
                 return (
                   <div
                     key={card.id}
@@ -200,10 +255,54 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
                         {card.category}
                       </span>
                       <span className={`kanban-effort effort-${card.effort}`}>{card.effort}</span>
-                      <button className="kanban-delete" onClick={() => handleDelete(col.key, kanban.columns[col.key].indexOf(card))}>×</button>
+                      <button
+                        className="kanban-delete"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(col.key, kanban.columns[col.key].indexOf(card)); }}
+                      >×</button>
                     </div>
+
                     <p className="kanban-card-title">{card.title}</p>
                     {card.description && <p className="kanban-card-desc">{card.description}</p>}
+
+                    {/* Run badge si assigné */}
+                    {run && (
+                      <div className={`kanban-run-badge run-${run.status}`}>
+                        {PLATFORM_ICONS[run.platform] ?? '🤖'} {run.agentName}
+                        {' · '}
+                        <span className={`run-status-badge run-${run.status}`}>
+                          {{pending:'⏳', running:'⚡', done:'✅', failed:'❌'}[run.status] ?? run.status}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Bouton Assign + dropdown */}
+                    {agents.length > 0 && (
+                      <div className="kanban-assign-wrapper" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className="kanban-assign-btn"
+                          onClick={() => setOpenAssign(openAssign === card.id ? null : card.id)}
+                          title="Assigner à un agent IA"
+                        >
+                          🤖 Assigner
+                        </button>
+
+                        {openAssign === card.id && (
+                          <div className="kanban-assign-dropdown">
+                            <div className="kanban-assign-title">Choisir un agent</div>
+                            {agents.map((agent) => (
+                              <button
+                                key={agent.id}
+                                className="kanban-assign-option"
+                                onClick={() => handleAssign(card, agent)}
+                              >
+                                <span>{PLATFORM_ICONS[agent.platform] ?? '🤖'}</span>
+                                <span>{agent.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

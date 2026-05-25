@@ -118,4 +118,32 @@ function runMigrations(database: Database.Database): void {
       `ALTER TABLE plans ADD COLUMN kanban_state TEXT NOT NULL DEFAULT '{}'`
     );
   }
+
+  // Agents tables (idempotent — safe to run on existing DBs)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS agents (
+      id         TEXT PRIMARY KEY,
+      userId     TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      platform   TEXT NOT NULL,
+      api_key    TEXT NOT NULL DEFAULT '',
+      status     TEXT NOT NULL DEFAULT 'inactive',
+      lastRunAt  TEXT,
+      createdAt  TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id            TEXT PRIMARY KEY,
+      agentId       TEXT NOT NULL,
+      planId        TEXT NOT NULL,
+      cardId        TEXT NOT NULL,
+      cardTitle     TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      result        TEXT,
+      startedAt     TEXT NOT NULL,
+      completedAt   TEXT,
+      FOREIGN KEY (agentId) REFERENCES agents(id)
+    );
+  `);
 }

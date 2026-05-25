@@ -8,8 +8,9 @@ interface Props {
 }
 
 const navItems = [
-  { to: '/',    icon: '📊', label: 'Dashboard' },
-  { to: '/new', icon: '✨', label: 'New Plan'  },
+  { to: '/',       icon: '📊', label: 'Dashboard' },
+  { to: '/new',    icon: '✨', label: 'New Plan'  },
+  { to: '/agents', icon: '🤖', label: 'Agents IA' },
 ];
 
 export default function Layout({ user, onLogout }: Props) {
