@@ -63,7 +63,7 @@ export default function AgentDetailPage() {
         if (found) {
           setAgent(found);
           setEditName(found.name);
-          setEditKey(found.apiKey || '');
+          setEditKey('');
         } else {
           setError('Agent introuvable');
         }
@@ -93,7 +93,8 @@ export default function AgentDetailPage() {
     if (!agent) return;
     setSaving(true);
     setSaveMsg('');
-    const res = await updateAgent(agent.id, { name: editName, apiKey: editKey });
+    const res = await updateAgent(agent.id, { name: editName, apiKey: editKey || undefined });
+    setEditKey('');
     setSaving(false);
     if (res.success && res.data) {
       setAgent(res.data);
@@ -147,7 +148,7 @@ export default function AgentDetailPage() {
               <span className={`agent-status-badge agent-status-${agent.status}`}>
                 {agentStatusLabel(agent.status)}
               </span>
-              {!agent.apiKey && (
+              {!agent.hasApiKey && (
                 <span className="chip chip-warning">⚠️ Mode simulation</span>
               )}
             </div>
@@ -193,7 +194,7 @@ export default function AgentDetailPage() {
                 type={showKey ? 'text' : 'password'}
                 value={editKey}
                 onChange={(e) => setEditKey(e.target.value)}
-                placeholder="Clé API ou token Composio…"
+                placeholder={agent.hasApiKey ? '•••••••• (clé enregistrée — laisser vide pour conserver)' : 'Clé API ou token Composio…'}
               />
               <button
                 className="api-key-reveal"

@@ -148,13 +148,30 @@ function buildApiMessages(
     content: m.text,
   }));
 
-  // Attachments ride along with the latest user message
+  // Attachments ride along with the latest user message. PDFs become native
+  // document blocks (Claude reads them directly, including scanned pages);
+  // text files are inlined.
   if (attachments.length > 0 && messages.length > 0) {
     const last = messages[messages.length - 1];
-    const docs = attachments
-      .map((a) => `<document name="${a.name}">\n${a.content.slice(0, 20000)}\n</document>`)
-      .join('\n');
-    last.content = `${docs}\n\n${last.content}`;
+    const blocks: Anthropic.ContentBlockParam[] = [];
+
+    for (const a of attachments) {
+      if (a.type === 'pdf') {
+        blocks.push({
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: a.content },
+          title: a.name,
+        });
+      } else {
+        blocks.push({
+          type: 'text',
+          text: `<document name="${a.name}">\n${a.content.slice(0, 20000)}\n</document>`,
+        });
+      }
+    }
+
+    blocks.push({ type: 'text', text: String(last.content) });
+    last.content = blocks;
   }
 
   return messages;
@@ -167,25 +184,47 @@ export interface AgentTurnResult {
   completed: boolean;
 }
 
+/** Live events emitted while the agent works, for SSE streaming to the UI */
+export type AgentTurnEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'action'; text: string };
+
 export async function runOnboardingTurn(
   history: OnboardingChatMessage[],
   attachments: OnboardingAttachment[] = [],
+  onEvent?: (event: AgentTurnEvent) => void,
 ): Promise<AgentTurnResult> {
   const anthropic = getClient();
   const messages = buildApiMessages(history, attachments);
 
   const actions: string[] = [];
   let profile: OnboardingProfile | null = null;
-  let finalText = '';
+  // The persisted reply accumulates the text of every iteration (intro text
+  // before a tool round + final answer), matching exactly what was streamed.
+  let fullText = '';
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const response = await anthropic.messages.create({
+    let emittedSeparator = fullText === '';
+
+    const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: 2048,
       system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       tools: TOOLS,
       messages,
     });
+
+    if (onEvent) {
+      stream.on('text', (delta) => {
+        if (!emittedSeparator) {
+          emittedSeparator = true;
+          onEvent({ type: 'delta', text: '\n\n' });
+        }
+        onEvent({ type: 'delta', text: delta });
+      });
+    }
+
+    const response = await stream.finalMessage();
 
     const textBlocks = response.content.filter(
       (b): b is Anthropic.TextBlock => b.type === 'text'
@@ -194,8 +233,9 @@ export async function runOnboardingTurn(
       (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
     );
 
-    if (textBlocks.length > 0) {
-      finalText = textBlocks.map((b) => b.text).join('\n').trim();
+    const iterText = textBlocks.map((b) => b.text).join('\n').trim();
+    if (iterText) {
+      fullText = fullText ? `${fullText}\n\n${iterText}` : iterText;
     }
 
     if (response.stop_reason !== 'tool_use' || toolUses.length === 0) break;
@@ -212,7 +252,9 @@ export async function runOnboardingTurn(
           content: 'Profile saved. Tell the user it is ready and they can generate their launch plan.',
         });
       } else {
-        actions.push(describeToolAction(tool.name, tool.input));
+        const action = describeToolAction(tool.name, tool.input);
+        actions.push(action);
+        onEvent?.({ type: 'action', text: action });
         const result = await executeTool(tool.name, tool.input);
         toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
       }
@@ -221,11 +263,12 @@ export async function runOnboardingTurn(
     messages.push({ role: 'user', content: toolResults });
   }
 
-  if (!finalText) {
-    finalText = profile
+  if (!fullText) {
+    fullText = profile
       ? 'Votre profil est prêt ! Vous pouvez maintenant générer votre plan de lancement. / Your profile is ready — you can now generate your launch plan!'
       : "Désolé, je n'ai pas réussi à traiter votre message. Pouvez-vous reformuler ? / Sorry, I could not process that — could you rephrase?";
+    onEvent?.({ type: 'delta', text: fullText });
   }
 
-  return { reply: finalText, actions, profile, completed: profile !== null };
+  return { reply: fullText, actions, profile, completed: profile !== null };
 }

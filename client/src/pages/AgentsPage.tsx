@@ -155,7 +155,7 @@ function AgentCard({ agent, catalog, onToggle, onDelete }: AgentCardProps) {
 
       <div className="agent-card-meta">
         <span className="chip">{agent.platform}</span>
-        {agent.apiKey
+        {agent.hasApiKey
           ? <span className="chip chip-success">🔑 Clé API configurée</span>
           : <span className="chip chip-warning">⚠️ Mode simulation</span>
         }
@@ -257,7 +257,7 @@ export default function AgentsPage() {
         </div>
         <div className="stat-card">
           <div className="stat-value" style={{ color: 'var(--color-primary)' }}>
-            {agents.filter((a) => a.apiKey).length}
+            {agents.filter((a) => a.hasApiKey).length}
           </div>
           <div className="stat-label">Avec clé API</div>
         </div>

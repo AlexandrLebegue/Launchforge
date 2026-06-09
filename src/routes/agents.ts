@@ -14,6 +14,15 @@ const router = Router();
 // Toutes les routes agents nécessitent une authentification
 router.use(requireAuth);
 
+/**
+ * La clé API ne quitte JAMAIS le serveur. Le client ne reçoit qu'un booléen
+ * hasApiKey (la clé est par ailleurs chiffrée au repos, voir secrets.ts).
+ */
+function sanitizeAgent(agent: Agent): Omit<Agent, 'apiKey'> & { hasApiKey: boolean } {
+  const { apiKey, ...rest } = agent;
+  return { ...rest, hasApiKey: Boolean(apiKey) };
+}
+
 // ── GET /api/agents/catalog ──────────────────────────────────────────────────
 // Retourne les 10 templates de plateforme (sans auth nécessaire une fois connecté)
 router.get('/catalog', (_req: Request, res: Response) => {
@@ -23,7 +32,7 @@ router.get('/catalog', (_req: Request, res: Response) => {
 // ── GET /api/agents ──────────────────────────────────────────────────────────
 router.get('/', (req: Request, res: Response) => {
   const agents = storage.getAgentsByUserId(req.user!.userId);
-  res.json({ success: true, data: agents });
+  res.json({ success: true, data: agents.map(sanitizeAgent) });
 });
 
 // ── POST /api/agents ─────────────────────────────────────────────────────────
@@ -56,7 +65,7 @@ router.post('/', (req: Request, res: Response) => {
   };
 
   storage.saveAgent(agent);
-  res.status(201).json({ success: true, data: agent });
+  res.status(201).json({ success: true, data: sanitizeAgent(agent) });
 });
 
 // ── GET /api/agents/:id ──────────────────────────────────────────────────────
@@ -65,7 +74,7 @@ router.get('/:id', (req: Request, res: Response) => {
   if (!agent || agent.userId !== req.user!.userId) {
     return res.status(404).json({ success: false, error: 'Agent not found' });
   }
-  res.json({ success: true, data: agent });
+  res.json({ success: true, data: sanitizeAgent(agent) });
 });
 
 // ── PATCH /api/agents/:id ────────────────────────────────────────────────────
@@ -76,10 +85,16 @@ router.patch('/:id', (req: Request, res: Response) => {
   }
 
   const { name, apiKey, status } = req.body as Partial<Pick<Agent, 'name' | 'apiKey' | 'status'>>;
-  storage.updateAgent(req.params.id, { name, apiKey, status });
+  // Une chaîne vide signifie "ne pas toucher à la clé" (le client ne la
+  // connaît pas) ; pour révoquer une clé, supprimer puis recréer l'agent.
+  storage.updateAgent(req.params.id, {
+    name,
+    apiKey: apiKey ? apiKey : undefined,
+    status,
+  });
 
   const updated = storage.getAgentById(req.params.id);
-  res.json({ success: true, data: updated });
+  res.json({ success: true, data: updated ? sanitizeAgent(updated) : null });
 });
 
 // ── DELETE /api/agents/:id ───────────────────────────────────────────────────

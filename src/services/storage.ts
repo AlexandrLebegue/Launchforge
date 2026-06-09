@@ -11,6 +11,7 @@
  */
 
 import { getDb } from '../db';
+import { encryptSecret, decryptSecret } from './secrets';
 import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession } from '../types';
 
 export class Storage {
@@ -241,7 +242,7 @@ export class Storage {
         agent.userId,
         agent.name,
         agent.platform,
-        agent.apiKey,
+        encryptSecret(agent.apiKey),
         agent.status,
         agent.lastRunAt,
         agent.createdAt
@@ -267,7 +268,7 @@ export class Storage {
     const vals: any[]      = [];
 
     if (patch.name      !== undefined) { fields.push('name = ?');      vals.push(patch.name); }
-    if (patch.apiKey    !== undefined) { fields.push('api_key = ?');   vals.push(patch.apiKey); }
+    if (patch.apiKey    !== undefined) { fields.push('api_key = ?');   vals.push(encryptSecret(patch.apiKey)); }
     if (patch.status    !== undefined) { fields.push('status = ?');    vals.push(patch.status); }
     if (patch.lastRunAt !== undefined) { fields.push('lastRunAt = ?'); vals.push(patch.lastRunAt); }
 
@@ -332,7 +333,7 @@ export class Storage {
       userId:    row.userId,
       name:      row.name,
       platform:  row.platform,
-      apiKey:    row.api_key,
+      apiKey:    decryptSecret(row.api_key),
       status:    row.status,
       lastRunAt: row.lastRunAt ?? null,
       createdAt: row.createdAt,

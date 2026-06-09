@@ -24,7 +24,9 @@ export interface CompanyProfile {
 
 export interface OnboardingAttachment {
   name: string;
+  /** Texte brut, ou base64 pour les PDF */
   content: string;
+  type?: 'text' | 'pdf';
 }
 
 export interface OnboardingChatMessage {

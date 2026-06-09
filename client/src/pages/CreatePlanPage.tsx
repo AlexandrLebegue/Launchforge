@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   startOnboarding,
   getOnboardingSession,
-  sendOnboardingMessage,
+  streamOnboardingMessage,
   createPlan,
   OnboardingSession,
   OnboardingAttachment,
@@ -11,8 +11,22 @@ import {
 } from '../api/client';
 
 const SESSION_KEY = 'launchforge_onboarding_session';
-const MAX_FILE_BYTES = 100_000;
+const MAX_TEXT_BYTES = 100_000;
+const MAX_PDF_BYTES = 8_000_000;
 const TEXT_EXTENSIONS = ['.txt', '.md', '.csv', '.json', '.html'];
+const ACCEPTED_EXTENSIONS = [...TEXT_EXTENSIONS, '.pdf'];
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      resolve(dataUrl.slice(dataUrl.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 /** Minimal markdown: **bold**, _italic_, line breaks */
 function renderText(text: string) {
@@ -50,6 +64,8 @@ export default function CreatePlanPage() {
   const [input,       setInput]       = useState('');
   const [pendingDocs, setPendingDocs] = useState<OnboardingAttachment[]>([]);
   const [sending,     setSending]     = useState(false);
+  const [streamText,    setStreamText]    = useState('');
+  const [streamActions, setStreamActions] = useState<string[]>([]);
   const [generating,  setGenerating]  = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
@@ -58,7 +74,7 @@ export default function CreatePlanPage() {
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [session?.messages.length, sending]);
+  }, [session?.messages.length, sending, streamText, streamActions.length]);
 
   useEffect(() => {
     (async () => {
@@ -92,16 +108,21 @@ export default function CreatePlanPage() {
     const docs: OnboardingAttachment[] = [...pendingDocs];
     for (const file of files) {
       const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-      if (!TEXT_EXTENSIONS.includes(ext)) {
-        setError(`Format non supporté : ${file.name}. Formats acceptés : ${TEXT_EXTENSIONS.join(', ')} (copiez-collez le texte d'un PDF directement dans le chat).`);
-        continue;
+      if (ext === '.pdf') {
+        if (file.size > MAX_PDF_BYTES) {
+          setError(`${file.name} dépasse 8 Mo — réduisez le PDF ou copiez-collez les passages importants.`);
+          continue;
+        }
+        docs.push({ name: file.name, content: await readAsBase64(file), type: 'pdf' });
+      } else if (TEXT_EXTENSIONS.includes(ext)) {
+        if (file.size > MAX_TEXT_BYTES) {
+          setError(`${file.name} dépasse 100 Ko — copiez-collez les passages importants.`);
+          continue;
+        }
+        docs.push({ name: file.name, content: await file.text(), type: 'text' });
+      } else {
+        setError(`Format non supporté : ${file.name}. Formats acceptés : ${ACCEPTED_EXTENSIONS.join(', ')}.`);
       }
-      if (file.size > MAX_FILE_BYTES) {
-        setError(`${file.name} dépasse 100 Ko — copiez-collez les passages importants.`);
-        continue;
-      }
-      const content = await file.text();
-      docs.push({ name: file.name, content });
     }
     setPendingDocs(docs.slice(0, 3));
   };
@@ -115,6 +136,8 @@ export default function CreatePlanPage() {
     setError(null);
     setSending(true);
     setInput('');
+    setStreamText('');
+    setStreamActions([]);
     const docs = pendingDocs;
     setPendingDocs([]);
 
@@ -127,19 +150,27 @@ export default function CreatePlanPage() {
       ],
     });
 
-    const res = await sendOnboardingMessage(session.id, text, docs);
-    setSending(false);
-
-    if (res.success && res.data) {
-      setSession(res.data);
-      if (res.data.status === 'completed') localStorage.removeItem(SESSION_KEY);
-    } else {
-      setError(res.error || "L'assistant n'a pas répondu — réessayez.");
-      // Restore so the user can retry the same message
-      setInput(text);
-      setPendingDocs(docs);
-      setSession((s) => s && { ...s, messages: s.messages.slice(0, -1) });
-    }
+    await streamOnboardingMessage(session.id, text, docs, {
+      onDelta:  (t) => setStreamText((prev) => prev + t),
+      onAction: (a) => setStreamActions((prev) => [...prev, a]),
+      onDone: (finalSession) => {
+        setSending(false);
+        setStreamText('');
+        setStreamActions([]);
+        setSession(finalSession);
+        if (finalSession.status === 'completed') localStorage.removeItem(SESSION_KEY);
+      },
+      onError: (err) => {
+        setSending(false);
+        setStreamText('');
+        setStreamActions([]);
+        setError(err || "L'assistant n'a pas répondu — réessayez.");
+        // Restore so the user can retry the same message
+        setInput(text);
+        setPendingDocs(docs);
+        setSession((s) => s && { ...s, messages: s.messages.slice(0, -1) });
+      },
+    });
   };
 
   const handleGenerate = async () => {
@@ -213,10 +244,20 @@ export default function CreatePlanPage() {
                 </Fragment>
               ))}
 
+              {sending && streamActions.length > 0 && (
+                <div className="chat-actions">
+                  {streamActions.map((a, j) => (
+                    <span key={j} className="chat-action-chip">{a}</span>
+                  ))}
+                </div>
+              )}
+
               {sending && (
                 <div className="chat-msg chat-msg-bot">
                   <div className="chat-avatar">🤖</div>
-                  <div className="chat-bubble-thinking"><span /><span /><span /></div>
+                  {streamText
+                    ? <div className="chat-bubble bot">{renderText(streamText)}<span className="chat-cursor">▋</span></div>
+                    : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
                 </div>
               )}
 
@@ -256,7 +297,7 @@ export default function CreatePlanPage() {
                 <input
                   ref={fileRef}
                   type="file"
-                  accept={TEXT_EXTENSIONS.join(',')}
+                  accept={ACCEPTED_EXTENSIONS.join(',')}
                   multiple
                   style={{ display: 'none' }}
                   onChange={handleFiles}
@@ -264,7 +305,7 @@ export default function CreatePlanPage() {
                 <button
                   type="button"
                   className="btn chat-attach-btn"
-                  title="Joindre un document (txt, md, csv, json, html)"
+                  title="Joindre un document (pdf, txt, md, csv, json, html)"
                   onClick={() => fileRef.current?.click()}
                   disabled={sending}
                 >📎</button>

@@ -174,7 +174,9 @@ export async function getPlan(
 
 export interface OnboardingAttachment {
   name: string;
+  /** Texte brut, ou base64 pour les PDF */
   content: string;
+  type?: 'text' | 'pdf';
 }
 
 export interface OnboardingChatMessage {
@@ -222,6 +224,82 @@ export async function sendOnboardingMessage(
     method: 'POST',
     body: JSON.stringify({ message, attachments }),
   });
+}
+
+export interface OnboardingStreamHandlers {
+  onDelta: (text: string) => void;
+  onAction: (text: string) => void;
+  onDone: (session: OnboardingSession) => void;
+  onError: (error: string) => void;
+}
+
+/**
+ * Streaming version of sendOnboardingMessage — consumes the SSE response so
+ * the reply appears token by token and web searches show up live.
+ */
+export async function streamOnboardingMessage(
+  id: string,
+  message: string,
+  attachments: OnboardingAttachment[],
+  handlers: OnboardingStreamHandlers
+): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let res: globalThis.Response;
+  try {
+    res = await fetch(`${API_BASE}/onboarding/${id}/message/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, attachments }),
+    });
+  } catch {
+    handlers.onError('Connexion au serveur impossible');
+    return;
+  }
+
+  if (!res.ok || !res.body) {
+    try {
+      const json = await res.json();
+      handlers.onError(json.error || `Erreur serveur (${res.status})`);
+    } catch {
+      handlers.onError(`Erreur serveur (${res.status})`);
+    }
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finished = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+
+    for (const event of events) {
+      const line = event.split('\n').find((l) => l.startsWith('data: '));
+      if (!line) continue;
+      try {
+        const payload = JSON.parse(line.slice(6));
+        if (payload.type === 'delta') handlers.onDelta(payload.text);
+        else if (payload.type === 'action') handlers.onAction(payload.text);
+        else if (payload.type === 'done') { finished = true; handlers.onDone(payload.session); }
+        else if (payload.type === 'error') { finished = true; handlers.onError(payload.error); }
+      } catch {
+        // malformed chunk — skip
+      }
+    }
+  }
+
+  if (!finished) {
+    handlers.onError('La connexion a été interrompue — réessayez.');
+  }
 }
 
 export interface ResearchResult {
@@ -287,7 +365,8 @@ export interface Agent {
   userId: string;
   name: string;
   platform: AgentPlatform;
-  apiKey: string;
+  /** La clé API n'est jamais renvoyée par le serveur — uniquement ce booléen */
+  hasApiKey: boolean;
   status: AgentStatus;
   lastRunAt: string | null;
   createdAt: string;
@@ -329,7 +408,10 @@ export async function createAgent(data: {
   return request('/agents', { method: 'POST', body: JSON.stringify(data) });
 }
 
-export async function updateAgent(id: string, data: Partial<Pick<Agent, 'name' | 'apiKey' | 'status'>>): Promise<ApiResponse<Agent>> {
+export async function updateAgent(
+  id: string,
+  data: { name?: string; apiKey?: string; status?: AgentStatus }
+): Promise<ApiResponse<Agent>> {
   return request(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
 

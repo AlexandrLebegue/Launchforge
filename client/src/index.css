@@ -1528,6 +1528,14 @@ form .btn { margin-top: 8px; }
   color: #ef4444;
 }
 
+.chat-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 1s steps(1) infinite;
+  color: var(--color-primary);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
 .chat-generate-cta {
   display: flex;
   gap: 10px;

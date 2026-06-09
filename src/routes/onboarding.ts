@@ -65,18 +65,11 @@ router.get('/:id', requireAuth, (req: Request, res: Response) => {
   res.json({ success: true, data: session } satisfies ApiResponse<OnboardingSession>);
 });
 
-// Send a user message (optionally with attached documents) and get the AI reply
-router.post('/:id/message', requireAuth, async (req: Request, res: Response) => {
-  if (!isAgentConfigured()) return notConfigured(res);
-
-  const session = loadOwnedSession(req, res);
-  if (!session) return;
-
-  if (session.status === 'completed') {
-    res.status(400).json({ success: false, error: 'This onboarding is already completed' });
-    return;
-  }
-
+/** Validate the message payload; sends the error response itself on failure */
+function parseMessageBody(
+  req: Request,
+  res: Response,
+): { text: string; docs: OnboardingAttachment[] } | null {
   const { message, attachments } = req.body as {
     message?: string;
     attachments?: OnboardingAttachment[];
@@ -91,26 +84,50 @@ router.post('/:id/message', requireAuth, async (req: Request, res: Response) => 
 
   if (!text && docs.length === 0) {
     res.status(400).json({ success: false, error: 'message or attachments required' });
+    return null;
+  }
+  return { text, docs };
+}
+
+function applyTurn(
+  session: OnboardingSession,
+  turn: Awaited<ReturnType<typeof runOnboardingTurn>>,
+): void {
+  session.messages.push({
+    role: 'assistant',
+    text: turn.reply,
+    actions: turn.actions.length > 0 ? turn.actions : undefined,
+  });
+  if (turn.completed && turn.profile) {
+    session.status = 'completed';
+    session.profile = turn.profile;
+  }
+  session.updatedAt = new Date().toISOString();
+  storage.updateOnboardingSession(session);
+}
+
+// Send a user message (optionally with attached documents) and get the AI reply
+router.post('/:id/message', requireAuth, async (req: Request, res: Response) => {
+  if (!isAgentConfigured()) return notConfigured(res);
+
+  const session = loadOwnedSession(req, res);
+  if (!session) return;
+
+  if (session.status === 'completed') {
+    res.status(400).json({ success: false, error: 'This onboarding is already completed' });
     return;
   }
+
+  const parsed = parseMessageBody(req, res);
+  if (!parsed) return;
+  const { text, docs } = parsed;
 
   const userText = text || `(document joint : ${docs.map((d) => d.name).join(', ')})`;
   session.messages.push({ role: 'user', text: userText });
 
   try {
     const turn = await runOnboardingTurn(session.messages, docs);
-
-    session.messages.push({
-      role: 'assistant',
-      text: turn.reply,
-      actions: turn.actions.length > 0 ? turn.actions : undefined,
-    });
-    if (turn.completed && turn.profile) {
-      session.status = 'completed';
-      session.profile = turn.profile;
-    }
-    session.updatedAt = new Date().toISOString();
-    storage.updateOnboardingSession(session);
+    applyTurn(session, turn);
 
     const response: ApiResponse<OnboardingSession> = { success: true, data: session };
     res.json(response);
@@ -122,6 +139,50 @@ router.post('/:id/message', requireAuth, async (req: Request, res: Response) => 
       error: err instanceof Error ? err.message : 'AI request failed',
     };
     res.status(502).json(response);
+  }
+});
+
+// Same as /message but streams the reply over Server-Sent Events:
+//   data: {"type":"action","text":"🔍 ..."}   — a web search/fetch the agent runs
+//   data: {"type":"delta","text":"..."}        — text chunk of the reply
+//   data: {"type":"done","session":{...}}      — final persisted session
+//   data: {"type":"error","error":"..."}       — turn failed (nothing persisted)
+router.post('/:id/message/stream', requireAuth, async (req: Request, res: Response) => {
+  if (!isAgentConfigured()) return notConfigured(res);
+
+  const session = loadOwnedSession(req, res);
+  if (!session) return;
+
+  if (session.status === 'completed') {
+    res.status(400).json({ success: false, error: 'This onboarding is already completed' });
+    return;
+  }
+
+  const parsed = parseMessageBody(req, res);
+  if (!parsed) return;
+  const { text, docs } = parsed;
+
+  const userText = text || `(document joint : ${docs.map((d) => d.name).join(', ')})`;
+  session.messages.push({ role: 'user', text: userText });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (payload: unknown) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  try {
+    const turn = await runOnboardingTurn(session.messages, docs, send);
+    applyTurn(session, turn);
+    send({ type: 'done', session });
+  } catch (err) {
+    session.messages.pop();
+    send({ type: 'error', error: err instanceof Error ? err.message : 'AI request failed' });
+  } finally {
+    res.end();
   }
 });
 
