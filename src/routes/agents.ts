@@ -170,7 +170,7 @@ router.post('/:id/runs', async (req: Request, res: Response) => {
     createdAt:   new Date().toISOString(),
   };
 
-  executeAgentRun(agent, card)
+  executeAgentRun(agent, card, planId)
     .then((result) => {
       storage.updateRunStatus(run.id, 'done', result);
       storage.updateAgent(agent.id, {

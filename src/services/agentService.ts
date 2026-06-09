@@ -6,7 +6,9 @@
  * sur la plateforme (post, tweet, message, etc.).
  */
 
-import { Agent, AgentPlatform, AgentTemplate, KanbanCard } from '../types';
+import Anthropic from '@anthropic-ai/sdk';
+import { storage } from './storage';
+import { Agent, AgentPlatform, AgentTemplate, KanbanCard, LaunchPlan } from '../types';
 
 // ── Catalogue ────────────────────────────────────────────────────────────────
 
@@ -96,20 +98,24 @@ export function getCatalogByPlatform(platform: AgentPlatform): AgentTemplate | u
 /**
  * Exécute une tâche Kanban via l'agent.
  *
- * Si COMPOSIO_API_KEY est présent, l'appel réel sera envoyé à Composio.
- * Sinon, on simule l'exécution pour le développement local.
+ * 1. Si ANTHROPIC_API_KEY est présente : Claude rédige le contenu réel, prêt
+ *    à publier, adapté à la plateforme et au produit du plan.
+ * 2. Si COMPOSIO_API_KEY + clé de l'agent : tentative de publication via
+ *    Composio en plus du brouillon.
+ * 3. Sans aucune clé : message expliquant comment activer la rédaction.
  *
- * Retourne un message de résultat (succès ou erreur).
+ * Retourne le résultat affiché dans l'historique des runs.
  */
-export async function executeAgentRun(agent: Agent, card: KanbanCard): Promise<string> {
+export async function executeAgentRun(agent: Agent, card: KanbanCard, planId?: string): Promise<string> {
   const template = getCatalogByPlatform(agent.platform);
+  const plan = planId ? storage.getPlan(planId) : undefined;
+
+  const draft = await draftContent(agent, card, template, plan);
+
+  // ── Publication via Composio (si configuré) ───────────────────────────────
   const composioKey = process.env.COMPOSIO_API_KEY;
-
-  // ── Mode Composio (production) ────────────────────────────────────────────
-  if (composioKey && template) {
+  if (composioKey && agent.apiKey && template && draft) {
     try {
-      const prompt = buildPrompt(agent, card, template);
-
       const response = await fetch('https://backend.composio.dev/api/v1/actions/execute/CLAUDE', {
         method: 'POST',
         headers: {
@@ -120,40 +126,98 @@ export async function executeAgentRun(agent: Agent, card: KanbanCard): Promise<s
           appName:    template.composioApp,
           entityId:   agent.userId,
           authConfig: { api_key: agent.apiKey },
-          input:      { prompt },
+          input:      { prompt: draft },
         }),
       });
 
       if (!response.ok) {
         const txt = await response.text();
-        throw new Error(`Composio ${response.status}: ${txt}`);
+        return `⚠️ Publication Composio échouée (${response.status}: ${txt.slice(0, 200)}) — voici le contenu à publier manuellement :\n\n${draft}`;
       }
 
       const data = await response.json() as any;
-      return data?.data?.output || data?.output || '✅ Action exécutée avec succès';
+      const output = data?.data?.output || data?.output || 'Action exécutée';
+      return `✅ Publié via Composio : ${output}\n\n— Contenu publié —\n${draft}`;
     } catch (err: any) {
-      throw new Error(`Composio error: ${err.message}`);
+      return `⚠️ Publication Composio échouée (${err.message}) — voici le contenu à publier manuellement :\n\n${draft}`;
     }
   }
 
-  // ── Mode simulation (dev sans clé Composio) ───────────────────────────────
-  await new Promise((r) => setTimeout(r, 800)); // simule la latence réseau
+  if (draft) {
+    return `📝 Contenu prêt à publier sur ${template?.name ?? agent.platform} (copier-coller) :\n\n${draft}`;
+  }
 
-  const platform = template?.name ?? agent.platform;
-  return `[SIMULATION] Agent ${platform} — tâche "${card.title}" prise en charge. Connectez votre clé API ${agent.platform.toUpperCase()} dans les paramètres de l'agent pour activer les actions réelles.`;
+  return `Aucune IA configurée (ANTHROPIC_API_KEY manquante) — impossible de rédiger le contenu pour "${card.title}". Configurez la clé côté serveur pour activer la rédaction automatique.`;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Rédaction du contenu par Claude ──────────────────────────────────────────
 
-function buildPrompt(agent: Agent, card: KanbanCard, template: AgentTemplate): string {
-  return `Tu es un agent marketing spécialisé sur ${template.name}.
+const MODEL = 'claude-opus-4-8';
+let anthropicClient: Anthropic | null = null;
 
-Tâche assignée : ${card.title}
-Contexte : ${card.description}
+function getAnthropic(): Anthropic | null {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return anthropicClient;
+}
+
+const PLATFORM_GUIDELINES: Partial<Record<AgentPlatform, string>> = {
+  reddit:       'Format Reddit : titre accrocheur + corps de post authentique, pas de ton publicitaire (les subreddits détestent ça), apporte de la valeur avant de mentionner le produit. Suggère 2-3 subreddits pertinents.',
+  twitter:      'Format X/Twitter : tweet unique ≤ 280 caractères OU thread de 3-5 tweets numérotés. Accroche forte en premier tweet, hashtags pertinents (2 max).',
+  linkedin:     'Format LinkedIn : post professionnel avec accroche en première ligne, paragraphes courts, storytelling, call-to-action final. 1300 caractères max.',
+  instagram:    'Format Instagram : légende engageante avec emojis, hashtags en fin (10-15), suggestion du visuel à créer.',
+  producthunt:  'Format Product Hunt : tagline (60 car. max), description du produit, premier commentaire du maker (authentique, raconte le pourquoi).',
+  hackernews:   'Format Hacker News : titre Show HN sobre et factuel, texte de présentation technique et honnête, sans marketing. HN déteste le hype.',
+  indiehackers: 'Format Indie Hackers : post de milestone ou de partage d\'expérience, chiffres concrets, leçons apprises, ton transparent.',
+  discord:      'Format Discord : message court et conversationnel, adapté à un canal communautaire, pas de spam.',
+  slack:        'Format Slack : message concis et utile pour un workspace communautaire.',
+  github:       'Format GitHub : texte de README/release notes ou issue/discussion, technique et précis.',
+};
+
+async function draftContent(
+  agent: Agent,
+  card: KanbanCard,
+  template: AgentTemplate | undefined,
+  plan: LaunchPlan | undefined,
+): Promise<string | null> {
+  const anthropic = getAnthropic();
+  if (!anthropic) return null;
+
+  const productContext = plan
+    ? `Produit : ${plan.input.productName}
+Description : ${plan.input.description}
+Audience cible : ${plan.input.targetAudience}
+Niche : ${plan.input.niche}
+Prix : ${plan.input.pricing}${plan.input.company ? `
+Entreprise : ${plan.input.company.name}${plan.input.company.website ? ` (${plan.input.company.website})` : ''}` : ''}`
+    : 'Produit : (contexte indisponible — reste générique mais actionnable)';
+
+  const guidelines = PLATFORM_GUIDELINES[agent.platform] || `Adapte le contenu aux codes de la plateforme ${agent.platform}.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 1500,
+      system: `Tu rédiges du contenu de promotion prêt à publier pour des startups. Tu écris dans la langue du contexte produit (français si la description est en français). Tu produis UNIQUEMENT le contenu final, sans préambule ni commentaire. ${guidelines}`,
+      messages: [{
+        role: 'user',
+        content: `${productContext}
+
+Tâche du plan de lancement : ${card.title}
+Détails : ${card.description || '—'}
 Catégorie : ${card.category}
-Effort estimé : ${card.effort}
 
-Effectue cette action sur ${template.name} de manière professionnelle et engageante.
-Adapte le ton à la plateforme ${agent.platform}.
-Sois concis et percutant.`;
+Rédige le contenu correspondant pour ${template?.name ?? agent.platform}.`,
+      }],
+    });
+
+    const text = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n')
+      .trim();
+    return text || null;
+  } catch {
+    return null;
+  }
 }
