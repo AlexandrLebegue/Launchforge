@@ -6,8 +6,8 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
-import { getCatalog, executeAgentRun } from '../services/agentService';
-import { Agent, AgentRun, AgentPlatform } from '../types';
+import { getCatalog, processAgentRun } from '../services/agentService';
+import { Agent, AgentRun, AgentPlatform, ApprovalMode } from '../types';
 
 const router = Router();
 
@@ -37,10 +37,11 @@ router.get('/', (req: Request, res: Response) => {
 
 // ── POST /api/agents ─────────────────────────────────────────────────────────
 router.post('/', (req: Request, res: Response) => {
-  const { platform, name, apiKey } = req.body as {
+  const { platform, name, apiKey, approvalMode } = req.body as {
     platform: AgentPlatform;
     name?: string;
     apiKey?: string;
+    approvalMode?: ApprovalMode;
   };
 
   if (!platform) {
@@ -54,14 +55,15 @@ router.post('/', (req: Request, res: Response) => {
   }
 
   const agent: Agent = {
-    id:        uuid(),
-    userId:    req.user!.userId,
-    name:      name || template.name,
+    id:           uuid(),
+    userId:       req.user!.userId,
+    name:         name || template.name,
     platform,
-    apiKey:    apiKey || '',
-    status:    apiKey ? 'active' : 'inactive',
-    lastRunAt: null,
-    createdAt: new Date().toISOString(),
+    apiKey:       apiKey || '',
+    status:       'active',
+    approvalMode: approvalMode === 'auto' ? 'auto' : 'manual',
+    lastRunAt:    null,
+    createdAt:    new Date().toISOString(),
   };
 
   storage.saveAgent(agent);
@@ -84,13 +86,14 @@ router.patch('/:id', (req: Request, res: Response) => {
     return res.status(404).json({ success: false, error: 'Agent not found' });
   }
 
-  const { name, apiKey, status } = req.body as Partial<Pick<Agent, 'name' | 'apiKey' | 'status'>>;
+  const { name, apiKey, status, approvalMode } = req.body as Partial<Pick<Agent, 'name' | 'apiKey' | 'status' | 'approvalMode'>>;
   // Une chaîne vide signifie "ne pas toucher à la clé" (le client ne la
   // connaît pas) ; pour révoquer une clé, supprimer puis recréer l'agent.
   storage.updateAgent(req.params.id, {
     name,
     apiKey: apiKey ? apiKey : undefined,
     status,
+    approvalMode: approvalMode === 'auto' || approvalMode === 'manual' ? approvalMode : undefined,
   });
 
   const updated = storage.getAgentById(req.params.id);
@@ -158,7 +161,7 @@ router.post('/:id/runs', async (req: Request, res: Response) => {
   // Répondre immédiatement avec le run en status "running"
   res.status(202).json({ success: true, data: run });
 
-  // Exécution asynchrone (fire-and-forget)
+  // Pipeline asynchrone : rédaction → publication auto OU mise en validation
   const card = {
     id:          cardId,
     title:       cardTitle,
@@ -170,18 +173,10 @@ router.post('/:id/runs', async (req: Request, res: Response) => {
     createdAt:   new Date().toISOString(),
   };
 
-  executeAgentRun(agent, card, planId)
-    .then((result) => {
-      storage.updateRunStatus(run.id, 'done', result);
-      storage.updateAgent(agent.id, {
-        status:    'active',
-        lastRunAt: new Date().toISOString(),
-      });
-    })
-    .catch((err: Error) => {
-      storage.updateRunStatus(run.id, 'failed', err.message);
-      storage.updateAgent(agent.id, { status: 'error' });
-    });
+  processAgentRun(run.id, agent, card, planId).catch((err: Error) => {
+    storage.updateRunStatus(run.id, 'failed', err.message);
+    storage.updateAgent(agent.id, { status: 'error' });
+  });
 });
 
 export default router;

@@ -1588,8 +1588,250 @@ form .btn { margin-top: 8px; }
 }
 
 /* ============================================================
+   PIPELINE DE VALIDATION (Validations / approvals)
+   ============================================================ */
+.layout-nav-badge {
+  margin-left: auto;
+  background: #f59e0b;
+  color: #1c1206;
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.approval-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  border-radius: var(--radius-xl);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.approval-banner:hover {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.6);
+}
+.approval-banner-icon { font-size: 1.3rem; }
+.approval-banner-cta {
+  margin-left: auto;
+  font-weight: 700;
+  color: #f59e0b;
+  white-space: nowrap;
+}
+
+.approvals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.approval-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 18px;
+  box-shadow: var(--shadow-card);
+}
+.approval-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.approval-agent {
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+.approval-task {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 3px 12px;
+}
+.approval-date {
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+  margin-left: auto;
+}
+.approval-content {
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  resize: vertical;
+}
+.approval-content:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+.approval-edited-hint {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: #f59e0b;
+}
+.approval-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.approval-feedback {
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+/* Sélecteur de mode (création / paramètres d'agent) */
+.approval-mode-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.approval-mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.approval-mode-option:hover { border-color: var(--color-primary); }
+.approval-mode-option.selected {
+  border-color: var(--color-primary);
+  background: rgba(99, 102, 241, 0.08);
+}
+.approval-mode-title { font-size: 0.83rem; font-weight: 700; }
+.approval-mode-desc  { font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.4; }
+
+.kanban-mode-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.kanban-mode-badge.mode-auto   { background: rgba(74, 222, 128, 0.12); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.3); }
+.kanban-mode-badge.mode-manual { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+.stat-card-clickable { cursor: pointer; transition: border-color 0.15s ease; }
+.stat-card-clickable:hover { border-color: var(--color-primary); }
+.stat-card-sub { font-size: 0.9rem; color: var(--color-text-muted); font-weight: 500; }
+
+/* ============================================================
    KANBAN BOARD
    ============================================================ */
+.kanban-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.kanban-search {
+  flex: 1 1 220px;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.kanban-search:focus { outline: none; border-color: var(--color-primary); }
+.kanban-select {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.kanban-clear-filters {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.kanban-clear-filters:hover { color: var(--color-text); border-color: var(--color-primary); }
+
+.kanban-col-over {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+}
+.kanban-dragging { opacity: 0.4; }
+.kanban-col-empty {
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+  font-style: italic;
+  text-align: center;
+  padding: 14px 6px;
+}
+.kanban-add-form textarea {
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  resize: vertical;
+}
+.kanban-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.kanban-add-row select { flex: 1; min-width: 0; }
+.kanban-assign-name { flex: 1; text-align: left; }
+.run-awaiting_approval {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: #f59e0b !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+  text-decoration: none;
+  cursor: pointer;
+}
+.run-rejected {
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+}
+
 .kanban-filters {
   display: flex;
   flex-wrap: wrap;

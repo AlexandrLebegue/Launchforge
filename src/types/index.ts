@@ -192,7 +192,9 @@ export type AgentPlatform =
   | 'github';
 
 export type AgentStatus = 'active' | 'inactive' | 'error';
-export type RunStatus   = 'pending' | 'running' | 'done' | 'failed';
+export type RunStatus   = 'pending' | 'running' | 'awaiting_approval' | 'done' | 'failed' | 'rejected';
+/** Pipeline de validation : publication immédiate ou validation par l'utilisateur */
+export type ApprovalMode = 'auto' | 'manual';
 
 export interface Agent {
   id: string;
@@ -201,6 +203,7 @@ export interface Agent {
   platform: AgentPlatform;
   apiKey: string;
   status: AgentStatus;
+  approvalMode: ApprovalMode;
   lastRunAt: string | null;
   createdAt: string;
 }
@@ -215,6 +218,12 @@ export interface AgentRun {
   result: string | null;
   startedAt: string;
   completedAt: string | null;
+}
+
+/** Run en attente de validation, enrichi des infos de l'agent (page Validations) */
+export interface ApprovalItem extends AgentRun {
+  agentName: string;
+  agentPlatform: AgentPlatform;
 }
 
 export interface AgentTemplate {

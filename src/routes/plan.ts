@@ -69,6 +69,19 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
   }
 });
 
+// Runs des agents pour ce plan (badges temps réel sur le Kanban)
+router.get('/:id/runs', requireAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const user = req.user as AuthPayload;
+  const plan = getLaunchPlan(id);
+  if (!plan || plan.userId !== user.userId) {
+    const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
+    res.status(404).json(response);
+    return;
+  }
+  res.json({ success: true, data: storage.getRunsByPlanId(id) });
+});
+
 router.patch('/:id/kanban', requireAuth, (req: Request, res: Response) => {
   try {
     const { id } = req.params;

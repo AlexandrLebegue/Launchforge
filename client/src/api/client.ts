@@ -358,7 +358,9 @@ export type AgentPlatform =
   | 'discord' | 'slack' | 'github';
 
 export type AgentStatus = 'active' | 'inactive' | 'error';
-export type RunStatus   = 'pending' | 'running' | 'done' | 'failed';
+export type RunStatus   = 'pending' | 'running' | 'awaiting_approval' | 'done' | 'failed' | 'rejected';
+/** Pipeline : publication immédiate ('auto') ou validation utilisateur ('manual') */
+export type ApprovalMode = 'auto' | 'manual';
 
 export interface Agent {
   id: string;
@@ -368,6 +370,7 @@ export interface Agent {
   /** La clé API n'est jamais renvoyée par le serveur — uniquement ce booléen */
   hasApiKey: boolean;
   status: AgentStatus;
+  approvalMode: ApprovalMode;
   lastRunAt: string | null;
   createdAt: string;
 }
@@ -404,13 +407,14 @@ export async function createAgent(data: {
   platform: AgentPlatform;
   name?: string;
   apiKey?: string;
+  approvalMode?: ApprovalMode;
 }): Promise<ApiResponse<Agent>> {
   return request('/agents', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function updateAgent(
   id: string,
-  data: { name?: string; apiKey?: string; status?: AgentStatus }
+  data: { name?: string; apiKey?: string; status?: AgentStatus; approvalMode?: ApprovalMode }
 ): Promise<ApiResponse<Agent>> {
   return request(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }
@@ -421,6 +425,42 @@ export async function deleteAgent(id: string): Promise<ApiResponse<null>> {
 
 export async function getAgentRuns(agentId: string): Promise<ApiResponse<AgentRun[]>> {
   return request(`/agents/${agentId}/runs`);
+}
+
+/** Runs des agents pour un plan (badges temps réel sur le Kanban) */
+export async function getPlanRuns(planId: string): Promise<ApiResponse<AgentRun[]>> {
+  return request(`/plan/${planId}/runs`);
+}
+
+// ── Validations (pipeline d'approbation) ─────────────────────────────────────
+
+export interface ApprovalItem extends AgentRun {
+  agentName: string;
+  agentPlatform: AgentPlatform;
+}
+
+export async function getApprovals(): Promise<ApiResponse<ApprovalItem[]>> {
+  return request('/approvals');
+}
+
+export async function approveRun(
+  runId: string,
+  content?: string
+): Promise<ApiResponse<AgentRun>> {
+  return request(`/approvals/${runId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(content ? { content } : {}),
+  });
+}
+
+export async function rejectRun(
+  runId: string,
+  reason?: string
+): Promise<ApiResponse<AgentRun>> {
+  return request(`/approvals/${runId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
 }
 
 export async function assignCardToAgent(

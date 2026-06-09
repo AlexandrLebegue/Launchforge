@@ -234,8 +234,8 @@ export class Storage {
   saveAgent(agent: Agent): void {
     getDb()
       .prepare(
-        `INSERT INTO agents (id, userId, name, platform, api_key, status, lastRunAt, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO agents (id, userId, name, platform, api_key, status, approval_mode, lastRunAt, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         agent.id,
@@ -244,6 +244,7 @@ export class Storage {
         agent.platform,
         encryptSecret(agent.apiKey),
         agent.status,
+        agent.approvalMode,
         agent.lastRunAt,
         agent.createdAt
       );
@@ -263,14 +264,15 @@ export class Storage {
     return rows.map((r) => this.rowToAgent(r));
   }
 
-  updateAgent(id: string, patch: Partial<Pick<Agent, 'name' | 'apiKey' | 'status' | 'lastRunAt'>>): void {
+  updateAgent(id: string, patch: Partial<Pick<Agent, 'name' | 'apiKey' | 'status' | 'approvalMode' | 'lastRunAt'>>): void {
     const fields: string[] = [];
     const vals: any[]      = [];
 
-    if (patch.name      !== undefined) { fields.push('name = ?');      vals.push(patch.name); }
-    if (patch.apiKey    !== undefined) { fields.push('api_key = ?');   vals.push(encryptSecret(patch.apiKey)); }
-    if (patch.status    !== undefined) { fields.push('status = ?');    vals.push(patch.status); }
-    if (patch.lastRunAt !== undefined) { fields.push('lastRunAt = ?'); vals.push(patch.lastRunAt); }
+    if (patch.name         !== undefined) { fields.push('name = ?');          vals.push(patch.name); }
+    if (patch.apiKey       !== undefined) { fields.push('api_key = ?');       vals.push(encryptSecret(patch.apiKey)); }
+    if (patch.status       !== undefined) { fields.push('status = ?');        vals.push(patch.status); }
+    if (patch.approvalMode !== undefined) { fields.push('approval_mode = ?'); vals.push(patch.approvalMode); }
+    if (patch.lastRunAt    !== undefined) { fields.push('lastRunAt = ?');     vals.push(patch.lastRunAt); }
 
     if (fields.length === 0) return;
     vals.push(id);
@@ -322,21 +324,50 @@ export class Storage {
   }
 
   updateRunStatus(id: string, status: AgentRun['status'], result?: string): void {
+    // completedAt n'est posé que pour les statuts terminaux — un run en
+    // attente de validation n'est pas terminé.
+    const terminal = status === 'done' || status === 'failed' || status === 'rejected';
     getDb()
       .prepare(`UPDATE agent_runs SET status = ?, result = ?, completedAt = ? WHERE id = ?`)
-      .run(status, result ?? null, new Date().toISOString(), id);
+      .run(status, result ?? null, terminal ? new Date().toISOString() : null, id);
+  }
+
+  getRunById(id: string): AgentRun | undefined {
+    const row = getDb()
+      .prepare(`SELECT * FROM agent_runs WHERE id = ?`)
+      .get(id) as any;
+    return row ? this.rowToRun(row) : undefined;
+  }
+
+  /** Runs en attente de validation pour tous les agents de l'utilisateur */
+  getPendingApprovalsByUserId(userId: string): (AgentRun & { agentName: string; agentPlatform: string })[] {
+    const rows = getDb()
+      .prepare(
+        `SELECT r.*, a.name AS agentName, a.platform AS agentPlatform
+         FROM agent_runs r
+         JOIN agents a ON a.id = r.agentId
+         WHERE a.userId = ? AND r.status = 'awaiting_approval'
+         ORDER BY r.startedAt DESC`
+      )
+      .all(userId) as any[];
+    return rows.map((r) => ({
+      ...this.rowToRun(r),
+      agentName: r.agentName,
+      agentPlatform: r.agentPlatform,
+    }));
   }
 
   private rowToAgent(row: any): Agent {
     return {
-      id:        row.id,
-      userId:    row.userId,
-      name:      row.name,
-      platform:  row.platform,
-      apiKey:    decryptSecret(row.api_key),
-      status:    row.status,
-      lastRunAt: row.lastRunAt ?? null,
-      createdAt: row.createdAt,
+      id:           row.id,
+      userId:       row.userId,
+      name:         row.name,
+      platform:     row.platform,
+      apiKey:       decryptSecret(row.api_key),
+      status:       row.status,
+      approvalMode: row.approval_mode === 'auto' ? 'auto' : 'manual',
+      lastRunAt:    row.lastRunAt ?? null,
+      createdAt:    row.createdAt,
     };
   }
 

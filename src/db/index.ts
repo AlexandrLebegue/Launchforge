@@ -119,17 +119,19 @@ function runMigrations(database: Database.Database): void {
     );
   }
 
+
   // Agents tables (idempotent — safe to run on existing DBs)
   database.exec(`
     CREATE TABLE IF NOT EXISTS agents (
-      id         TEXT PRIMARY KEY,
-      userId     TEXT NOT NULL,
-      name       TEXT NOT NULL,
-      platform   TEXT NOT NULL,
-      api_key    TEXT NOT NULL DEFAULT '',
-      status     TEXT NOT NULL DEFAULT 'inactive',
-      lastRunAt  TEXT,
-      createdAt  TEXT NOT NULL,
+      id            TEXT PRIMARY KEY,
+      userId        TEXT NOT NULL,
+      name          TEXT NOT NULL,
+      platform      TEXT NOT NULL,
+      api_key       TEXT NOT NULL DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'inactive',
+      approval_mode TEXT NOT NULL DEFAULT 'manual',
+      lastRunAt     TEXT,
+      createdAt     TEXT NOT NULL,
       FOREIGN KEY (userId) REFERENCES users(id)
     );
 
@@ -157,4 +159,13 @@ function runMigrations(database: Database.Database): void {
       FOREIGN KEY (agentId) REFERENCES agents(id)
     );
   `);
+
+  // Additive migration: pipeline de validation par agent (idempotent, pour
+  // les bases créées avant l'ajout de la colonne)
+  const agentCols = database.pragma('table_info(agents)') as { name: string }[];
+  if (!agentCols.some((c) => c.name === 'approval_mode')) {
+    database.exec(
+      `ALTER TABLE agents ADD COLUMN approval_mode TEXT NOT NULL DEFAULT 'manual'`
+    );
+  }
 }

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { User, setToken } from '../api/client';
+import { User, setToken, getApprovals } from '../api/client';
 
 interface Props {
   user: User;
@@ -8,14 +8,27 @@ interface Props {
 }
 
 const navItems = [
-  { to: '/',       icon: '📊', label: 'Dashboard' },
-  { to: '/new',    icon: '✨', label: 'New Plan'  },
-  { to: '/agents', icon: '🤖', label: 'Agents IA' },
+  { to: '/',          icon: '📊', label: 'Tableau de bord' },
+  { to: '/new',       icon: '✨', label: 'Nouveau plan'    },
+  { to: '/agents',    icon: '🤖', label: 'Agents IA'       },
+  { to: '/approvals', icon: '✋', label: 'Validations'     },
 ];
 
 export default function Layout({ user, onLogout }: Props) {
   const location  = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+
+  // Badge "validations en attente" — rafraîchi à chaque navigation + toutes les 30 s
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => getApprovals().then((res) => {
+      if (!cancelled && res.success && res.data) setPendingApprovals(res.data.length);
+    });
+    refresh();
+    const timer = setInterval(refresh, 30000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [location.pathname]);
 
   const handleLogout = () => {
     setToken(null);
@@ -74,6 +87,9 @@ export default function Layout({ user, onLogout }: Props) {
               >
                 <span className="layout-nav-icon">{item.icon}</span>
                 {item.label}
+                {item.to === '/approvals' && pendingApprovals > 0 && (
+                  <span className="layout-nav-badge">{pendingApprovals}</span>
+                )}
               </Link>
             );
           })}

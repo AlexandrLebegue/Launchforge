@@ -193,45 +193,14 @@ describe('Research', () => {
     expect(res.status).toBe(401);
   });
 
-  it('POST /api/research returns research data with auth', async () => {
+  // Dépend de services web externes (DuckDuckGo, GitHub, Wikipedia) —
+  // timeout vitest élargi car la latence varie selon l'environnement.
+  it('POST /api/research returns research data with auth', { timeout: 30000 }, async () => {
     const res = await request(app)
       .post('/api/research')
       .set('Authorization', `Bearer ${token}`)
       .send({ productName: 'TaskFlow', description: 'A project management tool for remote teams', niche: 'saas' })
-      .timeout(15000);
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data).toHaveProperty('productName', 'TaskFlow');
-    expect(res.body.data).toHaveProperty('competitors');
-    expect(res.body.data).toHaveProperty('communities');
-    expect(res.body.data).toHaveProperty('trends');
-    expect(res.body.data).toHaveProperty('potentialAngles');
-  });
-
-  it('POST /api/research validates productName', async () => {
-    const res = await request(app)
-      .post('/api/research')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ description: 'no name here', niche: 'saas' });
-    expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
-  });
-});
-
-describe('Research', () => {
-  it('POST /api/research requires auth', async () => {
-    const res = await request(app)
-      .post('/api/research')
-      .send({ productName: 'TestApp', description: 'A test app', niche: 'saas' });
-    expect(res.status).toBe(401);
-  });
-
-  it('POST /api/research returns research data with auth', async () => {
-    const res = await request(app)
-      .post('/api/research')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ productName: 'TaskFlow', description: 'A project management tool for remote teams', niche: 'saas' })
-      .timeout(15000);
+      .timeout(25000);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data).toHaveProperty('productName', 'TaskFlow');

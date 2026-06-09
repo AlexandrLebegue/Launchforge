@@ -10,19 +10,23 @@ import { getAgents } from '../api/client';
 
 function runStatusClass(status: AgentRun['status']): string {
   return {
-    pending: 'run-pending',
-    running: 'run-running',
-    done:    'run-done',
-    failed:  'run-failed',
+    pending:           'run-pending',
+    running:           'run-running',
+    awaiting_approval: 'run-awaiting_approval',
+    done:              'run-done',
+    failed:            'run-failed',
+    rejected:          'run-rejected',
   }[status];
 }
 
 function runStatusLabel(status: AgentRun['status']): string {
   return {
-    pending: '⏳ En attente',
-    running: '⚡ En cours',
-    done:    '✅ Terminé',
-    failed:  '❌ Échoué',
+    pending:           '⏳ En attente',
+    running:           '⚡ Rédaction',
+    awaiting_approval: '✋ À valider',
+    done:              '✅ Terminé',
+    failed:            '❌ Échoué',
+    rejected:          '🚫 Rejeté',
   }[status];
 }
 
@@ -45,6 +49,7 @@ export default function AgentDetailPage() {
   // Edition
   const [editName,   setEditName]   = useState('');
   const [editKey,    setEditKey]    = useState('');
+  const [editMode,   setEditMode]   = useState<'auto' | 'manual'>('manual');
   const [showKey,    setShowKey]    = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [saveMsg,    setSaveMsg]    = useState('');
@@ -64,6 +69,7 @@ export default function AgentDetailPage() {
           setAgent(found);
           setEditName(found.name);
           setEditKey('');
+          setEditMode(found.approvalMode);
         } else {
           setError('Agent introuvable');
         }
@@ -93,7 +99,11 @@ export default function AgentDetailPage() {
     if (!agent) return;
     setSaving(true);
     setSaveMsg('');
-    const res = await updateAgent(agent.id, { name: editName, apiKey: editKey || undefined });
+    const res = await updateAgent(agent.id, {
+      name: editName,
+      apiKey: editKey || undefined,
+      approvalMode: editMode,
+    });
     setEditKey('');
     setSaving(false);
     if (res.success && res.data) {
@@ -209,6 +219,32 @@ export default function AgentDetailPage() {
               <a href="https://composio.dev" target="_blank" rel="noopener noreferrer">Composio</a>{' '}
               pour activer les actions réelles.
             </p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Pipeline de publication</label>
+            <div className="approval-mode-picker">
+              <button
+                type="button"
+                className={`approval-mode-option${editMode === 'manual' ? ' selected' : ''}`}
+                onClick={() => setEditMode('manual')}
+              >
+                <span className="approval-mode-title">✋ Validation requise</span>
+                <span className="approval-mode-desc">
+                  L'agent rédige, vous relisez et validez chaque contenu depuis la page Validations avant publication.
+                </span>
+              </button>
+              <button
+                type="button"
+                className={`approval-mode-option${editMode === 'auto' ? ' selected' : ''}`}
+                onClick={() => setEditMode('auto')}
+              >
+                <span className="approval-mode-title">⚡ Publication immédiate</span>
+                <span className="approval-mode-desc">
+                  L'agent publie directement sans confirmation. À réserver aux agents de confiance.
+                </span>
+              </button>
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

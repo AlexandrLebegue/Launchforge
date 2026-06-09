@@ -10,6 +10,7 @@ import CreatePlanPage from './pages/CreatePlanPage';
 import PlanViewPage from './pages/PlanViewPage';
 import AgentsPage from './pages/AgentsPage';
 import AgentDetailPage from './pages/AgentDetailPage';
+import ApprovalsPage from './pages/ApprovalsPage';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="plan/:id" element={<PlanViewPage />} />
             <Route path="agents" element={<AgentsPage />} />
             <Route path="agents/:id" element={<AgentDetailPage />} />
+            <Route path="approvals" element={<ApprovalsPage />} />
           </>
         )}
       </Route>

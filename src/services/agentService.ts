@@ -96,25 +96,52 @@ export function getCatalogByPlatform(platform: AgentPlatform): AgentTemplate | u
 // ── Exécution ─────────────────────────────────────────────────────────────────
 
 /**
- * Exécute une tâche Kanban via l'agent.
+ * Pipeline d'exécution d'une tâche Kanban assignée à un agent :
  *
- * 1. Si ANTHROPIC_API_KEY est présente : Claude rédige le contenu réel, prêt
- *    à publier, adapté à la plateforme et au produit du plan.
- * 2. Si COMPOSIO_API_KEY + clé de l'agent : tentative de publication via
- *    Composio en plus du brouillon.
- * 3. Sans aucune clé : message expliquant comment activer la rédaction.
+ *   1. Claude rédige le contenu prêt à publier (adapté plateforme + produit).
+ *   2a. approvalMode = 'auto'   → publication immédiate (Composio si dispo).
+ *   2b. approvalMode = 'manual' → run en 'awaiting_approval' ; l'utilisateur
+ *       valide ou rejette depuis la page Validations.
  *
- * Retourne le résultat affiché dans l'historique des runs.
+ * Le statut et le résultat sont persistés sur le run au fil du pipeline.
  */
-export async function executeAgentRun(agent: Agent, card: KanbanCard, planId?: string): Promise<string> {
+export async function processAgentRun(runId: string, agent: Agent, card: KanbanCard, planId?: string): Promise<void> {
   const template = getCatalogByPlatform(agent.platform);
   const plan = planId ? storage.getPlan(planId) : undefined;
 
   const draft = await draftContent(agent, card, template, plan);
 
-  // ── Publication via Composio (si configuré) ───────────────────────────────
+  if (!draft) {
+    storage.updateRunStatus(
+      runId,
+      'failed',
+      `Aucune IA configurée (ANTHROPIC_API_KEY manquante) — impossible de rédiger le contenu pour "${card.title}".`
+    );
+    storage.updateAgent(agent.id, { status: 'error' });
+    return;
+  }
+
+  if (agent.approvalMode === 'auto') {
+    const result = await publishContent(agent, draft);
+    storage.updateRunStatus(runId, 'done', result);
+    storage.updateAgent(agent.id, { status: 'active', lastRunAt: new Date().toISOString() });
+    return;
+  }
+
+  // Validation manuelle : le brouillon attend l'utilisateur
+  storage.updateRunStatus(runId, 'awaiting_approval', draft);
+}
+
+/**
+ * Publication du contenu (appelée en mode auto, ou à la validation par
+ * l'utilisateur). Tente Composio si configuré ; sinon le contenu est
+ * fourni à copier-coller.
+ */
+export async function publishContent(agent: Agent, content: string): Promise<string> {
+  const template = getCatalogByPlatform(agent.platform);
   const composioKey = process.env.COMPOSIO_API_KEY;
-  if (composioKey && agent.apiKey && template && draft) {
+
+  if (composioKey && agent.apiKey && template) {
     try {
       const response = await fetch('https://backend.composio.dev/api/v1/actions/execute/CLAUDE', {
         method: 'POST',
@@ -126,28 +153,24 @@ export async function executeAgentRun(agent: Agent, card: KanbanCard, planId?: s
           appName:    template.composioApp,
           entityId:   agent.userId,
           authConfig: { api_key: agent.apiKey },
-          input:      { prompt: draft },
+          input:      { prompt: content },
         }),
       });
 
       if (!response.ok) {
         const txt = await response.text();
-        return `⚠️ Publication Composio échouée (${response.status}: ${txt.slice(0, 200)}) — voici le contenu à publier manuellement :\n\n${draft}`;
+        return `⚠️ Publication Composio échouée (${response.status}: ${txt.slice(0, 200)}) — voici le contenu à publier manuellement :\n\n${content}`;
       }
 
       const data = await response.json() as any;
       const output = data?.data?.output || data?.output || 'Action exécutée';
-      return `✅ Publié via Composio : ${output}\n\n— Contenu publié —\n${draft}`;
+      return `✅ Publié via Composio : ${output}\n\n— Contenu publié —\n${content}`;
     } catch (err: any) {
-      return `⚠️ Publication Composio échouée (${err.message}) — voici le contenu à publier manuellement :\n\n${draft}`;
+      return `⚠️ Publication Composio échouée (${err.message}) — voici le contenu à publier manuellement :\n\n${content}`;
     }
   }
 
-  if (draft) {
-    return `📝 Contenu prêt à publier sur ${template?.name ?? agent.platform} (copier-coller) :\n\n${draft}`;
-  }
-
-  return `Aucune IA configurée (ANTHROPIC_API_KEY manquante) — impossible de rédiger le contenu pour "${card.title}". Configurez la clé côté serveur pour activer la rédaction automatique.`;
+  return `📝 Contenu validé, prêt à publier sur ${template?.name ?? agent.platform} (copier-coller) :\n\n${content}`;
 }
 
 // ── Rédaction du contenu par Claude ──────────────────────────────────────────

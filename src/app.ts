@@ -8,6 +8,7 @@ import authRoutes from './routes/auth';
 import researchRoutes from './routes/research';
 import agentRoutes from './routes/agents';
 import onboardingRoutes from './routes/onboarding';
+import approvalRoutes from './routes/approvals';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -28,6 +29,7 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/research', researchRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/approvals', approvalRoutes);
 
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));

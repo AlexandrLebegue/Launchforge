@@ -23,6 +23,7 @@ function AddAgentModal({ catalog, onClose, onAdded }: AddModalProps) {
   const [selected, setSelected] = useState<AgentPlatform | null>(null);
   const [apiKey,   setApiKey]   = useState('');
   const [name,     setName]     = useState('');
+  const [mode,     setMode]     = useState<'auto' | 'manual'>('manual');
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState('');
 
@@ -39,7 +40,12 @@ function AddAgentModal({ catalog, onClose, onAdded }: AddModalProps) {
     if (!selected) { setError('Sélectionne une plateforme'); return; }
     setSaving(true);
     setError('');
-    const res = await createAgent({ platform: selected, name: name || undefined, apiKey: apiKey || undefined });
+    const res = await createAgent({
+      platform: selected,
+      name: name || undefined,
+      apiKey: apiKey || undefined,
+      approvalMode: mode,
+    });
     setSaving(false);
     if (res.success && res.data) {
       onAdded(res.data);
@@ -98,6 +104,27 @@ function AddAgentModal({ catalog, onClose, onAdded }: AddModalProps) {
                 placeholder={`Clé API ${template.composioApp} via Composio…`}
               />
             </div>
+            <div className="form-group">
+              <label className="form-label">Pipeline de publication</label>
+              <div className="approval-mode-picker">
+                <button
+                  type="button"
+                  className={`approval-mode-option${mode === 'manual' ? ' selected' : ''}`}
+                  onClick={() => setMode('manual')}
+                >
+                  <span className="approval-mode-title">✋ Validation requise</span>
+                  <span className="approval-mode-desc">Vous validez chaque contenu avant publication (recommandé)</span>
+                </button>
+                <button
+                  type="button"
+                  className={`approval-mode-option${mode === 'auto' ? ' selected' : ''}`}
+                  onClick={() => setMode('auto')}
+                >
+                  <span className="approval-mode-title">⚡ Publication immédiate</span>
+                  <span className="approval-mode-desc">L'agent publie directement sans confirmation</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -155,6 +182,9 @@ function AgentCard({ agent, catalog, onToggle, onDelete }: AgentCardProps) {
 
       <div className="agent-card-meta">
         <span className="chip">{agent.platform}</span>
+        <span className={`kanban-mode-badge mode-${agent.approvalMode}`}>
+          {agent.approvalMode === 'auto' ? '⚡ auto' : '✋ validation'}
+        </span>
         {agent.hasApiKey
           ? <span className="chip chip-success">🔑 Clé API configurée</span>
           : <span className="chip chip-warning">⚠️ Mode simulation</span>
