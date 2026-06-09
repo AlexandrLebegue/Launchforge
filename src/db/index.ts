@@ -133,6 +133,17 @@ function runMigrations(database: Database.Database): void {
       FOREIGN KEY (userId) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS onboarding_sessions (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      status    TEXT NOT NULL DEFAULT 'active',
+      messages  TEXT NOT NULL DEFAULT '[]',
+      profile   TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS agent_runs (
       id            TEXT PRIMARY KEY,
       agentId       TEXT NOT NULL,

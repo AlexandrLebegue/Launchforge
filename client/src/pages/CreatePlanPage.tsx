@@ -1,340 +1,398 @@
-import { useState, useRef, useEffect, FormEvent } from 'react';
+import { useState, useRef, useEffect, FormEvent, ChangeEvent, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createPlan, researchProduct, ResearchResult } from '../api/client';
+import {
+  startOnboarding,
+  getOnboardingSession,
+  sendOnboardingMessage,
+  createPlan,
+  OnboardingSession,
+  OnboardingAttachment,
+  OnboardingProfile,
+} from '../api/client';
 
-interface Message {
-  role: 'bot' | 'user' | 'system';
-  text: string;
+const SESSION_KEY = 'launchforge_onboarding_session';
+const MAX_FILE_BYTES = 100_000;
+const TEXT_EXTENSIONS = ['.txt', '.md', '.csv', '.json', '.html'];
+
+/** Minimal markdown: **bold**, _italic_, line breaks */
+function renderText(text: string) {
+  return text.split('\n').map((line, i) => (
+    <Fragment key={i}>
+      {i > 0 && <br />}
+      {line.split(/(\*\*[^*]+\*\*|_[^_]+_)/g).map((part, j) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={j}>{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith('_') && part.endsWith('_') && part.length > 2) {
+          return <em key={j}>{part.slice(1, -1)}</em>;
+        }
+        return part;
+      })}
+    </Fragment>
+  ));
 }
 
-const questions = [
-  {
-    field:       'productName' as const,
-    label:       'Product Name',
-    placeholder: 'e.g. TaskFlow',
-    bot:         "Let's start! What's your product called?",
-  },
-  {
-    field:       'description' as const,
-    label:       'Description',
-    placeholder: 'What problem does it solve?',
-    bot:         'Nice! Tell me what your product does in a few sentences.',
-  },
-  {
-    field:       'targetAudience' as const,
-    label:       'Target Audience',
-    placeholder: 'e.g. Remote dev teams of 5–50',
-    bot:         'Who exactly is this for? Describe your ideal user.',
-  },
-  {
-    field:       'goals' as const,
-    label:       'Goals',
-    placeholder: 'e.g. Get 100 users, launch on PH',
-    bot:         'What are your top goals? List them one per line.',
-  },
-  {
-    field:       'pricing' as const,
-    label:       'Pricing',
-    placeholder: 'e.g. $29/month per team',
-    bot:         "And finally — what's your pricing model?",
-  },
+const profileLabels: { key: keyof OnboardingProfile; label: string }[] = [
+  { key: 'productName',    label: 'Produit' },
+  { key: 'description',    label: 'Description' },
+  { key: 'targetAudience', label: 'Audience' },
+  { key: 'niche',          label: 'Niche' },
+  { key: 'goals',          label: 'Objectifs' },
+  { key: 'pricing',        label: 'Prix' },
 ];
-
-type FormFields = {
-  productName:    string;
-  description:    string;
-  targetAudience: string;
-  niche:          string;
-  goals:          string;
-  pricing:        string;
-};
-
-const niches = [
-  { value: 'saas',        label: 'SaaS',        emoji: '☁️'  },
-  { value: 'ai',          label: 'AI / ML',     emoji: '🤖'  },
-  { value: 'devtool',     label: 'DevTool',     emoji: '🛠️'  },
-  { value: 'nocode',      label: 'No-Code',     emoji: '🧩'  },
-  { value: 'marketplace', label: 'Marketplace', emoji: '🏪'  },
-  { value: 'fintech',     label: 'FinTech',     emoji: '💳'  },
-  { value: 'health',      label: 'Health',      emoji: '🏥'  },
-  { value: 'education',   label: 'EdTech',      emoji: '🎓'  },
-  { value: 'ecommerce',   label: 'E-Commerce',  emoji: '🛒'  },
-  { value: 'content',     label: 'Content',     emoji: '✍️'  },
-];
-
-const fieldLabels: Record<keyof FormFields, string> = {
-  productName:    'Product',
-  description:    'Description',
-  targetAudience: 'Audience',
-  niche:          'Niche',
-  goals:          'Goals',
-  pricing:        'Pricing',
-};
 
 export default function CreatePlanPage() {
   const navigate = useNavigate();
 
-  const [messages,         setMessages]         = useState<Message[]>([
-    { role: 'bot', text: "👋 Hey! I'll help you build a tactical launch plan. Let me ask you a few quick questions." },
-  ]);
-  const [step,             setStep]             = useState(0);
-  const [input,            setInput]            = useState('');
-  const [busy,             setBusy]             = useState(false);
-  const [form,             setForm]             = useState<FormFields>({
-    productName: '', description: '', targetAudience: '',
-    niche: 'saas', goals: '', pricing: '',
-  });
-  const [waitingForNiche,  setWaitingForNiche]  = useState(false);
-  const [researching,      setResearching]      = useState(false);
-  const [researchResult,   setResearchResult]   = useState<ResearchResult | null>(null);
+  const [session,     setSession]     = useState<OnboardingSession | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [aiOffline,   setAiOffline]   = useState(false);
+  const [input,       setInput]       = useState('');
+  const [pendingDocs, setPendingDocs] = useState<OnboardingAttachment[]>([]);
+  const [sending,     setSending]     = useState(false);
+  const [generating,  setGenerating]  = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
   const chatEnd = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, researching]);
+  }, [session?.messages.length, sending]);
 
-  const addBot  = (text: string, delay = 0) => {
-    const push = () => setMessages((m) => [...m, { role: 'bot', text }]);
-    delay > 0 ? setTimeout(push, delay) : push();
+  useEffect(() => {
+    (async () => {
+      // Resume an in-progress conversation after a reload
+      const savedId = localStorage.getItem(SESSION_KEY);
+      if (savedId) {
+        const res = await getOnboardingSession(savedId);
+        if (res.success && res.data && res.data.status === 'active') {
+          setSession(res.data);
+          setLoading(false);
+          return;
+        }
+        localStorage.removeItem(SESSION_KEY);
+      }
+      const res = await startOnboarding();
+      if (res.success && res.data) {
+        setSession(res.data);
+        localStorage.setItem(SESSION_KEY, res.data.id);
+      } else if (res.error === 'AI_NOT_CONFIGURED') {
+        setAiOffline(true);
+      } else {
+        setError(res.error || 'Impossible de démarrer la conversation');
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const handleFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    const docs: OnboardingAttachment[] = [...pendingDocs];
+    for (const file of files) {
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      if (!TEXT_EXTENSIONS.includes(ext)) {
+        setError(`Format non supporté : ${file.name}. Formats acceptés : ${TEXT_EXTENSIONS.join(', ')} (copiez-collez le texte d'un PDF directement dans le chat).`);
+        continue;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        setError(`${file.name} dépasse 100 Ko — copiez-collez les passages importants.`);
+        continue;
+      }
+      const content = await file.text();
+      docs.push({ name: file.name, content });
+    }
+    setPendingDocs(docs.slice(0, 3));
   };
-  const addUser = (text: string) => setMessages((m) => [...m, { role: 'user', text }]);
 
   const handleSend = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!input.trim()) return;
+    if (!session || sending) return;
+    const text = input.trim();
+    if (!text && pendingDocs.length === 0) return;
 
-    const answer = input.trim();
+    setError(null);
+    setSending(true);
     setInput('');
-    addUser(answer);
+    const docs = pendingDocs;
+    setPendingDocs([]);
 
-    if (step === 0) {
-      setForm((f) => ({ ...f, productName: answer }));
-      setStep(1);
-      setTimeout(() => addBot(questions[1].bot), 500);
-    } else if (step === 1) {
-      setForm((f) => ({ ...f, description: answer }));
-      setStep(2);
-      setTimeout(() => addBot(questions[2].bot), 500);
-    } else if (step === 2) {
-      setForm((f) => ({ ...f, targetAudience: answer }));
-      setStep(3);
-      setWaitingForNiche(true);
-      setTimeout(() => addBot('What category best fits your product?'), 400);
-    } else if (step === 3 && waitingForNiche) {
-      // handled by selectNiche
-    } else if (step === 3) {
-      setForm((f) => ({ ...f, goals: answer }));
-      setStep(4);
-      setTimeout(() => addBot(questions[4].bot), 500);
-    } else if (step === 4) {
-      setForm((f) => ({ ...f, pricing: answer }));
-      setStep(5);
-      doResearch(form);
-    }
-  };
-
-  const selectNiche = (value: string) => {
-    const niche = niches.find((n) => n.value === value);
-    const label = niche ? `${niche.emoji} ${niche.label}` : value;
-    addUser(label);
-    setForm((f) => ({ ...f, niche: value }));
-    setWaitingForNiche(false);
-    setStep(3);
-    setTimeout(() => addBot(questions[3].bot), 500);
-  };
-
-  const doResearch = async (currentForm: FormFields) => {
-    setResearching(true);
-    addBot('🔍 Researching your market… give me a sec.');
-
-    const res = await researchProduct(
-      currentForm.productName,
-      currentForm.description,
-      currentForm.niche,
-    );
-    setResearching(false);
-
-    if (res.success && res.data) {
-      setResearchResult(res.data);
-      let msg = '**Market Intelligence found:**\n';
-      if (res.data.competitors.length  > 0) msg += `\n🔹 *Competitors:* ${res.data.competitors.map((c) => c.name).join(', ')}`;
-      if (res.data.communities.length  > 0) msg += `\n🔹 *Communities:* ${res.data.communities.map((c) => c.name).join(', ')}`;
-      if (res.data.trends.length       > 0) msg += `\n🔹 *Trend:* ${res.data.trends[0].slice(0, 120)}`;
-      addBot(msg);
-    } else {
-      addBot("Couldn't find specific market data, but no worries — I'll generate a solid plan anyway!");
-    }
-
-    setTimeout(() => addBot('Ready to generate your plan? Just click below.'), 800);
-  };
-
-  const generate = async () => {
-    setBusy(true);
-    addBot('⚡ Generating your tactical launch plan…');
-
-    const goalsArr = form.goals.split('\n').map((g) => g.trim()).filter(Boolean);
-    const res = await createPlan({
-      productName:    form.productName,
-      description:    form.description,
-      targetAudience: form.targetAudience,
-      niche:          form.niche,
-      goals:          goalsArr.length > 0 ? goalsArr : ['launch successfully'],
-      pricing:        form.pricing,
+    // Optimistic render of the user's message
+    setSession({
+      ...session,
+      messages: [
+        ...session.messages,
+        { role: 'user', text: text || `📎 ${docs.map((d) => d.name).join(', ')}` },
+      ],
     });
-    setBusy(false);
+
+    const res = await sendOnboardingMessage(session.id, text, docs);
+    setSending(false);
 
     if (res.success && res.data) {
-      addBot('✅ Your launch plan is ready! Taking you there now…');
-      setTimeout(() => navigate(`/plan/${res.data!.id}`), 1000);
+      setSession(res.data);
+      if (res.data.status === 'completed') localStorage.removeItem(SESSION_KEY);
     } else {
-      addBot(`❌ ${res.error || 'Something went wrong'}`);
+      setError(res.error || "L'assistant n'a pas répondu — réessayez.");
+      // Restore so the user can retry the same message
+      setInput(text);
+      setPendingDocs(docs);
+      setSession((s) => s && { ...s, messages: s.messages.slice(0, -1) });
     }
   };
 
-  const isLastStep    = step >= 5 && !researching;
-  const progressPct   = Math.min((step / questions.length) * 100, 100);
-  const stepLabel     = step < questions.length
-    ? `Step ${step + 1} of ${questions.length}`
-    : 'Almost done!';
+  const handleGenerate = async () => {
+    if (!session?.profile) return;
+    setGenerating(true);
+    setError(null);
+    const p = session.profile;
+    const res = await createPlan({
+      productName:    p.productName,
+      description:    p.description,
+      targetAudience: p.targetAudience,
+      niche:          p.niche,
+      goals:          p.goals.length > 0 ? p.goals : ['launch successfully'],
+      pricing:        p.pricing,
+      company:        p.company,
+      mode:           'ai',
+    });
+    setGenerating(false);
+    if (res.success && res.data) {
+      navigate(`/plan/${res.data.id}`);
+    } else {
+      setError(res.error || 'La génération du plan a échoué — réessayez.');
+    }
+  };
 
-  // Which form fields have values so far
-  const summaryFields: (keyof FormFields)[] = [
-    'productName', 'description', 'targetAudience', 'niche', 'goals', 'pricing',
-  ];
+  const restart = async () => {
+    localStorage.removeItem(SESSION_KEY);
+    setLoading(true);
+    setSession(null);
+    const res = await startOnboarding();
+    if (res.success && res.data) {
+      setSession(res.data);
+      localStorage.setItem(SESSION_KEY, res.data.id);
+    }
+    setLoading(false);
+  };
+
+  if (loading) return <div className="loading">Chargement…</div>;
+
+  if (aiOffline) return <ManualFallbackForm />;
+
+  const completed = session?.status === 'completed';
+  const profile = session?.profile;
 
   return (
     <div>
-      {/* Page title */}
-      <div className="chat-page-title">🚀 Launch Plan Builder</div>
-      <div className="chat-page-subtitle">Answer a few questions and get your personalized launch plan</div>
-
-      {/* Progress */}
-      <div className="chat-progress-wrap">
-        <div className="chat-step-label">{stepLabel}</div>
-        <div className="chat-progress-bar">
-          <div className="chat-progress-fill" style={{ width: `${progressPct}%` }} />
-        </div>
+      <div className="chat-page-title">🚀 Créer mon plan de promotion</div>
+      <div className="chat-page-subtitle">
+        L'assistant IA vous pose les bonnes questions et recherche lui-même les infos de votre entreprise
       </div>
 
-      {/* Layout: chat + summary panel */}
       <div className="chat-layout">
-        {/* Chat area */}
         <div className="chat-page">
           <div className="chat-container">
-            {/* Messages */}
             <div className="chat-messages">
-              {messages.map((msg, i) => (
-                <div key={i} className={`chat-msg chat-msg-${msg.role}`}>
-                  {msg.role === 'bot'  && <div className="chat-avatar">🤖</div>}
-                  {msg.role === 'user' && <div className="chat-avatar">👤</div>}
-                  <div className={`chat-bubble ${msg.role}`}>{msg.text}</div>
-                </div>
+              {session?.messages.map((msg, i) => (
+                <Fragment key={i}>
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="chat-actions">
+                      {msg.actions.map((a, j) => (
+                        <span key={j} className="chat-action-chip">{a}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                    <div className="chat-avatar">{msg.role === 'assistant' ? '🤖' : '👤'}</div>
+                    <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                      {renderText(msg.text)}
+                    </div>
+                  </div>
+                </Fragment>
               ))}
 
-              {/* Bot thinking */}
-              {researching && (
+              {sending && (
                 <div className="chat-msg chat-msg-bot">
                   <div className="chat-avatar">🤖</div>
-                  <div className="chat-bubble-thinking">
-                    <span /><span /><span />
-                  </div>
+                  <div className="chat-bubble-thinking"><span /><span /><span /></div>
                 </div>
               )}
 
-              {/* Niche picker */}
-              {waitingForNiche && (
-                <div className="chat-msg chat-msg-bot">
-                  <div className="chat-avatar">🤖</div>
-                  <div className="niche-picker">
-                    {niches.map((n) => (
-                      <button
-                        key={n.value}
-                        className={`niche-btn ${form.niche === n.value ? 'selected' : ''}`}
-                        onClick={() => selectNiche(n.value)}
-                      >
-                        <span className="niche-btn-icon">{n.emoji}</span>
-                        {n.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Research chips */}
-              {researchResult && !researching && (
-                <div className="chat-research-results">
-                  {researchResult.competitors.length > 0 && (
-                    <div className="research-chip-group">
-                      <span className="research-label">Competitors</span>
-                      {researchResult.competitors.slice(0, 4).map((c, i) => (
-                        <span key={i} className="chip chip-warning">{c.name}</span>
-                      ))}
-                    </div>
-                  )}
-                  {researchResult.communities.length > 0 && (
-                    <div className="research-chip-group">
-                      <span className="research-label">Communities</span>
-                      {researchResult.communities.slice(0, 5).map((c, i) => (
-                        <span key={i} className="chip chip-success">{c.name}</span>
-                      ))}
-                    </div>
-                  )}
+              {completed && (
+                <div className="chat-generate-cta">
+                  <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+                    {generating ? '⏳ Génération en cours…' : '⚡ Générer mon plan de lancement'}
+                  </button>
+                  <button className="btn" onClick={restart} disabled={generating}>
+                    ↺ Recommencer
+                  </button>
                 </div>
               )}
 
               <div ref={chatEnd} />
             </div>
 
-            {/* Input bar */}
-            <form className="chat-input-bar" onSubmit={handleSend}>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  waitingForNiche ? 'Click a category above…'
-                  : isLastStep    ? 'Plan ready to generate!'
-                  : 'Type your answer…'
-                }
-                disabled={waitingForNiche || researching || busy || isLastStep}
-                autoFocus
-              />
-              {isLastStep ? (
+            {error && <div className="chat-error">{error}</div>}
+
+            {pendingDocs.length > 0 && (
+              <div className="chat-attachments">
+                {pendingDocs.map((d, i) => (
+                  <span key={i} className="chat-attachment-chip">
+                    📎 {d.name}
+                    <button
+                      type="button"
+                      onClick={() => setPendingDocs(pendingDocs.filter((_, j) => j !== i))}
+                      aria-label={`Retirer ${d.name}`}
+                    >×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {!completed && (
+              <form className="chat-input-bar" onSubmit={handleSend}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept={TEXT_EXTENSIONS.join(',')}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFiles}
+                />
                 <button
                   type="button"
-                  className="btn btn-primary"
-                  onClick={generate}
-                  disabled={busy}
-                >
-                  {busy ? '⏳ Generating…' : '⚡ Generate Plan'}
-                </button>
-              ) : (
+                  className="btn chat-attach-btn"
+                  title="Joindre un document (txt, md, csv, json, html)"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={sending}
+                >📎</button>
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Votre réponse… (nom d'entreprise, site web, ou décrivez votre idée)"
+                  disabled={sending}
+                  autoFocus
+                />
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={waitingForNiche || researching || busy || !input.trim()}
+                  disabled={sending || (!input.trim() && pendingDocs.length === 0)}
                 >
-                  Send →
+                  Envoyer →
                 </button>
-              )}
-            </form>
+              </form>
+            )}
           </div>
         </div>
 
-        {/* Live summary panel (hidden on mobile) */}
         <div className="chat-summary-panel">
-          <div className="chat-summary-title">Your Plan So Far</div>
-          {summaryFields.map((field) => (
-            <div key={field} className="chat-summary-field">
-              <div className="chat-summary-label">{fieldLabels[field]}</div>
-              {form[field]
-                ? <div className="chat-summary-value">{form[field]}</div>
-                : <div className="chat-summary-empty">—</div>
-              }
+          <div className="chat-summary-title">Profil de votre entreprise</div>
+          {profile ? (
+            <>
+              <div className="chat-summary-field">
+                <div className="chat-summary-label">Entreprise</div>
+                <div className="chat-summary-value">
+                  {profile.company.name}
+                  {profile.company.website ? ` · ${profile.company.website}` : ''}
+                </div>
+              </div>
+              {profileLabels.map(({ key, label }) => {
+                const value = profile[key];
+                const display = Array.isArray(value) ? value.join(' · ') : String(value ?? '');
+                return (
+                  <div key={key} className="chat-summary-field">
+                    <div className="chat-summary-label">{label}</div>
+                    {display
+                      ? <div className="chat-summary-value">{display}</div>
+                      : <div className="chat-summary-empty">—</div>}
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            <div className="chat-summary-empty">
+              L'assistant remplit ce profil au fil de la conversation. Il apparaîtra ici une fois validé ensemble.
             </div>
-          ))}
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Shown when no AI key is configured on the server — keeps the product usable
+ * with a classic form that generates a template-based plan.
+ */
+function ManualFallbackForm() {
+  const navigate = useNavigate();
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm]   = useState({
+    productName: '', description: '', targetAudience: '',
+    niche: 'saas', goals: '', pricing: '',
+  });
+
+  const set = (key: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const res = await createPlan({
+      productName:    form.productName,
+      description:    form.description,
+      targetAudience: form.targetAudience,
+      niche:          form.niche,
+      goals:          form.goals.split('\n').map((g) => g.trim()).filter(Boolean),
+      pricing:        form.pricing || 'Non défini',
+      mode:           'template',
+    });
+    setBusy(false);
+    if (res.success && res.data) navigate(`/plan/${res.data.id}`);
+    else setError(res.error || 'Erreur lors de la création du plan');
+  };
+
+  return (
+    <div className="manual-form-wrap">
+      <div className="chat-page-title">🚀 Créer mon plan de promotion</div>
+      <div className="alert-warning">
+        L'assistant IA n'est pas configuré sur ce serveur (variable <code>ANTHROPIC_API_KEY</code> manquante).
+        Remplissez le formulaire pour générer un plan basé sur nos modèles.
+      </div>
+      <form className="manual-form" onSubmit={submit}>
+        <label>Nom du produit / de l'entreprise
+          <input required value={form.productName} onChange={set('productName')} placeholder="ex. TaskFlow" />
+        </label>
+        <label>Description
+          <textarea required value={form.description} onChange={set('description')} rows={3}
+            placeholder="Que fait votre produit ? Quel problème résout-il ?" />
+        </label>
+        <label>Audience cible
+          <input required value={form.targetAudience} onChange={set('targetAudience')} placeholder="ex. Équipes dev remote de 5 à 50 personnes" />
+        </label>
+        <label>Niche
+          <select value={form.niche} onChange={set('niche')}>
+            {['saas', 'ai', 'devtool', 'nocode', 'marketplace', 'fintech', 'health', 'education', 'ecommerce', 'content', 'local-business', 'services', 'other']
+              .map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label>Objectifs (un par ligne)
+          <textarea required value={form.goals} onChange={set('goals')} rows={3}
+            placeholder={'100 premiers utilisateurs\nLancement Product Hunt'} />
+        </label>
+        <label>Prix
+          <input value={form.pricing} onChange={set('pricing')} placeholder="ex. 29 €/mois par équipe" />
+        </label>
+        {error && <div className="chat-error">{error}</div>}
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? '⏳ Génération…' : '⚡ Générer mon plan'}
+        </button>
+      </form>
     </div>
   );
 }

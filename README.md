@@ -231,7 +231,9 @@ Client → Express → rateLimit → validation → route handler → planGenera
 |----------|---------|-------------|
 | `PORT` | `3000` | Server port |
 | `NODE_ENV` | `development` | Environment mode |
-| `OPENAI_API_KEY` | — | Optional — for future AI-powered generation |
+| `DB_PATH` | `./data/launchforge.db` | SQLite database file |
+| `JWT_SECRET` | dev fallback | Secret for auth tokens — set in production |
+| `ANTHROPIC_API_KEY` | — | Claude API key. Powers the AI onboarding assistant (`/api/onboarding`) and AI plan generation. Without it, onboarding falls back to a manual form and plans use static templates. |
 
 Copy `.env.example` to `.env`:
 ```bash

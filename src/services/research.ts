@@ -52,6 +52,32 @@ async function searchDuckDuckGo(query: string): Promise<string[]> {
   return extractSnippets(html);
 }
 
+/**
+ * Raw web search for the onboarding agent — returns snippets as-is and lets
+ * the model do the extraction instead of brittle regexes.
+ */
+export async function webSearch(query: string, maxResults = 8): Promise<string[]> {
+  const html = await fetchHtml(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`);
+  if (!html) return [];
+  return extractSnippets(html, maxResults);
+}
+
+/** Fetch a web page and return its readable text content (truncated). */
+export async function fetchPageText(url: string, maxChars = 6000): Promise<string | null> {
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  const html = await fetchHtml(url);
+  if (!html) return null;
+  const $ = cheerio.load(html);
+  $('script, style, noscript, svg, nav, footer, iframe').remove();
+  const title = $('title').text().trim();
+  const metaDesc = $('meta[name="description"]').attr('content') || '';
+  const body = $('body').text().replace(/\s+/g, ' ').trim();
+  const text = [title && `Title: ${title}`, metaDesc && `Description: ${metaDesc}`, body]
+    .filter(Boolean)
+    .join('\n');
+  return text.slice(0, maxChars);
+}
+
 async function searchGitHub(query: string): Promise<string[]> {
   try {
     const res = await fetch(

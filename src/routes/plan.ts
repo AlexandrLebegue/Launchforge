@@ -11,7 +11,10 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
   try {
     const input = req.body as PlanInput;
     const user = req.user as AuthPayload;
-    const mode = (req.body as any).mode || 'template';
+    // AI generation by default when configured; createAILaunchPlan falls back
+    // to templates internally, and mode=template forces the static templates.
+    const mode = (req.body as any).mode
+      || (process.env.ANTHROPIC_API_KEY ? 'ai' : 'template');
 
     const plan = mode === 'ai'
       ? await createAILaunchPlan(input, user.userId)
@@ -69,29 +72,9 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
 router.patch('/:id/kanban', requireAuth, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const user = req.user as AuthPayload;
     const plan = getLaunchPlan(id);
-    if (!plan) {
-      const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
-      res.status(404).json(response);
-      return;
-    }
-    const kanbanState = req.body as KanbanState;
-    storage.updateKanbanState(id, kanbanState);
-    const response: ApiResponse<KanbanState> = { success: true, data: kanbanState };
-    res.json(response);
-  } catch (err) {
-    const response: ApiResponse<null> = {
-      success: false, error: err instanceof Error ? err.message : 'An unexpected error occurred',
-    };
-    res.status(500).json(response);
-  }
-});
-
-router.patch('/:id/kanban', requireAuth, (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const plan = getLaunchPlan(id);
-    if (!plan) {
+    if (!plan || plan.userId !== user.userId) {
       const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
       res.status(404).json(response);
       return;

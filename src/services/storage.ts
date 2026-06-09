@@ -11,7 +11,7 @@
  */
 
 import { getDb } from '../db';
-import { LaunchPlan, Feedback, User, Agent, AgentRun } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -170,6 +170,59 @@ export class Storage {
       rating:    row.rating,
       comment:   row.comment,
       createdAt: row.createdAt,
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Onboarding sessions
+  // ──────────────────────────────────────────────────────────────
+
+  saveOnboardingSession(session: OnboardingSession): void {
+    getDb()
+      .prepare(
+        `INSERT INTO onboarding_sessions (id, userId, status, messages, profile, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        session.id,
+        session.userId,
+        session.status,
+        JSON.stringify(session.messages),
+        session.profile ? JSON.stringify(session.profile) : null,
+        session.createdAt,
+        session.updatedAt
+      );
+  }
+
+  updateOnboardingSession(session: OnboardingSession): void {
+    getDb()
+      .prepare(
+        `UPDATE onboarding_sessions
+         SET status = ?, messages = ?, profile = ?, updatedAt = ?
+         WHERE id = ?`
+      )
+      .run(
+        session.status,
+        JSON.stringify(session.messages),
+        session.profile ? JSON.stringify(session.profile) : null,
+        session.updatedAt,
+        session.id
+      );
+  }
+
+  getOnboardingSession(id: string): OnboardingSession | undefined {
+    const row = getDb()
+      .prepare(`SELECT * FROM onboarding_sessions WHERE id = ?`)
+      .get(id) as any;
+    if (!row) return undefined;
+    return {
+      id:        row.id,
+      userId:    row.userId,
+      status:    row.status,
+      messages:  JSON.parse(row.messages),
+      profile:   row.profile ? JSON.parse(row.profile) : null,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     };
   }
 

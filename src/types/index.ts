@@ -5,6 +5,53 @@ export interface PlanInput {
   niche: string;
   goals: string[];
   pricing: string;
+  company?: CompanyProfile;
+}
+
+// ── Onboarding ────────────────────────────────────────────────────────────────
+
+export interface CompanyProfile {
+  name: string;
+  exists: boolean;
+  website?: string;
+  description?: string;
+  location?: string;
+  stage?: string;
+  socials?: string[];
+  competitors?: string[];
+  notes?: string;
+}
+
+export interface OnboardingAttachment {
+  name: string;
+  content: string;
+}
+
+export interface OnboardingChatMessage {
+  role: 'assistant' | 'user';
+  text: string;
+  /** Tool actions performed during this assistant turn (e.g. web searches) */
+  actions?: string[];
+}
+
+export interface OnboardingProfile {
+  company: CompanyProfile;
+  productName: string;
+  description: string;
+  targetAudience: string;
+  niche: string;
+  goals: string[];
+  pricing: string;
+}
+
+export interface OnboardingSession {
+  id: string;
+  userId: string;
+  status: 'active' | 'completed';
+  messages: OnboardingChatMessage[];
+  profile: Partial<OnboardingProfile> | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WeeklyAction {

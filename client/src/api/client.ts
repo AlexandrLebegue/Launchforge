@@ -39,6 +39,18 @@ export interface User {
   createdAt: string;
 }
 
+export interface CompanyProfile {
+  name: string;
+  exists: boolean;
+  website?: string;
+  description?: string;
+  location?: string;
+  stage?: string;
+  socials?: string[];
+  competitors?: string[];
+  notes?: string;
+}
+
 export interface PlanInput {
   productName: string;
   description: string;
@@ -46,6 +58,8 @@ export interface PlanInput {
   niche: string;
   goals: string[];
   pricing: string;
+  company?: CompanyProfile;
+  mode?: 'ai' | 'template';
 }
 
 export interface WeeklyAction {
@@ -154,6 +168,60 @@ export async function getPlan(
   id: string
 ): Promise<ApiResponse<LaunchPlan>> {
   return request(`/plan/${id}`);
+}
+
+// ── AI Onboarding ─────────────────────────────────────────────────────────────
+
+export interface OnboardingAttachment {
+  name: string;
+  content: string;
+}
+
+export interface OnboardingChatMessage {
+  role: 'assistant' | 'user';
+  text: string;
+  actions?: string[];
+}
+
+export interface OnboardingProfile {
+  company: CompanyProfile;
+  productName: string;
+  description: string;
+  targetAudience: string;
+  niche: string;
+  goals: string[];
+  pricing: string;
+}
+
+export interface OnboardingSession {
+  id: string;
+  userId: string;
+  status: 'active' | 'completed';
+  messages: OnboardingChatMessage[];
+  profile: OnboardingProfile | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function startOnboarding(): Promise<ApiResponse<OnboardingSession>> {
+  return request('/onboarding', { method: 'POST' });
+}
+
+export async function getOnboardingSession(
+  id: string
+): Promise<ApiResponse<OnboardingSession>> {
+  return request(`/onboarding/${id}`);
+}
+
+export async function sendOnboardingMessage(
+  id: string,
+  message: string,
+  attachments: OnboardingAttachment[] = []
+): Promise<ApiResponse<OnboardingSession>> {
+  return request(`/onboarding/${id}/message`, {
+    method: 'POST',
+    body: JSON.stringify({ message, attachments }),
+  });
 }
 
 export interface ResearchResult {
