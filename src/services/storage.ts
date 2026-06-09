@@ -12,7 +12,7 @@
 
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -225,6 +225,101 @@ export class Storage {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Posts (Content Hub)
+  // ──────────────────────────────────────────────────────────────
+
+  savePost(post: Post): void {
+    getDb()
+      .prepare(
+        `INSERT INTO posts
+           (id, userId, platform, title, content, status, scheduledAt, publishedAt,
+            recurrence, impressions, likes, comments, shares, clicks, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        post.id, post.userId, post.platform, post.title, post.content, post.status,
+        post.scheduledAt, post.publishedAt, post.recurrence,
+        post.impressions, post.likes, post.comments, post.shares, post.clicks,
+        post.createdAt, post.updatedAt
+      );
+  }
+
+  updatePost(id: string, patch: Partial<Post>): void {
+    const allowed: (keyof Post)[] = [
+      'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
+      'recurrence', 'impressions', 'likes', 'comments', 'shares', 'clicks',
+    ];
+    const fields: string[] = [];
+    const vals: any[] = [];
+    for (const key of allowed) {
+      if (patch[key] !== undefined) {
+        fields.push(`${key} = ?`);
+        vals.push(patch[key]);
+      }
+    }
+    if (fields.length === 0) return;
+    fields.push('updatedAt = ?');
+    vals.push(new Date().toISOString(), id);
+    getDb().prepare(`UPDATE posts SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  getPostById(id: string): Post | undefined {
+    return getDb().prepare(`SELECT * FROM posts WHERE id = ?`).get(id) as Post | undefined;
+  }
+
+  getPostsByUserId(userId: string): Post[] {
+    return getDb()
+      .prepare(
+        `SELECT * FROM posts WHERE userId = ?
+         ORDER BY CASE WHEN scheduledAt IS NULL THEN 1 ELSE 0 END, scheduledAt ASC, createdAt DESC`
+      )
+      .all(userId) as Post[];
+  }
+
+  deletePost(id: string): void {
+    getDb().prepare(`DELETE FROM posts WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Base de connaissances
+  // ──────────────────────────────────────────────────────────────
+
+  saveKnowledge(entry: KnowledgeEntry): void {
+    getDb()
+      .prepare(
+        `INSERT INTO knowledge (id, userId, category, title, content, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(entry.id, entry.userId, entry.category, entry.title, entry.content, entry.createdAt, entry.updatedAt);
+  }
+
+  updateKnowledge(id: string, patch: Partial<Pick<KnowledgeEntry, 'category' | 'title' | 'content'>>): void {
+    const fields: string[] = [];
+    const vals: any[] = [];
+    if (patch.category !== undefined) { fields.push('category = ?'); vals.push(patch.category); }
+    if (patch.title    !== undefined) { fields.push('title = ?');    vals.push(patch.title); }
+    if (patch.content  !== undefined) { fields.push('content = ?');  vals.push(patch.content); }
+    if (fields.length === 0) return;
+    fields.push('updatedAt = ?');
+    vals.push(new Date().toISOString(), id);
+    getDb().prepare(`UPDATE knowledge SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  getKnowledgeById(id: string): KnowledgeEntry | undefined {
+    return getDb().prepare(`SELECT * FROM knowledge WHERE id = ?`).get(id) as KnowledgeEntry | undefined;
+  }
+
+  getKnowledgeByUserId(userId: string): KnowledgeEntry[] {
+    return getDb()
+      .prepare(`SELECT * FROM knowledge WHERE userId = ? ORDER BY updatedAt DESC`)
+      .all(userId) as KnowledgeEntry[];
+  }
+
+  deleteKnowledge(id: string): void {
+    getDb().prepare(`DELETE FROM knowledge WHERE id = ?`).run(id);
   }
 
   // ──────────────────────────────────────────────────────────────

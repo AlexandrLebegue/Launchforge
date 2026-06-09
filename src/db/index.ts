@@ -158,6 +158,37 @@ function runMigrations(database: Database.Database): void {
       completedAt   TEXT,
       FOREIGN KEY (agentId) REFERENCES agents(id)
     );
+
+    CREATE TABLE IF NOT EXISTS posts (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL,
+      platform    TEXT NOT NULL,
+      title       TEXT NOT NULL DEFAULT '',
+      content     TEXT NOT NULL DEFAULT '',
+      status      TEXT NOT NULL DEFAULT 'draft',
+      scheduledAt TEXT,
+      publishedAt TEXT,
+      recurrence  TEXT NOT NULL DEFAULT 'none',
+      impressions INTEGER NOT NULL DEFAULT 0,
+      likes       INTEGER NOT NULL DEFAULT 0,
+      comments    INTEGER NOT NULL DEFAULT 0,
+      shares      INTEGER NOT NULL DEFAULT 0,
+      clicks      INTEGER NOT NULL DEFAULT 0,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      category  TEXT NOT NULL DEFAULT 'other',
+      title     TEXT NOT NULL,
+      content   TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
   `);
 
   // Additive migration: pipeline de validation par agent (idempotent, pour

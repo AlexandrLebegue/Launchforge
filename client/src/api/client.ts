@@ -463,6 +463,102 @@ export async function rejectRun(
   });
 }
 
+// ── Content Hub ───────────────────────────────────────────────────────────────
+
+export type PostStatus = 'idea' | 'draft' | 'scheduled' | 'published';
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+
+export interface Post {
+  id: string;
+  userId: string;
+  platform: string;
+  title: string;
+  content: string;
+  status: PostStatus;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  recurrence: Recurrence;
+  impressions: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  clicks: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getPosts(): Promise<ApiResponse<Post[]>> {
+  return request('/posts');
+}
+
+export async function createPost(data: Partial<Post> & { platform: string }): Promise<ApiResponse<Post>> {
+  return request('/posts', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updatePost(id: string, data: Partial<Post>): Promise<ApiResponse<Post>> {
+  return request(`/posts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deletePost(id: string): Promise<ApiResponse<null>> {
+  return request(`/posts/${id}`, { method: 'DELETE' });
+}
+
+export async function publishPost(id: string): Promise<ApiResponse<{ post: Post; next: Post | null }>> {
+  return request(`/posts/${id}/publish`, { method: 'POST' });
+}
+
+// ── Base de connaissances ─────────────────────────────────────────────────────
+
+export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'other';
+
+export interface KnowledgeEntry {
+  id: string;
+  userId: string;
+  category: KnowledgeCategory;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getKnowledge(): Promise<ApiResponse<KnowledgeEntry[]>> {
+  return request('/knowledge');
+}
+
+export async function createKnowledge(data: {
+  title: string; content: string; category: KnowledgeCategory;
+}): Promise<ApiResponse<KnowledgeEntry>> {
+  return request('/knowledge', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateKnowledge(
+  id: string,
+  data: Partial<Pick<KnowledgeEntry, 'title' | 'content' | 'category'>>
+): Promise<ApiResponse<KnowledgeEntry>> {
+  return request(`/knowledge/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteKnowledge(id: string): Promise<ApiResponse<null>> {
+  return request(`/knowledge/${id}`, { method: 'DELETE' });
+}
+
+// ── Assistant de contenu ──────────────────────────────────────────────────────
+
+export interface GeneratedContent {
+  title: string;
+  content: string;
+  hashtags: string[];
+}
+
+export async function generateContent(data: {
+  platform: string;
+  brief: string;
+  tone?: string;
+  baseContent?: string;
+}): Promise<ApiResponse<GeneratedContent>> {
+  return request('/content/generate', { method: 'POST', body: JSON.stringify(data) });
+}
+
 export async function assignCardToAgent(
   agentId: string,
   data: {

@@ -9,6 +9,9 @@ import researchRoutes from './routes/research';
 import agentRoutes from './routes/agents';
 import onboardingRoutes from './routes/onboarding';
 import approvalRoutes from './routes/approvals';
+import postRoutes from './routes/posts';
+import knowledgeRoutes from './routes/knowledge';
+import contentRoutes from './routes/content';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -30,6 +33,9 @@ app.use('/api/research', researchRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/approvals', approvalRoutes);
+app.use('/api/posts', postRoutes);
+app.use('/api/knowledge', knowledgeRoutes);
+app.use('/api/content', contentRoutes);
 
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));

@@ -8,6 +8,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { storage } from './storage';
+import { buildKnowledgeContext } from './contentAssistant';
 import { Agent, AgentPlatform, AgentTemplate, KanbanCard, LaunchPlan } from '../types';
 
 // ── Catalogue ────────────────────────────────────────────────────────────────
@@ -216,12 +217,13 @@ Entreprise : ${plan.input.company.name}${plan.input.company.website ? ` (${plan.
     : 'Produit : (contexte indisponible — reste générique mais actionnable)';
 
   const guidelines = PLATFORM_GUIDELINES[agent.platform] || `Adapte le contenu aux codes de la plateforme ${agent.platform}.`;
+  const knowledge = buildKnowledgeContext(agent.userId, 6000);
 
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 1500,
-      system: `Tu rédiges du contenu de promotion prêt à publier pour des startups. Tu écris dans la langue du contexte produit (français si la description est en français). Tu produis UNIQUEMENT le contenu final, sans préambule ni commentaire. ${guidelines}`,
+      system: `Tu rédiges du contenu de promotion prêt à publier pour des startups. Tu écris dans la langue du contexte produit (français si la description est en français). Tu produis UNIQUEMENT le contenu final, sans préambule ni commentaire. ${guidelines}${knowledge ? `\n\n## Base de connaissances de l'utilisateur (source de vérité)\n${knowledge}` : ''}`,
       messages: [{
         role: 'user',
         content: `${productContext}

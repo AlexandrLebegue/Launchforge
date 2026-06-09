@@ -234,6 +234,43 @@ export interface AgentTemplate {
   composioApp: string;
 }
 
+// ── Content Hub ───────────────────────────────────────────────────────────────
+
+export type PostStatus = 'idea' | 'draft' | 'scheduled' | 'published';
+export type Recurrence = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
+
+export interface Post {
+  id: string;
+  userId: string;
+  platform: string;
+  title: string;
+  content: string;
+  status: PostStatus;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  recurrence: Recurrence;
+  /** Métriques saisies par l'utilisateur après publication */
+  impressions: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  clicks: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'other';
+
+export interface KnowledgeEntry {
+  id: string;
+  userId: string;
+  category: KnowledgeCategory;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;

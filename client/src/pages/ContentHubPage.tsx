@@ -1,0 +1,547 @@
+import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  getPosts, createPost, updatePost, deletePost, publishPost, generateContent,
+  Post, PostStatus, Recurrence,
+} from '../api/client';
+
+export const PLATFORMS: { value: string; label: string; icon: string }[] = [
+  { value: 'linkedin',     label: 'LinkedIn',      icon: '💼' },
+  { value: 'twitter',      label: 'X / Twitter',   icon: '🐦' },
+  { value: 'instagram',    label: 'Instagram',     icon: '📸' },
+  { value: 'facebook',     label: 'Facebook',      icon: '📘' },
+  { value: 'tiktok',       label: 'TikTok',        icon: '🎬' },
+  { value: 'youtube',      label: 'YouTube',       icon: '▶️' },
+  { value: 'reddit',       label: 'Reddit',        icon: '🟠' },
+  { value: 'blog',         label: 'Blog / SEO',    icon: '📝' },
+  { value: 'newsletter',   label: 'Newsletter',    icon: '✉️' },
+  { value: 'producthunt',  label: 'Product Hunt',  icon: '🐱' },
+  { value: 'hackernews',   label: 'Hacker News',   icon: '🟧' },
+  { value: 'indiehackers', label: 'Indie Hackers', icon: '🔨' },
+];
+
+export const platformIcon  = (p: string) => PLATFORMS.find((x) => x.value === p)?.icon ?? '📣';
+export const platformLabel = (p: string) => PLATFORMS.find((x) => x.value === p)?.label ?? p;
+
+const STATUS_META: Record<PostStatus, { label: string; cls: string }> = {
+  idea:      { label: '💡 Idée',       cls: 'post-status-idea' },
+  draft:     { label: '✏️ Brouillon',  cls: 'post-status-draft' },
+  scheduled: { label: '🗓️ Programmé', cls: 'post-status-scheduled' },
+  published: { label: '✅ Publié',     cls: 'post-status-published' },
+};
+
+const RECURRENCE_LABELS: Record<Recurrence, string> = {
+  none:     'Ponctuel',
+  daily:    'Quotidien',
+  weekly:   'Hebdomadaire',
+  biweekly: 'Toutes les 2 semaines',
+  monthly:  'Mensuel',
+};
+
+export function engagementRate(p: Post): number | null {
+  if (p.impressions <= 0) return null;
+  return ((p.likes + p.comments + p.shares) / p.impressions) * 100;
+}
+
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0', '')}k` : String(n));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Éditeur de post (modal) avec assistant IA
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface EditorProps {
+  post: Post | null;            // null = création
+  onClose: () => void;
+  onSaved: (post: Post) => void;
+}
+
+function toLocalInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function PostEditor({ post, onClose, onSaved }: EditorProps) {
+  const [form, setForm] = useState({
+    platform:    post?.platform ?? 'linkedin',
+    title:       post?.title ?? '',
+    content:     post?.content ?? '',
+    status:      (post?.status ?? 'draft') as PostStatus,
+    scheduledAt: toLocalInput(post?.scheduledAt ?? null),
+    recurrence:  (post?.recurrence ?? 'none') as Recurrence,
+    impressions: post?.impressions ?? 0,
+    likes:       post?.likes ?? 0,
+    comments:    post?.comments ?? 0,
+    shares:      post?.shares ?? 0,
+    clicks:      post?.clicks ?? 0,
+  });
+  const [brief,      setBrief]      = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState('');
+
+  const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const handleGenerate = async (improve: boolean) => {
+    if (!brief.trim() && !improve) { setError('Décrivez le sujet du post dans le brief.'); return; }
+    setGenerating(true);
+    setError('');
+    const res = await generateContent({
+      platform: form.platform,
+      brief: brief.trim() || 'Améliore la clarté et l\'impact de ce contenu sans en changer le fond.',
+      baseContent: improve ? form.content : undefined,
+    });
+    setGenerating(false);
+    if (res.success && res.data) {
+      setForm((f) => ({
+        ...f,
+        title: f.title || res.data!.title,
+        content: res.data!.content + (res.data!.hashtags.length ? `\n\n${res.data!.hashtags.map((h) => `#${h}`).join(' ')}` : ''),
+      }));
+    } else {
+      setError(res.error === 'AI_NOT_CONFIGURED'
+        ? 'IA non configurée sur le serveur (ANTHROPIC_API_KEY).'
+        : res.error || 'La génération a échoué.');
+    }
+  };
+
+  const handleSave = async (e?: FormEvent) => {
+    e?.preventDefault();
+    setSaving(true);
+    setError('');
+    const payload: Partial<Post> = {
+      platform:    form.platform,
+      title:       form.title,
+      content:     form.content,
+      status:      form.status,
+      scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
+      recurrence:  form.recurrence,
+      impressions: Number(form.impressions) || 0,
+      likes:       Number(form.likes) || 0,
+      comments:    Number(form.comments) || 0,
+      shares:      Number(form.shares) || 0,
+      clicks:      Number(form.clicks) || 0,
+    };
+    const res = post
+      ? await updatePost(post.id, payload)
+      : await createPost(payload as Partial<Post> & { platform: string });
+    setSaving(false);
+    if (res.success && res.data) onSaved(res.data);
+    else setError(res.error || 'Enregistrement impossible.');
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box modal-box-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>{post ? 'Modifier le post' : 'Nouveau post'}</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <form onSubmit={handleSave} className="post-editor">
+          <div className="post-editor-row">
+            <label className="form-label-block">
+              Plateforme
+              <select value={form.platform} onChange={(e) => set('platform', e.target.value)} className="form-input">
+                {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.icon} {p.label}</option>)}
+              </select>
+            </label>
+            <label className="form-label-block">
+              Statut
+              <select value={form.status} onChange={(e) => set('status', e.target.value as PostStatus)} className="form-input">
+                <option value="idea">💡 Idée</option>
+                <option value="draft">✏️ Brouillon</option>
+                <option value="scheduled">🗓️ Programmé</option>
+                <option value="published">✅ Publié</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="form-label-block">
+            Titre <span className="form-hint-inline">(usage interne)</span>
+            <input className="form-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="ex. Annonce nouvelle fonctionnalité" />
+          </label>
+
+          {/* Assistant IA */}
+          <div className="ai-assist-box">
+            <div className="ai-assist-header">✨ Assistant IA <span className="form-hint-inline">— s'appuie sur votre <Link to="/knowledge">base de connaissances</Link></span></div>
+            <div className="ai-assist-row">
+              <input
+                className="form-input"
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                placeholder="Brief : sujet, angle, objectif… ex. « Annoncer la v2 avec un avant/après client »"
+                disabled={generating}
+              />
+              <button type="button" className="btn btn-primary" onClick={() => handleGenerate(false)} disabled={generating}>
+                {generating ? '⏳…' : '✨ Générer'}
+              </button>
+              {form.content.trim() && (
+                <button type="button" className="btn btn-ghost" onClick={() => handleGenerate(true)} disabled={generating}>
+                  🪄 Améliorer
+                </button>
+              )}
+            </div>
+          </div>
+
+          <label className="form-label-block">
+            Contenu
+            <textarea
+              className="form-input post-content-area"
+              value={form.content}
+              onChange={(e) => set('content', e.target.value)}
+              rows={10}
+              placeholder="Le contenu du post — ou laissez l'assistant IA le rédiger…"
+            />
+            <span className="form-hint-inline">{form.content.length} caractères</span>
+          </label>
+
+          <div className="post-editor-row">
+            <label className="form-label-block">
+              Date de publication prévue
+              <input
+                type="datetime-local"
+                className="form-input"
+                value={form.scheduledAt}
+                onChange={(e) => set('scheduledAt', e.target.value)}
+              />
+            </label>
+            <label className="form-label-block">
+              Récurrence
+              <select value={form.recurrence} onChange={(e) => set('recurrence', e.target.value as Recurrence)} className="form-input">
+                {(Object.keys(RECURRENCE_LABELS) as Recurrence[]).map((r) => (
+                  <option key={r} value={r}>{RECURRENCE_LABELS[r]}</option>
+                ))}
+              </select>
+              {form.recurrence !== 'none' && (
+                <span className="form-hint-inline">À chaque publication, la prochaine occurrence est créée automatiquement.</span>
+              )}
+            </label>
+          </div>
+
+          {/* Métriques (posts publiés) */}
+          {form.status === 'published' && (
+            <div className="metrics-grid">
+              {([
+                ['impressions', '👁️ Impressions'], ['likes', '❤️ Likes'], ['comments', '💬 Commentaires'],
+                ['shares', '🔁 Partages'], ['clicks', '🔗 Clics'],
+              ] as const).map(([key, label]) => (
+                <label key={key} className="form-label-block">
+                  {label}
+                  <input
+                    type="number" min={0} className="form-input"
+                    value={form[key]}
+                    onChange={(e) => set(key, Number(e.target.value) as never)}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+
+          {error && <div className="chat-error">{error}</div>}
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? '⏳ Enregistrement…' : '💾 Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Page principale
+// ─────────────────────────────────────────────────────────────────────────────
+
+type Tab = 'posts' | 'analytics';
+
+export default function ContentHubPage() {
+  const [posts,    setPosts]    = useState<Post[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [tab,      setTab]      = useState<Tab>('posts');
+  const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
+  const [statusFilter,   setStatusFilter]   = useState('all');
+  const [platformFilter, setPlatformFilter] = useState('all');
+  const [search,   setSearch]   = useState('');
+
+  const load = useCallback(async () => {
+    const res = await getPosts();
+    if (res.success && res.data) setPosts(res.data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSaved = (saved: Post) => {
+    setEditing(null);
+    setPosts((prev) => {
+      const exists = prev.some((p) => p.id === saved.id);
+      return exists ? prev.map((p) => (p.id === saved.id ? saved : p)) : [saved, ...prev];
+    });
+  };
+
+  const handleDelete = async (post: Post) => {
+    if (!window.confirm(`Supprimer « ${post.title || platformLabel(post.platform)} » ?`)) return;
+    const res = await deletePost(post.id);
+    if (res.success) setPosts((prev) => prev.filter((p) => p.id !== post.id));
+  };
+
+  const handlePublish = async (post: Post) => {
+    const res = await publishPost(post.id);
+    if (res.success && res.data) {
+      const { post: updated, next } = res.data;
+      setPosts((prev) => {
+        const out = prev.map((p) => (p.id === updated.id ? updated : p));
+        return next ? [next, ...out] : out;
+      });
+    }
+  };
+
+  // ── Données dérivées ──
+  const now = Date.now();
+  const upcoming = useMemo(
+    () => posts
+      .filter((p) => p.status === 'scheduled' && p.scheduledAt)
+      .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime())
+      .slice(0, 5),
+    [posts],
+  );
+  const published = useMemo(() => posts.filter((p) => p.status === 'published'), [posts]);
+
+  const totals = useMemo(() => {
+    const impressions = published.reduce((s, p) => s + p.impressions, 0);
+    const interactions = published.reduce((s, p) => s + p.likes + p.comments + p.shares, 0);
+    return {
+      published: published.length,
+      scheduled: posts.filter((p) => p.status === 'scheduled').length,
+      impressions,
+      engagement: impressions > 0 ? (interactions / impressions) * 100 : null,
+    };
+  }, [posts, published]);
+
+  const filtered = posts.filter((p) => {
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+    if (platformFilter !== 'all' && p.platform !== platformFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      if (!p.title.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // ── Analyse ──
+  const byPlatform = useMemo(() => {
+    const map = new Map<string, { posts: number; impressions: number; interactions: number }>();
+    for (const p of published) {
+      const cur = map.get(p.platform) ?? { posts: 0, impressions: 0, interactions: 0 };
+      cur.posts += 1;
+      cur.impressions += p.impressions;
+      cur.interactions += p.likes + p.comments + p.shares;
+      map.set(p.platform, cur);
+    }
+    return [...map.entries()].sort((a, b) => b[1].impressions - a[1].impressions);
+  }, [published]);
+
+  const bestPost = useMemo(() => {
+    const rated = published.filter((p) => engagementRate(p) !== null);
+    if (rated.length === 0) return null;
+    return rated.reduce((best, p) => (engagementRate(p)! > engagementRate(best)! ? p : best));
+  }, [published]);
+
+  if (loading) return <div className="loading">⏳ Chargement du hub de contenu…</div>;
+
+  return (
+    <div className="animate-fadeIn">
+      <div className="dashboard-header">
+        <div>
+          <h1>📣 Hub de contenu</h1>
+          <p>Planifiez, rédigez avec l'IA, publiez et suivez les performances de vos posts.</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouveau post</button>
+      </div>
+
+      {/* Stats */}
+      <div className="dashboard-stats">
+        <div className="stat-card"><span className="stat-card-icon">🗓️</span><div className="stat-card-value">{totals.scheduled}</div><div className="stat-card-label">Programmés</div></div>
+        <div className="stat-card"><span className="stat-card-icon">✅</span><div className="stat-card-value">{totals.published}</div><div className="stat-card-label">Publiés</div></div>
+        <div className="stat-card"><span className="stat-card-icon">👁️</span><div className="stat-card-value">{fmtNum(totals.impressions)}</div><div className="stat-card-label">Impressions</div></div>
+        <div className="stat-card"><span className="stat-card-icon">📈</span><div className="stat-card-value">{totals.engagement !== null ? `${totals.engagement.toFixed(1)} %` : '—'}</div><div className="stat-card-label">Engagement moyen</div></div>
+      </div>
+
+      {/* À publier prochainement */}
+      {upcoming.length > 0 && (
+        <div className="upcoming-strip">
+          <div className="upcoming-title">⏭️ Prochaines publications</div>
+          {upcoming.map((p) => {
+            const overdue = new Date(p.scheduledAt!).getTime() < now;
+            return (
+              <div key={p.id} className={`upcoming-item${overdue ? ' overdue' : ''}`}>
+                <span className="upcoming-icon">{platformIcon(p.platform)}</span>
+                <span className="upcoming-name" onClick={() => setEditing(p)}>{p.title || platformLabel(p.platform)}</span>
+                {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                <span className={`upcoming-date${overdue ? ' overdue' : ''}`}>
+                  {overdue ? '⚠️ En retard — ' : ''}{fmtDate(p.scheduledAt)}
+                </span>
+                <button className="btn btn-sm btn-primary" onClick={() => handlePublish(p)}>✅ Marquer publié</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="hub-tabs">
+        <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>📝 Posts</button>
+        <button className={`hub-tab${tab === 'analytics' ? ' active' : ''}`} onClick={() => setTab('analytics')}>📊 Analyse</button>
+      </div>
+
+      {tab === 'posts' ? (
+        <>
+          {/* Filtres */}
+          <div className="kanban-toolbar">
+            <input className="kanban-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔎 Rechercher un post…" />
+            <select className="kanban-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">Tous les statuts</option>
+              <option value="idea">💡 Idées</option>
+              <option value="draft">✏️ Brouillons</option>
+              <option value="scheduled">🗓️ Programmés</option>
+              <option value="published">✅ Publiés</option>
+            </select>
+            <select className="kanban-select" value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+              <option value="all">Toutes plateformes</option>
+              {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.icon} {p.label}</option>)}
+            </select>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="plan-empty">
+              <span className="plan-empty-icon">📣</span>
+              <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
+              <p>Créez votre premier post — l'assistant IA le rédige à partir de votre base de connaissances.</p>
+              <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
+                ＋ Créer un post
+              </button>
+            </div>
+          ) : (
+            <div className="post-grid">
+              {filtered.map((p) => {
+                const rate = engagementRate(p);
+                return (
+                  <div key={p.id} className="post-card" onClick={() => setEditing(p)}>
+                    <div className="post-card-top">
+                      <span className="post-platform">{platformIcon(p.platform)} {platformLabel(p.platform)}</span>
+                      <span className={`post-status ${STATUS_META[p.status].cls}`}>{STATUS_META[p.status].label}</span>
+                      <button className="kanban-delete" title="Supprimer" onClick={(e) => { e.stopPropagation(); handleDelete(p); }}>×</button>
+                    </div>
+                    <div className="post-card-title">{p.title || '(sans titre)'}</div>
+                    {p.content && <div className="post-card-excerpt">{p.content.slice(0, 140)}{p.content.length > 140 ? '…' : ''}</div>}
+                    <div className="post-card-footer">
+                      {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                      {p.status === 'scheduled' && <span className="post-card-date">🗓️ {fmtDate(p.scheduledAt)}</span>}
+                      {p.status === 'published' && (
+                        <span className="post-card-metrics">
+                          👁️ {fmtNum(p.impressions)} · ❤️ {fmtNum(p.likes)}{rate !== null && ` · 📈 ${rate.toFixed(1)} %`}
+                        </span>
+                      )}
+                      {p.status === 'scheduled' && (
+                        <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); handlePublish(p); }}>
+                          ✅ Publié
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        /* ── Analyse ── */
+        published.length === 0 ? (
+          <div className="plan-empty">
+            <span className="plan-empty-icon">📊</span>
+            <h2>Pas encore de données</h2>
+            <p>Publiez des posts puis renseignez leurs métriques (impressions, likes…) pour voir l'analyse ici.</p>
+          </div>
+        ) : (
+          <div className="analytics-wrap">
+            {bestPost && (
+              <div className="best-post-card" onClick={() => setEditing(bestPost)}>
+                <span className="best-post-label">🏆 Meilleur post</span>
+                <span className="best-post-title">{platformIcon(bestPost.platform)} {bestPost.title || '(sans titre)'}</span>
+                <span className="best-post-rate">📈 {engagementRate(bestPost)!.toFixed(1)} % d'engagement</span>
+              </div>
+            )}
+
+            {/* Par plateforme */}
+            <div className="card">
+              <div className="card-header">Performance par plateforme</div>
+              {byPlatform.map(([platform, s]) => {
+                const rate = s.impressions > 0 ? (s.interactions / s.impressions) * 100 : 0;
+                const maxImpressions = byPlatform[0][1].impressions || 1;
+                return (
+                  <div key={platform} className="platform-row">
+                    <span className="platform-row-name">{platformIcon(platform)} {platformLabel(platform)}</span>
+                    <div className="platform-row-bar">
+                      <div className="platform-row-fill" style={{ width: `${Math.max(4, (s.impressions / maxImpressions) * 100)}%` }} />
+                    </div>
+                    <span className="platform-row-stats">
+                      {s.posts} post{s.posts > 1 ? 's' : ''} · 👁️ {fmtNum(s.impressions)} · 📈 {rate.toFixed(1)} %
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Tableau détaillé */}
+            <div className="card">
+              <div className="card-header">Détail des posts publiés</div>
+              <div className="analytics-table">
+                <div className="analytics-row analytics-head">
+                  <span>Post</span><span>👁️</span><span>❤️</span><span>💬</span><span>🔁</span><span>🔗</span><span>📈</span>
+                </div>
+                {[...published]
+                  .sort((a, b) => (engagementRate(b) ?? -1) - (engagementRate(a) ?? -1))
+                  .map((p) => {
+                    const rate = engagementRate(p);
+                    return (
+                      <div key={p.id} className="analytics-row" onClick={() => setEditing(p)}>
+                        <span className="analytics-post">{platformIcon(p.platform)} {p.title || '(sans titre)'}</span>
+                        <span>{fmtNum(p.impressions)}</span>
+                        <span>{fmtNum(p.likes)}</span>
+                        <span>{fmtNum(p.comments)}</span>
+                        <span>{fmtNum(p.shares)}</span>
+                        <span>{fmtNum(p.clicks)}</span>
+                        <span className={rate !== null && rate >= 3 ? 'rate-good' : undefined}>
+                          {rate !== null ? `${rate.toFixed(1)} %` : '—'}
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+              <p className="form-hint" style={{ marginTop: 10 }}>
+                💡 Renseignez les métriques en ouvrant un post publié. Un taux d'engagement ≥ 3 % est considéré comme bon sur la plupart des plateformes.
+              </p>
+            </div>
+          </div>
+        )
+      )}
+
+      {editing !== null && (
+        <PostEditor
+          post={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}
