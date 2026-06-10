@@ -50,9 +50,8 @@ export function scheduleDate(start: Date, dayOffset: number, hour: number, index
 }
 
 function buildPlanContext(userId: string): string {
-  const plans = storage.getPlansByUserId(userId);
-  if (plans.length === 0) return '';
-  const plan = plans[0];
+  const plan = storage.getActivePlan(userId);
+  if (!plan) return '';
 
   const lines: string[] = ['## Plan de lancement de l\'utilisateur'];
   for (const week of plan.weekly_plan.slice(0, 4)) {
@@ -123,6 +122,7 @@ export async function generateContentCalendar(params: CalendarParams): Promise<P
     const post: Post = {
       id:          uuid(),
       userId:      params.userId,
+      planId:      storage.getActivePlan(params.userId)?.id ?? null,
       platform,
       title:       typeof p.title === 'string' && p.title.trim() ? p.title.trim().slice(0, 150) : `Post ${i + 1}`,
       content:     p.content.trim(),

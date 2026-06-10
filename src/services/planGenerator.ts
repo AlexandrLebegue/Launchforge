@@ -10,12 +10,15 @@ export function createLaunchPlan(input: PlanInput, userId: string = 'anonymous')
   const plan: LaunchPlan = {
     id: uuidv4(),
     userId,
+    active: 1,
     createdAt: new Date().toISOString(),
     input,
     ...planData,
   };
 
   storage.savePlan(plan);
+  // Un nouveau projet devient le projet de travail courant
+  storage.setActivePlan(userId, plan.id);
   return plan;
 }
 
@@ -25,11 +28,13 @@ export async function createAILaunchPlan(input: PlanInput, userId: string = 'ano
     const plan: LaunchPlan = {
       id: uuidv4(),
       userId,
+      active: 1,
       createdAt: new Date().toISOString(),
       input,
       ...planData,
     };
     storage.savePlan(plan);
+    storage.setActivePlan(userId, plan.id);
     return plan;
   } catch {
     return createLaunchPlan(input, userId);

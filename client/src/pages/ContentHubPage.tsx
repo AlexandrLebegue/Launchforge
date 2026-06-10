@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  generateCalendar, syncAllToCalendar,
+  generateCalendar, syncAllToCalendar, getPlans,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 
@@ -479,7 +479,8 @@ function CalendarModal({ onClose, onGenerated }: {
 type Tab = 'posts' | 'timeline' | 'analytics';
 
 export default function ContentHubPage() {
-  const [posts,    setPosts]    = useState<Post[]>([]);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
@@ -520,16 +521,29 @@ export default function ContentHubPage() {
   const [search,   setSearch]   = useState('');
 
   const load = useCallback(async () => {
-    const res = await getPosts();
-    if (res.success && res.data) setPosts(res.data);
+    const [postsRes, plansRes] = await Promise.all([getPosts(), getPlans()]);
+    if (postsRes.success && postsRes.data) setAllPosts(postsRes.data);
+    if (plansRes.success && plansRes.data) {
+      const active = plansRes.data.find((p) => p.active) ?? plansRes.data[0];
+      setActiveProject(active ? { id: active.id, name: active.input.productName } : null);
+    }
     setLoading(false);
   }, []);
+
+  // Le Hub travaille dans le contexte du projet actif ; les posts créés
+  // avant la notion de projet (planId null) restent visibles.
+  const posts = useMemo(
+    () => activeProject
+      ? allPosts.filter((p) => p.planId === activeProject.id || p.planId === null)
+      : allPosts,
+    [allPosts, activeProject],
+  );
 
   useEffect(() => { load(); }, [load]);
 
   const handleSaved = (saved: Post) => {
     setEditing(null);
-    setPosts((prev) => {
+    setAllPosts((prev) => {
       const exists = prev.some((p) => p.id === saved.id);
       return exists ? prev.map((p) => (p.id === saved.id ? saved : p)) : [saved, ...prev];
     });
@@ -538,14 +552,14 @@ export default function ContentHubPage() {
   const handleDelete = async (post: Post) => {
     if (!window.confirm(`Supprimer « ${post.title || platformLabel(post.platform)} » ?`)) return;
     const res = await deletePost(post.id);
-    if (res.success) setPosts((prev) => prev.filter((p) => p.id !== post.id));
+    if (res.success) setAllPosts((prev) => prev.filter((p) => p.id !== post.id));
   };
 
   const handlePublish = async (post: Post) => {
     const res = await publishPost(post.id);
     if (res.success && res.data) {
       const { post: updated, next } = res.data;
-      setPosts((prev) => {
+      setAllPosts((prev) => {
         const out = prev.map((p) => (p.id === updated.id ? updated : p));
         return next ? [next, ...out] : out;
       });
@@ -610,7 +624,10 @@ export default function ContentHubPage() {
       <div className="dashboard-header">
         <div>
           <h1>📣 Hub de contenu</h1>
-          <p>Planifiez, rédigez avec l'IA, publiez et suivez les performances de vos posts.</p>
+          <p>
+            {activeProject && <span className="chip chip-project">🎯 Projet : {activeProject.name}</span>}
+            {' '}Planifiez, rédigez avec l'IA, publiez et suivez les performances.
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
@@ -819,7 +836,7 @@ export default function ContentHubPage() {
           onClose={() => setShowCalendar(false)}
           onGenerated={(created) => {
             setShowCalendar(false);
-            setPosts((prev) => [...created, ...prev]);
+            setAllPosts((prev) => [...created, ...prev]);
             setTab('posts');
             setFeedback(`✅ ${created.length} posts rédigés et programmés — relisez-les dans la liste ci-dessous avant publication.`);
           }}

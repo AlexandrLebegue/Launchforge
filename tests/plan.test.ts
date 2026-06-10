@@ -219,3 +219,67 @@ describe('Research', () => {
     expect(res.body.success).toBe(false);
   });
 });
+
+describe('Projets (plan actif)', () => {
+  it('un nouveau plan devient le projet actif', async () => {
+    const res = await request(app)
+      .post('/api/plan')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...validPlanPayload, productName: 'Projet B' });
+    expect(res.status).toBe(201);
+    expect(res.body.data.active).toBe(1);
+
+    const list = await request(app)
+      .get('/api/plan')
+      .set('Authorization', `Bearer ${token}`);
+    const actives = list.body.data.filter((p: any) => p.active === 1);
+    expect(actives).toHaveLength(1);
+    expect(actives[0].input.productName).toBe('Projet B');
+  });
+
+  it('POST /api/plan/:id/activate bascule le projet actif', async () => {
+    const list = await request(app)
+      .get('/api/plan')
+      .set('Authorization', `Bearer ${token}`);
+    const inactive = list.body.data.find((p: any) => p.active === 0);
+    expect(inactive).toBeTruthy();
+
+    const res = await request(app)
+      .post(`/api/plan/${inactive.id}/activate`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+
+    const after = await request(app)
+      .get('/api/plan')
+      .set('Authorization', `Bearer ${token}`);
+    const actives = after.body.data.filter((p: any) => p.active === 1);
+    expect(actives).toHaveLength(1);
+    expect(actives[0].id).toBe(inactive.id);
+  });
+
+  it('les nouveaux posts sont rattachés au projet actif', async () => {
+    const plans = await request(app)
+      .get('/api/plan')
+      .set('Authorization', `Bearer ${token}`);
+    const activeId = plans.body.data.find((p: any) => p.active === 1).id;
+
+    const post = await request(app)
+      .post('/api/posts')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ platform: 'linkedin', title: 'Post du projet' });
+    expect(post.body.data.planId).toBe(activeId);
+  });
+
+  it('refuse d\'activer le plan d\'un autre utilisateur', async () => {
+    const other = await request(app).post('/api/auth/register').send({
+      email: 'projets-other@launchforge.dev', password: 'password123', name: 'Other',
+    });
+    const plans = await request(app)
+      .get('/api/plan')
+      .set('Authorization', `Bearer ${token}`);
+    const res = await request(app)
+      .post(`/api/plan/${plans.body.data[0].id}/activate`)
+      .set('Authorization', `Bearer ${other.body.data.token}`);
+    expect(res.status).toBe(404);
+  });
+});

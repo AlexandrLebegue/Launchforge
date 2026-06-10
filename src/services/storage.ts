@@ -54,15 +54,16 @@ export class Storage {
     getDb()
       .prepare(
         `INSERT INTO plans
-           (id, userId, input,
+           (id, userId, active, input,
             weekly_plan, community_targets, content_angles,
             outreach_strategy, launch_sequencing, validation_checklist,
             first_users_tactics, kanban_state, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         plan.id,
         plan.userId,
+        plan.active ?? 0,
         JSON.stringify(plan.input),
         JSON.stringify(plan.weekly_plan),
         JSON.stringify(plan.community_targets),
@@ -87,6 +88,22 @@ export class Storage {
       .prepare(`SELECT * FROM plans WHERE id = ?`)
       .get(id) as any;
     return row ? this.rowToPlan(row) : undefined;
+  }
+
+  /** Définit le projet actif de l'utilisateur (un seul à la fois) */
+  setActivePlan(userId: string, planId: string): void {
+    const db = getDb();
+    db.prepare(`UPDATE plans SET active = 0 WHERE userId = ?`).run(userId);
+    db.prepare(`UPDATE plans SET active = 1 WHERE id = ? AND userId = ?`).run(planId, userId);
+  }
+
+  /** Projet actif de l'utilisateur (à défaut : le plus récent) */
+  getActivePlan(userId: string): LaunchPlan | undefined {
+    const row = getDb()
+      .prepare(`SELECT * FROM plans WHERE userId = ? AND active = 1 LIMIT 1`)
+      .get(userId) as any;
+    if (row) return this.rowToPlan(row);
+    return this.getPlansByUserId(userId)[0];
   }
 
   getPlansByUserId(userId: string): LaunchPlan[] {
@@ -150,6 +167,7 @@ export class Storage {
     return {
       id:                   row.id,
       userId:               row.userId,
+      active:               row.active ?? 0,
       createdAt:            row.createdAt,
       input:                JSON.parse(row.input),
       weekly_plan:          JSON.parse(row.weekly_plan),
@@ -235,13 +253,13 @@ export class Storage {
     getDb()
       .prepare(
         `INSERT INTO posts
-           (id, userId, platform, title, content, status, scheduledAt, publishedAt,
+           (id, userId, planId, platform, title, content, status, scheduledAt, publishedAt,
             externalUrl, imageUrl, recurrence, autoPublish, publishError, calendarSynced,
             impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        post.id, post.userId, post.platform, post.title, post.content, post.status,
+        post.id, post.userId, post.planId, post.platform, post.title, post.content, post.status,
         post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.recurrence,
         post.autoPublish, post.publishError, post.calendarSynced,
         post.impressions, post.likes, post.comments, post.shares, post.clicks,

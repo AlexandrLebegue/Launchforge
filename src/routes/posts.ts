@@ -49,6 +49,7 @@ router.post('/', (req: Request, res: Response) => {
   const post: Post = {
     id:          uuid(),
     userId:      req.user!.userId,
+    planId:      storage.getActivePlan(req.user!.userId)?.id ?? null,
     platform:    body.platform,
     title:       typeof body.title === 'string' ? body.title : '',
     content:     typeof body.content === 'string' ? body.content : '',

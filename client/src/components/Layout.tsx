@@ -1,6 +1,13 @@
-import { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
-import { User, setToken, getApprovals } from '../api/client';
+import { useState, useEffect, useCallback } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { User, setToken, getApprovals, getPlans, activatePlan, LaunchPlan } from '../api/client';
+
+const nicheEmojis: Record<string, string> = {
+  saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
+  marketplace: '🏪', fintech: '💳', health: '🏥',
+  education: '🎓', ecommerce: '🛒', content: '✍️',
+  'local-business': '🏠', services: '🧰', other: '🚀',
+};
 
 interface Props {
   user: User;
@@ -10,7 +17,6 @@ interface Props {
 const navItems = [
   { to: '/',          icon: '📊', label: 'Tableau de bord' },
   { to: '/content',   icon: '📣', label: 'Hub de contenu'  },
-  { to: '/new',       icon: '✨', label: 'Nouveau plan'    },
   { to: '/knowledge', icon: '📚', label: 'Connaissances'   },
   { to: '/approvals', icon: '✋', label: 'Validations'     },
   { to: '/config',    icon: '⚙️', label: 'Configuration'   },
@@ -18,8 +24,31 @@ const navItems = [
 
 export default function Layout({ user, onLogout }: Props) {
   const location  = useLocation();
+  const navigate  = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [projects, setProjects] = useState<LaunchPlan[]>([]);
+  const [switching, setSwitching] = useState<string | null>(null);
+
+  const loadProjects = useCallback(() => {
+    getPlans().then((res) => {
+      if (res.success && res.data) setProjects(res.data);
+    });
+  }, []);
+
+  // Rafraîchi à chaque navigation : un nouveau plan apparaît immédiatement
+  useEffect(() => { loadProjects(); }, [loadProjects, location.pathname]);
+
+  const handleSelectProject = async (plan: LaunchPlan) => {
+    closeSidebar();
+    if (!plan.active) {
+      setSwitching(plan.id);
+      await activatePlan(plan.id);
+      setSwitching(null);
+      setProjects((prev) => prev.map((p) => ({ ...p, active: p.id === plan.id ? 1 : 0 })));
+    }
+    navigate(`/plan/${plan.id}`);
+  };
 
   // Badge "validations en attente" — rafraîchi à chaque navigation + toutes les 30 s
   useEffect(() => {
@@ -95,6 +124,32 @@ export default function Layout({ user, onLogout }: Props) {
               </Link>
             );
           })}
+
+          <span className="layout-nav-section" style={{ marginTop: 18 }}>Projets</span>
+
+          {projects.map((plan) => {
+            const isActive = Boolean(plan.active);
+            const isCurrent = location.pathname === `/plan/${plan.id}`;
+            return (
+              <button
+                key={plan.id}
+                className={`layout-nav-item layout-project${isCurrent ? ' active' : ''}`}
+                onClick={() => handleSelectProject(plan)}
+                title={isActive ? 'Projet actif — contexte de travail courant' : 'Cliquer pour activer ce projet'}
+              >
+                <span className="layout-nav-icon">{nicheEmojis[plan.input.niche] ?? '🚀'}</span>
+                <span className="layout-project-name">{plan.input.productName}</span>
+                {switching === plan.id
+                  ? <span className="layout-project-dot loading">⏳</span>
+                  : isActive && <span className="layout-project-dot" title="Projet actif" />}
+              </button>
+            );
+          })}
+
+          <Link to="/new" className="layout-nav-item layout-project-new" onClick={closeSidebar}>
+            <span className="layout-nav-icon">＋</span>
+            Nouveau projet
+          </Link>
         </nav>
 
         {/* Footer: user info + logout */}

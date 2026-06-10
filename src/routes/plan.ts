@@ -100,6 +100,20 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
   }
 });
 
+// ── POST /api/plan/:id/activate ──────────────────────────────────────────────
+// Définit le projet de travail courant : le Hub, l'IA et le bot Telegram
+// travaillent dans le contexte de ce projet.
+router.post('/:id/activate', requireAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const user = req.user as AuthPayload;
+  const plan = getLaunchPlan(id);
+  if (!plan || plan.userId !== user.userId) {
+    return res.status(404).json({ success: false, error: `Plan with id "${id}" not found` });
+  }
+  storage.setActivePlan(user.userId, id);
+  res.json({ success: true, data: { activePlanId: id } });
+});
+
 // Runs des agents pour ce plan (badges temps réel sur le Kanban)
 router.get('/:id/runs', requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;

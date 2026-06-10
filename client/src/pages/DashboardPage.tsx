@@ -154,6 +154,7 @@ export default function DashboardPage() {
                   <h3 className="plan-card-title">
                     {emoji} {plan.input.productName}
                   </h3>
+                  {Boolean(plan.active) && <span className="chip chip-project">🎯 Projet actif</span>}
                 </div>
 
                 <div className="plan-card-meta">

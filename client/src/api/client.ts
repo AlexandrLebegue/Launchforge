@@ -110,6 +110,8 @@ export interface FirstUsersTactic {
 export interface LaunchPlan {
   id: string;
   userId: string;
+  /** 1 = projet actif (contexte de travail courant) */
+  active: number;
   createdAt: string;
   input: PlanInput;
   weekly_plan: WeeklyAction[];
@@ -168,6 +170,11 @@ export async function getPlan(
   id: string
 ): Promise<ApiResponse<LaunchPlan>> {
   return request(`/plan/${id}`);
+}
+
+/** Définit le projet de travail courant (sidebar) */
+export async function activatePlan(id: string): Promise<ApiResponse<{ activePlanId: string }>> {
+  return request(`/plan/${id}/activate`, { method: 'POST' });
 }
 
 // ── AI Onboarding ─────────────────────────────────────────────────────────────
@@ -471,6 +478,8 @@ export type Recurrence = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
 export interface Post {
   id: string;
   userId: string;
+  /** Projet (plan) auquel ce post appartient — null pour les anciens posts */
+  planId: string | null;
   platform: string;
   title: string;
   content: string;

@@ -40,9 +40,9 @@ export function buildKnowledgeContext(userId: string, maxChars = 8000): string {
 
 /** Contexte entreprise tiré du plan le plus récent de l'utilisateur */
 export function buildCompanyContext(userId: string): string {
-  const plans = storage.getPlansByUserId(userId);
-  if (plans.length === 0) return '';
-  const input = plans[0].input;
+  const plan = storage.getActivePlan(userId);
+  if (!plan) return '';
+  const input = plan.input;
   const lines = [
     `Produit : ${input.productName}`,
     `Description : ${input.description}`,

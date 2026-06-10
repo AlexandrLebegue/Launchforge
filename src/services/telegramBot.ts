@@ -273,6 +273,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
       const now = new Date().toISOString();
       const post: Post = {
         id: uuid(), userId,
+        planId: storage.getActivePlan(userId)?.id ?? null,
         platform: String(args.platform || 'linkedin'),
         title: generated.title, content: generated.content,
         status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,

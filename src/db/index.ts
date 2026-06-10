@@ -118,6 +118,10 @@ function runMigrations(database: Database.Database): void {
       `ALTER TABLE plans ADD COLUMN kanban_state TEXT NOT NULL DEFAULT '{}'`
     );
   }
+  // Projets : un plan actif par utilisateur
+  if (!cols.some((c) => c.name === 'active')) {
+    database.exec(`ALTER TABLE plans ADD COLUMN active INTEGER NOT NULL DEFAULT 0`);
+  }
 
 
   // Agents tables (idempotent — safe to run on existing DBs)
@@ -253,5 +257,8 @@ function runMigrations(database: Database.Database): void {
   }
   if (!postCols.some((c) => c.name === 'imageUrl')) {
     database.exec(`ALTER TABLE posts ADD COLUMN imageUrl TEXT`);
+  }
+  if (!postCols.some((c) => c.name === 'planId')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN planId TEXT`);
   }
 }
