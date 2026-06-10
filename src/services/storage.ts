@@ -236,12 +236,14 @@ export class Storage {
       .prepare(
         `INSERT INTO posts
            (id, userId, platform, title, content, status, scheduledAt, publishedAt,
-            externalUrl, recurrence, impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            externalUrl, recurrence, autoPublish, publishError, calendarSynced,
+            impressions, likes, comments, shares, clicks, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.platform, post.title, post.content, post.status,
         post.scheduledAt, post.publishedAt, post.externalUrl, post.recurrence,
+        post.autoPublish, post.publishError, post.calendarSynced,
         post.impressions, post.likes, post.comments, post.shares, post.clicks,
         post.createdAt, post.updatedAt
       );
@@ -250,7 +252,8 @@ export class Storage {
   updatePost(id: string, patch: Partial<Post>): void {
     const allowed: (keyof Post)[] = [
       'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
-      'externalUrl', 'recurrence', 'impressions', 'likes', 'comments', 'shares', 'clicks',
+      'externalUrl', 'recurrence', 'autoPublish', 'publishError', 'calendarSynced',
+      'impressions', 'likes', 'comments', 'shares', 'clicks',
     ];
     const fields: string[] = [];
     const vals: any[] = [];
@@ -281,6 +284,19 @@ export class Storage {
 
   deletePost(id: string): void {
     getDb().prepare(`DELETE FROM posts WHERE id = ?`).run(id);
+  }
+
+  /** Posts programmés à publier automatiquement dont l'heure est passée */
+  getDueAutoPublishPosts(nowIso: string): Post[] {
+    return getDb()
+      .prepare(
+        `SELECT * FROM posts
+         WHERE status = 'scheduled' AND autoPublish = 1
+           AND scheduledAt IS NOT NULL AND scheduledAt <= ?
+         ORDER BY scheduledAt ASC
+         LIMIT 10`
+      )
+      .all(nowIso) as Post[];
   }
 
   // ──────────────────────────────────────────────────────────────

@@ -8,6 +8,8 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
+import { markPublished } from '../services/postPublisher';
+import { syncPostsToCalendarInBackground } from '../services/calendarSync';
 import { Post, PostStatus, Recurrence } from '../types';
 
 const router = Router();
@@ -29,18 +31,6 @@ function sanitizeMetric(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
-}
-
-/** Prochaine occurrence d'un post récurrent */
-export function nextOccurrence(from: Date, recurrence: Recurrence): Date | null {
-  const next = new Date(from);
-  switch (recurrence) {
-    case 'daily':    next.setDate(next.getDate() + 1);   return next;
-    case 'weekly':   next.setDate(next.getDate() + 7);   return next;
-    case 'biweekly': next.setDate(next.getDate() + 14);  return next;
-    case 'monthly':  next.setMonth(next.getMonth() + 1); return next;
-    default: return null;
-  }
 }
 
 // ── GET /api/posts ───────────────────────────────────────────────────────────
@@ -67,12 +57,21 @@ router.post('/', (req: Request, res: Response) => {
     publishedAt: null,
     externalUrl: typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null,
     recurrence:  RECURRENCES.includes(body.recurrence as Recurrence) ? (body.recurrence as Recurrence) : 'none',
+    autoPublish: body.autoPublish ? 1 : 0,
+    publishError: null,
+    calendarSynced: 0,
     impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
     createdAt:   now,
     updatedAt:   now,
   };
   storage.savePost(post);
-  res.status(201).json({ success: true, data: post });
+
+  // Synchro automatique vers le calendrier personnel (best-effort, non bloquant)
+  if (post.status === 'scheduled' && post.scheduledAt) {
+    syncPostsToCalendarInBackground([post]);
+  }
+
+  res.status(201).json({ success: true, data: storage.getPostById(post.id) ?? post });
 });
 
 // ── PATCH /api/posts/:id ─────────────────────────────────────────────────────
@@ -92,6 +91,16 @@ router.patch('/:id', (req: Request, res: Response) => {
     patch.externalUrl = typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null;
   }
   if (RECURRENCES.includes(body.recurrence as Recurrence)) patch.recurrence = body.recurrence as Recurrence;
+  if (body.autoPublish !== undefined) {
+    patch.autoPublish = body.autoPublish ? 1 : 0;
+    // Réactiver l'auto-publication efface l'erreur précédente
+    if (patch.autoPublish === 1) patch.publishError = null;
+  }
+
+  // Date modifiée → l'événement calendrier doit être recréé
+  if (patch.scheduledAt !== undefined && patch.scheduledAt !== post.scheduledAt) {
+    patch.calendarSynced = 0;
+  }
 
   for (const metric of ['impressions', 'likes', 'comments', 'shares', 'clicks'] as const) {
     const v = sanitizeMetric(body[metric]);
@@ -99,7 +108,14 @@ router.patch('/:id', (req: Request, res: Response) => {
   }
 
   storage.updatePost(post.id, patch);
-  res.json({ success: true, data: storage.getPostById(post.id) });
+  const updated = storage.getPostById(post.id)!;
+
+  // Synchro automatique vers le calendrier personnel (best-effort, non bloquant)
+  if (updated.status === 'scheduled' && updated.scheduledAt && !updated.calendarSynced) {
+    syncPostsToCalendarInBackground([updated]);
+  }
+
+  res.json({ success: true, data: updated });
 });
 
 // ── POST /api/posts/:id/publish ──────────────────────────────────────────────
@@ -113,32 +129,12 @@ router.post('/:id/publish', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Post already published' });
   }
 
-  const now = new Date();
-  storage.updatePost(post.id, { status: 'published', publishedAt: now.toISOString() });
+  const { post: published, next } = markPublished(post);
 
-  let next: Post | null = null;
-  if (post.recurrence !== 'none') {
-    const base = post.scheduledAt ? new Date(post.scheduledAt) : now;
-    const nextDate = nextOccurrence(base, post.recurrence);
-    if (nextDate) {
-      // Si la date calculée est déjà passée (publication en retard), repartir d'aujourd'hui
-      const scheduled = nextDate.getTime() > now.getTime() ? nextDate : nextOccurrence(now, post.recurrence)!;
-      const ts = new Date().toISOString();
-      next = {
-        ...post,
-        id:          uuid(),
-        status:      'scheduled',
-        scheduledAt: scheduled.toISOString(),
-        publishedAt: null,
-        impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
-        createdAt:   ts,
-        updatedAt:   ts,
-      };
-      storage.savePost(next);
-    }
-  }
+  // La prochaine occurrence repart dans le calendrier personnel
+  if (next) syncPostsToCalendarInBackground([next]);
 
-  res.json({ success: true, data: { post: storage.getPostById(post.id), next } });
+  res.json({ success: true, data: { post: published, next } });
 });
 
 // ── POST /api/posts/:id/sync-metrics ─────────────────────────────────────────

@@ -480,6 +480,12 @@ export interface Post {
   /** URL du post publié sur la plateforme (pour la synchro des métriques) */
   externalUrl: string | null;
   recurrence: Recurrence;
+  /** 1 = publié automatiquement à l'heure programmée par le worker (Composio) */
+  autoPublish: number;
+  /** Dernière erreur de publication automatique */
+  publishError: string | null;
+  /** 1 = événement créé dans le calendrier personnel */
+  calendarSynced: number;
   impressions: number;
   likes: number;
   comments: number;

@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { generateContent, isContentAssistantConfigured } from '../services/contentAssistant';
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
+import { syncPostsToCalendarInBackground } from '../services/calendarSync';
 
 const router = Router();
 router.use(requireAuth);
@@ -77,6 +78,10 @@ router.post('/calendar', async (req: Request, res: Response) => {
       platforms,
       startDate: start,
     });
+
+    // Tout le lot part dans le calendrier personnel (best-effort, non bloquant)
+    syncPostsToCalendarInBackground(posts);
+
     res.status(201).json({ success: true, data: posts });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Generation failed';

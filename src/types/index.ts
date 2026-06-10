@@ -251,6 +251,12 @@ export interface Post {
   /** URL du post une fois publié sur la plateforme (sert à la synchro des métriques) */
   externalUrl: string | null;
   recurrence: Recurrence;
+  /** Publication automatique à l'heure programmée par le worker (via Composio) */
+  autoPublish: number;
+  /** Dernière erreur de publication automatique (null si OK) */
+  publishError: string | null;
+  /** 1 si un événement a été créé dans le calendrier personnel de l'utilisateur */
+  calendarSynced: number;
   /** Métriques saisies par l'utilisateur après publication */
   impressions: number;
   likes: number;

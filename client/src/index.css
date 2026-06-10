@@ -3481,3 +3481,39 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Publication automatique */
+.chip-auto {
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--color-success);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.chip-error {
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--color-error);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.autopublish-toggle {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.autopublish-toggle.on {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.06);
+}
+.autopublish-toggle input { margin-top: 3px; accent-color: var(--color-success); }
+.autopublish-text { display: flex; flex-direction: column; gap: 3px; }
+.autopublish-title { font-size: 0.83rem; font-weight: 700; }

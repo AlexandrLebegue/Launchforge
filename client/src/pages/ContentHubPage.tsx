@@ -75,6 +75,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
     scheduledAt: toLocalInput(post?.scheduledAt ?? null),
     externalUrl: post?.externalUrl ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
+    autoPublish: Boolean(post?.autoPublish),
     impressions: post?.impressions ?? 0,
     likes:       post?.likes ?? 0,
     comments:    post?.comments ?? 0,
@@ -154,6 +155,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
       scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
       externalUrl: form.externalUrl.trim() || null,
       recurrence:  form.recurrence,
+      autoPublish: form.autoPublish ? 1 : 0,
       impressions: Number(form.impressions) || 0,
       likes:       Number(form.likes) || 0,
       comments:    Number(form.comments) || 0,
@@ -256,6 +258,29 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
               )}
             </label>
           </div>
+
+          {/* Publication automatique (worker + Composio) */}
+          {form.status === 'scheduled' && (
+            <label className={`autopublish-toggle${form.autoPublish ? ' on' : ''}`}>
+              <input
+                type="checkbox"
+                checked={form.autoPublish}
+                onChange={(e) => set('autoPublish', e.target.checked)}
+              />
+              <span className="autopublish-text">
+                <span className="autopublish-title">⚡ Publication automatique</span>
+                <span className="form-hint-inline">
+                  Le worker publie ce post tout seul à l'heure programmée via vos comptes Composio —
+                  vérifiez le contenu avant d'activer. Sans cette option, vous publiez manuellement.
+                </span>
+              </span>
+            </label>
+          )}
+          {post?.publishError && (
+            <div className="chat-error">
+              ⚠️ La publication automatique a échoué : {post.publishError} — corrigez puis réactivez l'option, ou publiez manuellement.
+            </div>
+          )}
 
           {/* Métriques (posts publiés) */}
           {form.status === 'published' && (
@@ -566,6 +591,8 @@ export default function ContentHubPage() {
                 <span className="upcoming-icon">{platformIcon(p.platform)}</span>
                 <span className="upcoming-name" onClick={() => setEditing(p)}>{p.title || platformLabel(p.platform)}</span>
                 {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">⚡ auto</span>}
+                {Boolean(p.calendarSynced) && <span title="Ajouté à votre calendrier personnel">🗓️</span>}
                 <span className={`upcoming-date${overdue ? ' overdue' : ''}`}>
                   {overdue ? '⚠️ En retard — ' : ''}{fmtDate(p.scheduledAt)}
                 </span>
@@ -624,6 +651,12 @@ export default function ContentHubPage() {
                     {p.content && <div className="post-card-excerpt">{p.content.slice(0, 140)}{p.content.length > 140 ? '…' : ''}</div>}
                     <div className="post-card-footer">
                       {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                      {Boolean(p.autoPublish) && p.status === 'scheduled' && (
+                        <span className="chip chip-auto" title="Sera publié automatiquement à l'heure programmée">⚡ auto</span>
+                      )}
+                      {p.publishError && (
+                        <span className="chip chip-error" title={p.publishError}>⚠️ échec auto</span>
+                      )}
                       {p.status === 'scheduled' && <span className="post-card-date">🗓️ {fmtDate(p.scheduledAt)}</span>}
                       {p.status === 'published' && (
                         <span className="post-card-metrics">

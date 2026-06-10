@@ -223,4 +223,14 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'externalUrl')) {
     database.exec(`ALTER TABLE posts ADD COLUMN externalUrl TEXT`);
   }
+  // Additive migrations: publication automatique + synchro calendrier
+  if (!postCols.some((c) => c.name === 'autoPublish')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN autoPublish INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!postCols.some((c) => c.name === 'publishError')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN publishError TEXT`);
+  }
+  if (!postCols.some((c) => c.name === 'calendarSynced')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN calendarSynced INTEGER NOT NULL DEFAULT 0`);
+  }
 }
