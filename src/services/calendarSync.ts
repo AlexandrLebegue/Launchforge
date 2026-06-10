@@ -29,15 +29,18 @@ export async function syncPostsToCalendar(posts: Post[]): Promise<boolean> {
   if (!isComposioConfigured() || !isAIConfigured()) return false;
 
   try {
-    const reply = await runMcpTask(
+    const result = await runMcpTask(
       CALENDAR_KEYWORDS,
       `Tu es un assistant calendrier. Tu disposes des outils calendrier de l'utilisateur (Google Calendar / Outlook) via Composio.
 Mission : créer UN événement par ligne fournie, dans le calendrier principal, avec exactement le titre, la date/heure de début (fournie en ISO UTC — laisse l'outil gérer le fuseau), la durée et la description indiquées. N'invente aucun autre événement.
-Quand tous les événements sont créés, réponds "OK:" suivi du nombre créé. Si aucun outil calendrier n'est disponible ou si tout échoue, réponds "ECHEC:" avec la raison.`,
+Quand tous les événements sont créés, réponds "OK:" suivi du nombre créé. Si aucun outil calendrier n'est disponible ou si tout échoue, réponds "ECHEC:" avec la raison.
+IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant.`,
       `Crée ces ${toSync.length} événement(s) :\n${toSync.map(eventLine).join('\n')}`,
+      ['create', 'event', 'quick', 'add', 'insert'],
     );
 
-    const ok = reply.trim().toUpperCase().startsWith('OK');
+    // Anti-hallucination : OK exige au moins une création réellement exécutée
+    const ok = result.reply.trim().toUpperCase().startsWith('OK') && result.okCalls > 0;
     if (ok) {
       for (const post of toSync) {
         storage.updatePost(post.id, { calendarSynced: 1 });

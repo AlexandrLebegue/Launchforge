@@ -6,6 +6,8 @@
  *   COMPOSIO_MCP_URL — URL du serveur MCP fournie par le dashboard Composio
  *                      (les identifiants des comptes connectés vivent chez
  *                      Composio, rien à stocker côté LaunchForge).
+ *   COMPOSIO_API_KEY — clé API Composio (ak_…), envoyée en header x-api-key :
+ *                      requise par les serveurs MCP Composio.
  *
  * Implémente le strict nécessaire du protocole : initialize → tools/list →
  * tools/call, avec gestion des réponses JSON ou SSE et du header de session.
@@ -46,6 +48,7 @@ export class McpSession {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
     };
+    if (process.env.COMPOSIO_API_KEY) h['x-api-key'] = process.env.COMPOSIO_API_KEY;
     if (this.sessionId) h['Mcp-Session-Id'] = this.sessionId;
     return h;
   }

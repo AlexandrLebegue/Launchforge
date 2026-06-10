@@ -38,11 +38,20 @@ export function platformKeywords(platform: string): string[] {
   return PLATFORM_KEYWORDS[platform] || [platform];
 }
 
-function filterTools(tools: McpTool[], keywords: string[]): McpTool[] {
+function filterTools(tools: McpTool[], keywords: string[], priorityKeywords: string[] = []): McpTool[] {
   const matched = tools.filter((t) =>
     keywords.some((k) => t.name.toLowerCase().includes(k))
   );
-  return (matched.length > 0 ? matched : tools).slice(0, MAX_TOOLS_EXPOSED);
+  const pool = matched.length > 0 ? matched : tools;
+  // Le plafond MAX_TOOLS_EXPOSED coupait la liste alphabétiquement : sur un
+  // toolkit Gmail de 64 outils, GMAIL_SEND_EMAIL passait à la trappe. On place
+  // d'abord les outils correspondant à l'intention de la tâche.
+  if (priorityKeywords.length > 0) {
+    const score = (t: McpTool) =>
+      priorityKeywords.some((k) => t.name.toLowerCase().includes(k)) ? 0 : 1;
+    pool.sort((a, b) => score(a) - score(b));
+  }
+  return pool.slice(0, MAX_TOOLS_EXPOSED);
 }
 
 function toToolDefs(tools: McpTool[]): ToolDef[] {
@@ -53,16 +62,29 @@ function toToolDefs(tools: McpTool[]): ToolDef[] {
   }));
 }
 
+export interface McpTaskResult {
+  reply: string;
+  /** Appels d'outils MCP ayant réellement abouti */
+  okCalls: number;
+  /** Appels d'outils MCP ayant échoué */
+  failedCalls: number;
+}
+
 /**
  * Boucle agentique générique : le modèle reçoit les outils MCP filtrés par
  * mots-clés et une mission ; il appelle les outils via la session jusqu'à
  * conclure. Réutilisée pour la publication, les métriques et la boîte mail.
+ *
+ * Le compteur okCalls permet aux appelants de détecter les FAUX SUCCÈS :
+ * un modèle peut déclarer « OK » sans avoir exécuté la moindre action
+ * (observé en test réel) — un succès sans appel d'outil réussi est rejeté.
  */
 export async function runMcpTask(
   keywords: string[],
   systemPrompt: string,
   userPrompt: string,
-): Promise<string> {
+  priorityKeywords: string[] = [],
+): Promise<McpTaskResult> {
   if (!isComposioConfigured()) throw new Error('COMPOSIO_NOT_CONFIGURED');
   if (!isAIConfigured()) throw new Error('AI_NOT_CONFIGURED');
 
@@ -72,7 +94,7 @@ export async function runMcpTask(
   if (allTools.length === 0) {
     throw new Error('Aucun outil disponible sur le serveur MCP Composio — connectez vos comptes sur dashboard.composio.dev');
   }
-  const tools = toToolDefs(filterTools(allTools, keywords));
+  const tools = toToolDefs(filterTools(allTools, keywords, priorityKeywords));
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -80,9 +102,15 @@ export async function runMcpTask(
   ];
 
   let lastContent = '';
+  let okCalls = 0;
+  let failedCalls = 0;
+
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const result = await chatComplete({ messages, tools, maxTokens: 2048 });
-    if (result.content) lastContent = result.content;
+    // Certains modèles décorent leur réponse de markdown (« **ECHEC :** … ») :
+    // on neutralise les décorations de tête pour que les préfixes OK:/ECHEC:
+    // restent détectables par tous les appelants.
+    if (result.content) lastContent = result.content.replace(/^[\s*_#>`]+/, '');
 
     if (result.toolCalls.length === 0) break;
 
@@ -91,8 +119,10 @@ export async function runMcpTask(
       let output: string;
       try {
         output = await session.callTool(call.name, call.args);
+        okCalls += 1;
       } catch (err) {
         output = `ERREUR: ${err instanceof Error ? err.message : 'tool call failed'}`;
+        failedCalls += 1;
       }
       messages.push({
         role: 'tool',
@@ -102,21 +132,34 @@ export async function runMcpTask(
     }
   }
 
-  return lastContent;
+  return { reply: lastContent, okCalls, failedCalls };
+}
+
+const HALLUCINATION_GUARD = 'ECHEC: succès déclaré par le modèle sans aucune action réellement exécutée — opération rejetée par sécurité';
+
+/** Rejette les « OK » fantômes : un succès exige au moins un outil exécuté */
+export function guardedReply(result: McpTaskResult): string {
+  const reply = result.reply || 'ECHEC: aucune réponse du modèle';
+  if (reply.trim().toUpperCase().startsWith('OK') && result.okCalls === 0) {
+    return HALLUCINATION_GUARD;
+  }
+  return reply;
 }
 
 // ── Publication ───────────────────────────────────────────────────────────────
 
 export async function publishViaComposio(platform: string, content: string): Promise<string> {
-  const reply = await runMcpTask(
+  const result = await runMcpTask(
     platformKeywords(platform),
     `Tu es un opérateur de publication. Tu disposes des outils Composio de l'utilisateur pour la plateforme ${platform}.
 Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.
 Si la publication réussit, réponds en une phrase avec le résultat (et l'URL/id du post si disponible), préfixée par "OK:".
-Si aucun outil ne permet de publier sur ${platform} ou si la publication échoue, réponds préfixé par "ECHEC:" avec la raison.`,
+Si aucun outil ne permet de publier sur ${platform} ou si la publication échoue, réponds préfixé par "ECHEC:" avec la raison.
+IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, pas de markdown.`,
     `Publie ce contenu sur ${platform} :\n\n${content}`,
+    ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit'],
   );
-  return reply || 'ECHEC: aucune réponse du modèle';
+  return guardedReply(result);
 }
 
 // ── Synchronisation des métriques ─────────────────────────────────────────────
@@ -136,7 +179,7 @@ export async function syncMetricsViaComposio(
   externalUrl: string,
   title: string,
 ): Promise<SyncedMetrics> {
-  const reply = await runMcpTask(
+  const { reply, okCalls } = await runMcpTask(
     platformKeywords(platform),
     `Tu es un analyste social media. Tu disposes des outils Composio de l'utilisateur pour ${platform}.
 Mission : retrouver le post publié indiqué (via son URL/identifiant) et récupérer ses métriques de performance avec les outils de lecture/lookup disponibles.
@@ -145,6 +188,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour :
 {"found": boolean, "impressions": number, "likes": number, "comments": number, "shares": number, "clicks": number, "note": "explication courte"}
 Mets 0 pour une métrique indisponible. found=false si le post est introuvable ou si aucun outil ne permet la lecture.`,
     `Récupère les métriques de ce post ${platform} :\nURL : ${externalUrl}\nTitre (indice) : ${title || '—'}`,
+    ['lookup', 'get', 'search', 'fetch', 'retrieve', 'analytics', 'metrics'],
   );
 
   try {
@@ -153,6 +197,11 @@ Mets 0 pour une métrique indisponible. found=false si le post est introuvable o
       const n = Number(v);
       return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
     };
+    // Anti-hallucination : des métriques "trouvées" sans le moindre appel
+    // d'outil réussi sont forcément inventées.
+    if (Boolean(parsed.found) && okCalls === 0) {
+      return { found: false, note: 'Le modèle a déclaré des métriques sans avoir interrogé la plateforme — rejeté par sécurité' };
+    }
     return {
       found: Boolean(parsed.found),
       impressions: num(parsed.impressions),

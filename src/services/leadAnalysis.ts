@@ -5,7 +5,7 @@
  */
 
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
-import { runMcpTask, platformKeywords, isComposioConfigured } from './composio';
+import { runMcpTask, guardedReply, platformKeywords, isComposioConfigured } from './composio';
 import { buildCompanyContext, buildKnowledgeContext } from './contentAssistant';
 import { Contact, ContactType, LeadCandidate } from '../types';
 
@@ -30,7 +30,14 @@ Barème du score d'intérêt :
 Ignore les spams, bots et messages purement négatifs. candidates vide si personne d'intéressant.`;
 
 function parseCandidates(raw: string): LeadCandidate[] {
-  const parsed = JSON.parse(sanitizeJson(raw));
+  let parsed: any;
+  try {
+    parsed = JSON.parse(sanitizeJson(raw));
+  } catch {
+    // Le modèle a répondu en prose (ex. outil indisponible, compte non
+    // connecté) : on remonte son explication plutôt qu'une erreur de parsing.
+    throw new Error(raw.replace(/^[\s*_#>`]+/, '').slice(0, 250) || 'Réponse illisible du modèle');
+  }
   const list = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
   const types: ContactType[] = ['prospect', 'client', 'partner'];
   return list
@@ -84,7 +91,7 @@ export async function analyzeMessages(
 export async function scanInbox(userId: string): Promise<LeadCandidate[]> {
   const company = buildCompanyContext(userId);
 
-  const reply = await runMcpTask(
+  const { reply, okCalls } = await runMcpTask(
     MAIL_KEYWORDS,
     `Tu es un analyste commercial avec accès à la boîte mail de l'utilisateur via les outils Composio.
 Mission : liste les emails REÇUS récents (30 derniers jours, ~20 emails max), repère ceux qui montrent un intérêt commercial pour l'entreprise (questions produit, demandes de démo/prix, propositions de partenariat, clients existants qui écrivent), et évalue chaque expéditeur.
@@ -92,9 +99,16 @@ Ignore newsletters, notifications automatiques, spam et emails envoyés par l'ut
 
 ${CANDIDATE_JSON_SPEC}`,
     'Scanne ma boîte de réception et identifie les personnes les plus intéressées (prospects, clients, partenaires potentiels).',
+    ['fetch', 'list', 'search', 'get', 'thread', 'message'],
   );
 
-  return parseCandidates(reply);
+  const candidates = parseCandidates(reply);
+  // Anti-hallucination : des leads sans la moindre lecture réussie de la
+  // boîte mail sont forcément inventés.
+  if (candidates.length > 0 && okCalls === 0) {
+    throw new Error('Le modèle a proposé des leads sans avoir pu lire la boîte mail — résultat rejeté par sécurité');
+  }
+  return candidates;
 }
 
 /**
@@ -109,7 +123,7 @@ export async function scanPostEngagement(
 ): Promise<LeadCandidate[]> {
   const company = buildCompanyContext(userId);
 
-  const reply = await runMcpTask(
+  const { reply, okCalls } = await runMcpTask(
     platformKeywords(platform),
     `Tu es un analyste commercial avec accès aux outils ${platform} de l'utilisateur via Composio.
 Mission : retrouve le post indiqué (via son URL/identifiant), récupère ses COMMENTAIRES et, si les outils le permettent, la liste des personnes qui ont liké/réagi ou repartagé. Évalue ensuite chaque personne.
@@ -118,9 +132,14 @@ Ignore les bots, les comptes spam et les commentaires purement négatifs.${compa
 
 ${CANDIDATE_JSON_SPEC}`,
     `Analyse les réactions de ce post ${platform} et identifie les personnes les plus intéressées :\nURL : ${externalUrl}\nTitre (indice) : ${title || '—'}`,
+    ['comment', 'replies', 'lookup', 'get', 'search', 'fetch', 'like'],
   );
 
-  return parseCandidates(reply);
+  const candidates = parseCandidates(reply);
+  if (candidates.length > 0 && okCalls === 0) {
+    throw new Error('Le modèle a proposé des leads sans avoir pu lire les réactions du post — résultat rejeté par sécurité');
+  }
+  return candidates;
 }
 
 // ── Emails sortants ───────────────────────────────────────────────────────────
@@ -178,14 +197,16 @@ export async function sendEmailViaComposio(
   subject: string,
   body: string,
 ): Promise<string> {
-  const reply = await runMcpTask(
+  const result = await runMcpTask(
     MAIL_KEYWORDS,
     `Tu es un opérateur d'envoi d'emails. Tu disposes des outils de la boîte mail de l'utilisateur via Composio.
 Mission : envoyer l'email EXACTEMENT tel que fourni (destinataire, objet, corps — ne réécris rien) avec l'outil d'envoi approprié.
-Si l'envoi réussit, réponds "OK:" suivi d'une confirmation courte. Sinon "ECHEC:" suivi de la raison.`,
+Si l'envoi réussit, réponds "OK:" suivi d'une confirmation courte. Sinon "ECHEC:" suivi de la raison.
+IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, pas de markdown, pas d'explication préalable.`,
     `Envoie cet email :\nÀ : ${to}\nObjet : ${subject}\n\nCorps :\n${body}`,
+    ['send', 'reply', 'draft', 'message'],
   );
-  return reply || 'ECHEC: aucune réponse du modèle';
+  return guardedReply(result);
 }
 
 export { isComposioConfigured };
