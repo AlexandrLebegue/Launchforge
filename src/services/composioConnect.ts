@@ -8,13 +8,25 @@
 
 const COMPOSIO_API = 'https://backend.composio.dev/api/v3';
 
-/** user_id Composio de l'application (extrait de COMPOSIO_MCP_URL) */
+import { storage } from './storage';
+
+/** user_id Composio legacy de l'application (extrait de COMPOSIO_MCP_URL) */
 export function composioUserId(): string | null {
   try {
     return new URL(process.env.COMPOSIO_MCP_URL || '').searchParams.get('user_id');
   } catch {
     return null;
   }
+}
+
+/**
+ * Identité Composio d'un utilisateur LaunchForge :
+ *  - comptes récents → entité dédiée `lf-<id>` (posée à l'inscription) ;
+ *  - comptes d'avant le multi-utilisateur (colonne NULL) → user_id de l'URL
+ *    env, pour que leurs connexions existantes continuent de fonctionner.
+ */
+export function composioUserIdFor(userId: string): string | null {
+  return storage.getComposioUserId(userId) ?? composioUserId();
 }
 
 /** Identifiant du serveur MCP (extrait du chemin de COMPOSIO_MCP_URL) */
@@ -98,11 +110,11 @@ async function ensureServerToolkit(toolkit: string, authConfigId: string): Promi
 }
 
 /**
- * Prépare la connexion d'un compte et retourne le lien d'autorisation OAuth
- * à ouvrir dans le navigateur de l'utilisateur.
+ * Prépare la connexion d'un compte POUR un utilisateur LaunchForge donné et
+ * retourne le lien d'autorisation OAuth à ouvrir dans son navigateur.
  */
-export async function createConnectLink(toolkit: string): Promise<string> {
-  const userId = composioUserId();
+export async function createConnectLink(lfUserId: string, toolkit: string): Promise<string> {
+  const userId = composioUserIdFor(lfUserId);
   if (!userId) {
     throw new Error('COMPOSIO_MCP_URL ne contient pas de user_id — impossible de rattacher le compte');
   }

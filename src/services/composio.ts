@@ -11,6 +11,7 @@
 
 import { chatComplete, ChatMessage, ToolDef, sanitizeJson, isAIConfigured } from './aiClient';
 import { McpSession, McpTool, isComposioConfigured } from './mcpClient';
+import { composioUserIdFor } from './composioConnect';
 
 export { isComposioConfigured };
 
@@ -91,6 +92,7 @@ export interface McpTaskResult {
  * (observé en test réel) — un succès sans appel d'outil réussi est rejeté.
  */
 export async function runMcpTask(
+  userId: string,
   keywords: string[],
   systemPrompt: string,
   userPrompt: string,
@@ -99,7 +101,8 @@ export async function runMcpTask(
   if (!isComposioConfigured()) throw new Error('COMPOSIO_NOT_CONFIGURED');
   if (!isAIConfigured()) throw new Error('AI_NOT_CONFIGURED');
 
-  const session = new McpSession();
+  // Chaque utilisateur parle à SES comptes connectés (entité Composio dédiée)
+  const session = new McpSession(composioUserIdFor(userId));
   await session.initialize();
   const allTools = await session.listTools();
   if (allTools.length === 0) {
@@ -172,8 +175,9 @@ export function guardedReply(result: McpTaskResult): string {
 
 // ── Publication ───────────────────────────────────────────────────────────────
 
-export async function publishViaComposio(platform: string, content: string): Promise<string> {
+export async function publishViaComposio(userId: string, platform: string, content: string): Promise<string> {
   const result = await runMcpTask(
+    userId,
     platformKeywords(platform),
     `Tu es un opérateur de publication. Tu disposes des outils Composio de l'utilisateur pour la plateforme ${platform}.
 Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.
@@ -199,11 +203,13 @@ export interface SyncedMetrics {
 }
 
 export async function syncMetricsViaComposio(
+  userId: string,
   platform: string,
   externalUrl: string,
   title: string,
 ): Promise<SyncedMetrics> {
   const { reply, okCalls } = await runMcpTask(
+    userId,
     platformKeywords(platform),
     `Tu es un analyste social media. Tu disposes des outils Composio de l'utilisateur pour ${platform}.
 Mission : retrouver le post publié indiqué (via son URL/identifiant) et récupérer ses métriques de performance avec les outils de lecture/lookup disponibles.

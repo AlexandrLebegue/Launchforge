@@ -12,7 +12,8 @@ router.use(requireAuth);
 
 // Génère un code de liaison à envoyer au bot (valable 10 min)
 router.post('/link-code', (req: Request, res: Response) => {
-  if (!isTelegramConfigured()) {
+  // Un bot doit exister pour consommer le code : le sien, sinon le global
+  if (!isTelegramConfigured(req.user!.userId)) {
     return res.status(503).json({ success: false, error: 'TELEGRAM_NOT_CONFIGURED' });
   }
   const code = createLinkCode(req.user!.userId);

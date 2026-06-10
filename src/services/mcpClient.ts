@@ -31,16 +31,33 @@ interface JsonRpcResponse {
   error?: { code: number; message: string };
 }
 
+/**
+ * URL MCP pour une identité Composio donnée : même serveur (env), mais le
+ * paramètre user_id est remplacé — chaque utilisateur LaunchForge parle à
+ * SES comptes connectés, pas à ceux des autres.
+ */
+export function mcpUrlForComposioUser(composioUserId?: string | null): string {
+  const base = process.env.COMPOSIO_MCP_URL;
+  if (!base) throw new Error('COMPOSIO_MCP_URL not configured');
+  if (!composioUserId) return base;
+  try {
+    const url = new URL(base);
+    url.searchParams.set('user_id', composioUserId);
+    return url.toString();
+  } catch {
+    return base; // URL atypique : comportement historique
+  }
+}
+
 /** Une session MCP éphémère : initialisée à la demande, jetée après usage */
 export class McpSession {
   private url: string;
   private sessionId: string | null = null;
   private nextId = 1;
 
-  constructor(url?: string) {
-    const target = url || process.env.COMPOSIO_MCP_URL;
-    if (!target) throw new Error('COMPOSIO_MCP_URL not configured');
-    this.url = target;
+  /** `composioUserId` : identité Composio de l'utilisateur (sinon : URL env telle quelle) */
+  constructor(composioUserId?: string | null) {
+    this.url = mcpUrlForComposioUser(composioUserId);
   }
 
   private headers(): Record<string, string> {

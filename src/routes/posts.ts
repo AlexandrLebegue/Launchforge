@@ -172,7 +172,7 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
   }
 
   try {
-    const metrics = await syncMetricsViaComposio(post.platform, post.externalUrl, post.title);
+    const metrics = await syncMetricsViaComposio(req.user!.userId, post.platform, post.externalUrl, post.title);
     if (!metrics.found) {
       return res.status(422).json({
         success: false,

@@ -36,6 +36,9 @@ router.post('/register', (req: Request, res: Response) => {
 
     const user: User = { id, email, name: name || '', createdAt: now };
     storage.saveUser(user, hashed);
+    // Chaque nouveau compte a sa propre entité Composio (connexions isolées) ;
+    // les comptes créés avant le multi-utilisateur restent sur l'identité legacy.
+    storage.setComposioUserId(id, `lf-${id}`);
 
     const token = signToken({ userId: id, email });
     const response: ApiResponse<{ user: User; token: string }> = { success: true, data: { user, token } };

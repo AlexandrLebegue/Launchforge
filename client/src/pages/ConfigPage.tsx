@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit,
+  setTelegramBot, removeTelegramBot,
   ConfigStatus,
 } from '../api/client';
 
@@ -16,6 +17,10 @@ export default function ConfigPage() {
   const [tgCode,  setTgCode]  = useState<string | null>(null);
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
+  // Bot Telegram personnel
+  const [botToken,  setBotToken]  = useState('');
+  const [botSaving, setBotSaving] = useState(false);
+  const [botError,  setBotError]  = useState('');
   // Connexion de comptes : lien OAuth généré + erreurs, par toolkit
   const [connectLinks,  setConnectLinks]  = useState<Record<string, string>>({});
   const [connecting,    setConnecting]    = useState<string | null>(null);
@@ -75,6 +80,32 @@ export default function ConfigPage() {
     const res = await setPublishMode(mode);
     setSavingMode(false);
     if (res.success) setStatus({ ...status, publishMode: mode });
+  };
+
+  const handleSaveBot = async () => {
+    setBotError('');
+    setBotSaving(true);
+    const res = await setTelegramBot(botToken.trim());
+    setBotSaving(false);
+    if (res.success && res.data) {
+      setBotToken('');
+      setStatus((s) => s ? { ...s, telegram: { ...s.telegram, configured: true, ownBot: true, botUsername: res.data!.botUsername } } : s);
+    } else {
+      setBotError(res.error || 'Token refusé.');
+    }
+  };
+
+  const handleRemoveBot = async () => {
+    setBotError('');
+    setBotSaving(true);
+    const res = await removeTelegramBot();
+    setBotSaving(false);
+    if (res.success) {
+      // Le statut « configuré » peut rester vrai si un bot global existe — recharge
+      load(true);
+    } else {
+      setBotError(res.error || 'Suppression impossible.');
+    }
   };
 
   const handleTelegramCode = async () => {
@@ -232,9 +263,44 @@ export default function ConfigPage() {
           </div>
           <p className="config-desc">
             Pilotez tout depuis un chat : état des activités, validation des contenus,
-            rédaction de posts/emails, rappels.
+            rédaction de posts/emails, agenda, rappels.
           </p>
-          {status.telegram.configured ? (
+
+          {/* Bot personnel : chaque utilisateur branche le sien */}
+          {status.telegram.ownBot ? (
+            <div className="config-toolkit on" style={{ marginBottom: 10 }}>
+              <span className="config-toolkit-icon">🤖</span>
+              <span className="config-toolkit-main">
+                <span className="config-toolkit-name">Votre bot {status.telegram.botUsername}</span>
+                <span className="config-toolkit-cap">Écrivez-lui /start sur Telegram — la liaison est automatique.</span>
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={handleRemoveBot} disabled={botSaving}>
+                Supprimer
+              </button>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 10 }}>
+              <label className="form-label-block">
+                Token de votre bot <span className="form-hint-inline">(créez-le en 1 min : @BotFather → /newbot)</span>
+                <div className="ai-assist-row">
+                  <input
+                    className="form-input"
+                    value={botToken}
+                    onChange={(e) => setBotToken(e.target.value)}
+                    placeholder="123456789:ABCdef…"
+                    disabled={botSaving}
+                  />
+                  <button className="btn btn-primary" onClick={handleSaveBot} disabled={botSaving || !botToken.trim()}>
+                    {botSaving ? '⏳…' : 'Activer'}
+                  </button>
+                </div>
+              </label>
+            </div>
+          )}
+          {botError && <div className="chat-error" style={{ marginBottom: 8 }}>{botError}</div>}
+
+          {/* Liaison par code (bot global partagé, ou 2e chat) */}
+          {status.telegram.configured && (
             tgCode ? (
               <>
                 <div className="telegram-code">{tgCode}</div>
@@ -245,11 +311,6 @@ export default function ConfigPage() {
                 🔗 {status.telegram.linked ? 'Lier un autre chat' : 'Générer le code de liaison'}
               </button>
             )
-          ) : (
-            <p className="config-desc">
-              Créez un bot via <strong>@BotFather</strong> sur Telegram et renseignez{' '}
-              <code>TELEGRAM_BOT_TOKEN</code> dans le <code>.env</code> du serveur.
-            </p>
           )}
           {tgError && <div className="chat-error">{tgError}</div>}
         </div>

@@ -29,7 +29,9 @@ export async function syncPostsToCalendar(posts: Post[]): Promise<boolean> {
   if (!isComposioConfigured() || !isAIConfigured()) return false;
 
   try {
+    // Un lot = les posts d'UN utilisateur : son identité Composio s'applique
     const result = await runMcpTask(
+      toSync[0].userId,
       CALENDAR_KEYWORDS,
       `Tu es un assistant calendrier. Tu disposes des outils calendrier de l'utilisateur (Google Calendar / Outlook) via Composio.
 Mission : créer UN événement par ligne fournie, dans le calendrier principal, avec exactement le titre, la date/heure de début (fournie en ISO UTC — laisse l'outil gérer le fuseau), la durée et la description indiquées. N'invente aucun autre événement.

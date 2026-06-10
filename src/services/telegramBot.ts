@@ -27,28 +27,42 @@ const POLL_TIMEOUT_S = 30;
 const HISTORY_LIMIT = 14;
 const MAX_TOOL_ITERATIONS = 6;
 
-export function isTelegramConfigured(): boolean {
-  return Boolean(process.env.TELEGRAM_BOT_TOKEN);
+/**
+ * Multi-utilisateur : chaque utilisateur peut brancher SON bot (@BotFather) —
+ * un poller dédié tourne par bot. Le bot global (env) reste le bot partagé
+ * des comptes sans bot personnel.
+ */
+export function isTelegramConfigured(userId?: string): boolean {
+  if (process.env.TELEGRAM_BOT_TOKEN) return true;
+  return Boolean(userId && storage.getTelegramBot(userId));
 }
 
-function api(method: string): string {
-  return `${API}/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
+/** Token du bot à utiliser pour un utilisateur : le sien, sinon le global */
+export function tokenForUser(userId: string): string | null {
+  return storage.getTelegramBot(userId)?.token ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
 }
 
-export async function sendTelegramMessage(chatId: string, text: string): Promise<void> {
+function api(token: string, method: string): string {
+  return `${API}/bot${token}/${method}`;
+}
+
+export async function sendTelegramMessage(chatId: string, text: string, token?: string): Promise<void> {
+  const t = token ?? process.env.TELEGRAM_BOT_TOKEN;
+  if (!t) return;
   // Texte brut (pas de parse_mode) : aucun risque d'erreur d'échappement
-  await fetch(api('sendMessage'), {
+  await fetch(api(t, 'sendMessage'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4000) }),
   }).catch(() => { /* best-effort */ });
 }
 
-/** Notifie tous les chats Telegram liés à un compte (no-op si bot inactif) */
+/** Notifie tous les chats Telegram liés à un compte (no-op si aucun bot) */
 export async function notifyLinkedChats(userId: string, text: string): Promise<void> {
-  if (!isTelegramConfigured()) return;
+  const token = tokenForUser(userId);
+  if (!token) return;
   for (const link of storage.getTelegramLinksByUserId(userId)) {
-    await sendTelegramMessage(link.chatId, text);
+    await sendTelegramMessage(link.chatId, text, token);
   }
 }
 
@@ -372,7 +386,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const post = findByShortId(posts, String(args.postId || ''));
       if (!post) return 'ERREUR : post introuvable (ou déjà publié).';
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — publication impossible depuis le chat, utilisez le copier-coller depuis l\'app.';
-      const result = await publishViaComposio(post.platform, post.content);
+      const result = await publishViaComposio(userId, post.platform, post.content);
       if (result.trim().toUpperCase().startsWith('OK')) {
         markPublished(post);
         return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}`;
@@ -387,7 +401,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       if (!contact) return `ERREUR : contact « ${args.contactName} » introuvable.`;
       if (!contact.email) return `ERREUR : ${contact.name} n'a pas d'adresse email.`;
       const draft = await draftEmailForContact(userId, contact, String(args.goal || ''));
-      const result = await sendEmailViaComposio(contact.email, draft.subject, draft.body);
+      const result = await sendEmailViaComposio(userId, contact.email, draft.subject, draft.body);
       if (result.trim().toUpperCase().startsWith('OK')) {
         const stamp = new Date().toLocaleString('fr-FR');
         storage.updateContact(contact.id, {
@@ -405,7 +419,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const body = String(args.body || '').trim();
       if (!subject || !body) return 'ERREUR : rédige d\'abord l\'objet et le corps, fais-les valider, puis rappelle cet outil.';
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Gmail depuis la vue Configuration.';
-      const result = await sendEmailViaComposio(to, subject, body);
+      const result = await sendEmailViaComposio(userId, to, subject, body);
       if (result.trim().toUpperCase().startsWith('OK')) {
         return `Email envoyé à ${to}.\nObjet : ${subject}`;
       }
@@ -416,6 +430,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Gmail depuis la vue Configuration pour lire la boîte mail.';
       const query = String(args.query || '').trim();
       const result = await runMcpTask(
+        userId,
         MAIL_KEYWORDS,
         `Tu es l'assistant boîte mail de l'utilisateur. Tu disposes de ses outils Gmail/Outlook via Composio.
 Mission : récupère ${query ? `les emails correspondant à « ${query} »` : 'les 10 derniers emails reçus'} avec les outils de listing/recherche, puis présente-les en liste courte : expéditeur — objet — date — l'essentiel en une ligne.
@@ -434,6 +449,7 @@ Ne fabrique JAMAIS d'emails : uniquement ce que les outils retournent réellemen
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Google Calendar depuis la vue Configuration.';
       const query = String(args.query || '').trim();
       const result = await runMcpTask(
+        userId,
         ['calendar'],
         `Tu es l'assistant agenda de l'utilisateur. Tu disposes de ses outils Google Calendar via Composio.
 Date/heure actuelle : ${new Date().toISOString()} (l'utilisateur est en Europe/Paris).
@@ -460,6 +476,7 @@ Ne fabrique JAMAIS d'événements : uniquement ce que les outils retournent rée
         : 60;
       const description = String(args.description || '').trim().slice(0, 500);
       const result = await runMcpTask(
+        userId,
         ['calendar'],
         `Tu es l'assistant agenda de l'utilisateur. Tu disposes de ses outils Google Calendar via Composio.
 Mission : créer UN événement dans le calendrier principal, exactement avec le titre, le début (fourni en ISO UTC — laisse l'outil gérer le fuseau), la durée et la description fournis. N'invente rien d'autre.
@@ -572,58 +589,69 @@ Tu peux me demander par exemple :
 
 /reset — repartir de zéro · /aide — ce message`;
 
-async function processUpdate(update: any): Promise<void> {
+async function processUpdate(update: any, token: string, ownerUserId: string | null): Promise<void> {
   const msg = update?.message;
   const chatId = msg?.chat?.id != null ? String(msg.chat.id) : null;
   const text = typeof msg?.text === 'string' ? msg.text.trim() : '';
   if (!chatId || !text) return;
 
-  const link = storage.getTelegramLinkByChatId(chatId);
+  let link = storage.getTelegramLinkByChatId(chatId);
+
+  // Bot personnel : tout message appartient au propriétaire du token —
+  // liaison automatique du chat, pas de code à saisir.
+  if (!link && ownerUserId) {
+    storage.saveTelegramLink({ chatId, userId: ownerUserId, createdAt: new Date().toISOString() });
+    link = storage.getTelegramLinkByChatId(chatId);
+    if (text === '/start') {
+      await sendTelegramMessage(chatId, `✅ Chat lié à ton compte LaunchForge !\n\n${HELP}`, token);
+      return;
+    }
+  }
 
   // Commandes
   if (text === '/reset') {
     conversations.delete(chatId);
-    await sendTelegramMessage(chatId, '🔄 Conversation réinitialisée.');
+    await sendTelegramMessage(chatId, '🔄 Conversation réinitialisée.', token);
     return;
   }
   if (text === '/aide' || text === '/help' || (text === '/start' && link)) {
-    await sendTelegramMessage(chatId, HELP);
+    await sendTelegramMessage(chatId, HELP, token);
     return;
   }
 
-  // Liaison du compte
+  // Liaison du compte (bot global : par code généré dans l'app)
   if (!link) {
     const codeCandidate = text.replace(/^\/start\s*/i, '').trim();
     if (/^[A-Z0-9]{6}$/i.test(codeCandidate)) {
       const userId = consumeLinkCode(codeCandidate);
       if (userId) {
         storage.saveTelegramLink({ chatId, userId, createdAt: new Date().toISOString() });
-        await sendTelegramMessage(chatId, `✅ Compte lié !\n\n${HELP}`);
+        await sendTelegramMessage(chatId, `✅ Compte lié !\n\n${HELP}`, token);
       } else {
-        await sendTelegramMessage(chatId, '❌ Code invalide ou expiré. Générez-en un nouveau dans l\'app (bouton Telegram dans la barre latérale).');
+        await sendTelegramMessage(chatId, '❌ Code invalide ou expiré. Générez-en un nouveau dans l\'app (vue Configuration).', token);
       }
       return;
     }
-    await sendTelegramMessage(chatId, '👋 Bienvenue ! Pour lier ton compte LaunchForge : ouvre l\'app web, clique sur « 🤖 Bot Telegram » dans la barre latérale, et envoie-moi le code à 6 caractères.');
+    await sendTelegramMessage(chatId, '👋 Bienvenue ! Pour lier ton compte LaunchForge : ouvre l\'app web, vue Configuration, et envoie-moi le code à 6 caractères.', token);
     return;
   }
 
   if (!isAIConfigured()) {
-    await sendTelegramMessage(chatId, '⚠️ L\'IA n\'est pas configurée côté serveur (OPENROUTER_API_KEY).');
+    await sendTelegramMessage(chatId, '⚠️ L\'IA n\'est pas configurée côté serveur (OPENROUTER_API_KEY).', token);
     return;
   }
 
   try {
     const reply = await handleUserMessage(chatId, link.userId, text);
-    await sendTelegramMessage(chatId, reply);
+    await sendTelegramMessage(chatId, reply, token);
   } catch (err) {
-    await sendTelegramMessage(chatId, `⚠️ Erreur : ${err instanceof Error ? err.message : 'inconnue'}`);
+    await sendTelegramMessage(chatId, `⚠️ Erreur : ${err instanceof Error ? err.message : 'inconnue'}`, token);
   }
 }
 
 // ── Rappels ───────────────────────────────────────────────────────────────────
 
-type SendFn = (chatId: string, text: string) => Promise<void>;
+type SendFn = (chatId: string, text: string, token?: string) => Promise<void>;
 
 /** Envoie les rappels dus sur les chats liés. Sender injectable pour les tests. */
 export async function dispatchDueReminders(
@@ -639,8 +667,10 @@ export async function dispatchDueReminders(
       storage.markReminderSent(reminder.id);
       continue;
     }
+    // Le rappel part par le bot de l'utilisateur (personnel sinon global)
+    const token = tokenForUser(reminder.userId) ?? undefined;
     for (const link of links) {
-      await send(link.chatId, `⏰ Rappel : ${reminder.text}`);
+      await send(link.chatId, `⏰ Rappel : ${reminder.text}`, token);
     }
     storage.markReminderSent(reminder.id);
     sent += 1;
@@ -648,48 +678,102 @@ export async function dispatchDueReminders(
   return sent;
 }
 
-// ── Démarrage ─────────────────────────────────────────────────────────────────
+// ── Démarrage : un poller par bot (global + personnels) ──────────────────────
 
-let running = false;
+/** clé : 'global' ou userId du propriétaire → fonction d'arrêt du poller */
+const pollers = new Map<string, () => void>();
+let remindersStarted = false;
 
-export function startTelegramBot(): boolean {
-  if (running) return true;
-  if (!isTelegramConfigured()) {
-    console.log('⏸️  Bot Telegram inactif (TELEGRAM_BOT_TOKEN manquant)');
-    return false;
-  }
-  running = true;
-  console.log('💬 Bot Telegram démarré (long polling)');
+function startPolling(key: string, token: string, ownerUserId: string | null): void {
+  if (pollers.has(key)) return;
+  const state = { running: true };
+  pollers.set(key, () => { state.running = false; pollers.delete(key); });
 
-  // Boucle de réception
   (async () => {
     let offset = 0;
-    while (running) {
+    while (state.running) {
       try {
         const res = await fetch(
-          `${api('getUpdates')}?timeout=${POLL_TIMEOUT_S}&offset=${offset}&allowed_updates=["message"]`,
+          `${api(token, 'getUpdates')}?timeout=${POLL_TIMEOUT_S}&offset=${offset}&allowed_updates=["message"]`,
           { signal: AbortSignal.timeout((POLL_TIMEOUT_S + 10) * 1000) },
         );
         const data: any = await res.json();
         for (const update of data?.result || []) {
           offset = Math.max(offset, update.update_id + 1);
-          processUpdate(update).catch(() => { /* isolé par message */ });
+          processUpdate(update, token, ownerUserId).catch(() => { /* isolé par message */ });
         }
       } catch {
         await new Promise((r) => setTimeout(r, 5000)); // réseau : on respire puis on repart
       }
     }
   })();
+}
 
-  // Boucle des rappels
+/**
+ * Valide le token d'un bot personnel via getMe, l'enregistre (chiffré) et
+ * démarre son poller. Retourne le @username du bot.
+ */
+export async function setUserBot(userId: string, token: string): Promise<string> {
+  let username = '';
+  try {
+    const res = await fetch(api(token, 'getMe'), { signal: AbortSignal.timeout(8000) });
+    const data: any = await res.json();
+    if (!data?.ok || !data?.result?.username) {
+      throw new Error('Token refusé par Telegram — vérifiez-le auprès de @BotFather');
+    }
+    username = `@${data.result.username}`;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('BotFather')) throw err;
+    throw new Error('Impossible de vérifier le token auprès de Telegram — réessayez');
+  }
+
+  // Remplacer l'éventuel poller existant de cet utilisateur
+  pollers.get(userId)?.();
+  storage.setTelegramBot(userId, token, username);
+  startPolling(userId, token, userId);
+  ensureRemindersLoop();
+  return username;
+}
+
+/** Arrête et supprime le bot personnel de l'utilisateur */
+export function removeUserBot(userId: string): void {
+  pollers.get(userId)?.();
+  storage.setTelegramBot(userId, null, null);
+}
+
+function ensureRemindersLoop(): void {
+  if (remindersStarted) return;
+  remindersStarted = true;
   const reminderTimer = setInterval(() => {
     dispatchDueReminders().catch(() => { /* best-effort */ });
   }, 60_000);
   reminderTimer.unref?.();
+}
 
+export function startTelegramBot(): boolean {
+  // Bot global (env) — le bot partagé des comptes sans bot personnel
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    startPolling('global', process.env.TELEGRAM_BOT_TOKEN, null);
+    console.log('💬 Bot Telegram global démarré (long polling)');
+  } else {
+    console.log('⏸️  Bot Telegram global inactif (TELEGRAM_BOT_TOKEN manquant)');
+  }
+
+  // Bots personnels enregistrés en base
+  let personal = 0;
+  try {
+    for (const bot of storage.getAllTelegramBots()) {
+      startPolling(bot.userId, bot.token, bot.userId);
+      personal += 1;
+    }
+  } catch { /* base pas prête : les bots personnels démarreront à l'enregistrement */ }
+  if (personal > 0) console.log(`💬 ${personal} bot(s) Telegram personnel(s) démarré(s)`);
+
+  if (pollers.size === 0) return false;
+  ensureRemindersLoop();
   return true;
 }
 
 export function stopTelegramBot(): void {
-  running = false;
+  for (const stop of [...pollers.values()]) stop();
 }

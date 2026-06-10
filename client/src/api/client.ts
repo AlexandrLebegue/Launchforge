@@ -708,7 +708,7 @@ export interface ConfigToolkit {
 export interface ConfigStatus {
   ai: { configured: boolean; model: string | null };
   composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[] };
-  telegram: { configured: boolean; linked: boolean };
+  telegram: { configured: boolean; linked: boolean; ownBot: boolean; botUsername: string | null };
   publishMode: 'auto' | 'manual';
 }
 
@@ -719,6 +719,16 @@ export async function getConfigStatus(fresh = false): Promise<ApiResponse<Config
 /** Prépare la connexion d'un compte et renvoie le lien d'autorisation OAuth */
 export async function connectToolkit(toolkit: string): Promise<ApiResponse<{ redirectUrl: string }>> {
   return request('/config/connect', { method: 'POST', body: JSON.stringify({ toolkit }) });
+}
+
+/** Enregistre le bot Telegram personnel (token @BotFather) et démarre son poller */
+export async function setTelegramBot(token: string): Promise<ApiResponse<{ ownBot: boolean; botUsername: string }>> {
+  return request('/config/telegram-bot', { method: 'PATCH', body: JSON.stringify({ token }) });
+}
+
+/** Supprime le bot Telegram personnel */
+export async function removeTelegramBot(): Promise<ApiResponse<{ ownBot: boolean }>> {
+  return request('/config/telegram-bot', { method: 'DELETE' });
 }
 
 export async function setPublishMode(mode: 'auto' | 'manual'): Promise<ApiResponse<{ publishMode: string }>> {

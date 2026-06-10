@@ -212,7 +212,7 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await sendEmailViaComposio(contact.email, subject!.trim(), body.trim());
+    const result = await sendEmailViaComposio(req.user!.userId, contact.email, subject!.trim(), body.trim());
     const ok = result.trim().toUpperCase().startsWith('OK');
 
     if (ok) {

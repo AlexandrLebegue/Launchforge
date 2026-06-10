@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createLaunchPlan, createAILaunchPlan, getLaunchPlan, getPlansByUserId } from '../services/planGenerator';
 import { validatePlanInput } from '../middleware/validation';
 import { storage } from '../services/storage';
-import { requireAuth, optionalAuth } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 import { generateContentCalendar } from '../services/calendarGenerator';
 import { platformsForNiche, bootstrapKnowledgeFromProfile } from '../services/bootstrap';
 import { notifyLinkedChats } from '../services/telegramBot';
@@ -92,12 +92,15 @@ router.get('/', requireAuth, (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', optionalAuth, (req: Request, res: Response) => {
+router.get('/:id', requireAuth, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const user = req.user as AuthPayload;
     const plan = getLaunchPlan(id);
 
-    if (!plan) {
+    // Isolation : un plan n'est visible que par son propriétaire (404 sinon,
+    // pour ne pas révéler l'existence du plan)
+    if (!plan || plan.userId !== user.userId) {
       const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
       res.status(404).json(response);
       return;

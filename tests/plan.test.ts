@@ -132,14 +132,23 @@ describe('Plans', () => {
     expect(res.body.data.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('GET /api/plan/:id returns plan', async () => {
-    const res = await request(app).get(`/api/plan/${planId}`);
+  it('GET /api/plan/:id returns plan to its owner', async () => {
+    const res = await request(app)
+      .get(`/api/plan/${planId}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.data.id).toBe(planId);
   });
 
+  it('GET /api/plan/:id requires auth (isolation)', async () => {
+    const res = await request(app).get(`/api/plan/${planId}`);
+    expect(res.status).toBe(401);
+  });
+
   it('GET /api/plan/:id returns 404 for missing', async () => {
-    const res = await request(app).get('/api/plan/non-existent-id');
+    const res = await request(app)
+      .get('/api/plan/non-existent-id')
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(404);
   });
 });
@@ -179,7 +188,9 @@ describe('Feedback', () => {
   });
 
   it('GET /api/feedback/:planId returns feedback', async () => {
-    const res = await request(app).get(`/api/feedback/${planId}`);
+    const res = await request(app)
+      .get(`/api/feedback/${planId}`)
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBeGreaterThanOrEqual(1);
   });

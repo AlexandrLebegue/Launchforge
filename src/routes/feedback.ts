@@ -12,8 +12,9 @@ router.post('/', requireAuth, validateFeedbackInput, (req: Request, res: Respons
     const { planId, rating, comment } = req.body as FeedbackInput;
     const user = req.user as AuthPayload;
 
+    // Isolation : on ne note que ses propres plans
     const plan = storage.getPlan(planId);
-    if (!plan) {
+    if (!plan || plan.userId !== user.userId) {
       const response: ApiResponse<null> = { success: false, error: `Plan with id "${planId}" not found` };
       res.status(404).json(response);
       return;
@@ -40,9 +41,16 @@ router.post('/', requireAuth, validateFeedbackInput, (req: Request, res: Respons
   }
 });
 
-router.get('/:planId', (req: Request, res: Response) => {
+router.get('/:planId', requireAuth, (req: Request, res: Response) => {
   try {
     const { planId } = req.params;
+    const user = req.user as AuthPayload;
+    // Isolation : les feedbacks d'un plan ne sont visibles que par son propriétaire
+    const plan = storage.getPlan(planId);
+    if (!plan || plan.userId !== user.userId) {
+      res.status(404).json({ success: false, error: `Plan with id "${planId}" not found` } satisfies ApiResponse<null>);
+      return;
+    }
     const feedbacks = storage.getFeedbacksByPlanId(planId);
     const response: ApiResponse<Feedback[]> = { success: true, data: feedbacks };
     res.json(response);

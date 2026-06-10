@@ -42,6 +42,41 @@ export class Storage {
       .get(id) as any;
   }
 
+  // ── Réglages multi-utilisateur (identité Composio, bot Telegram) ─────────
+
+  setComposioUserId(userId: string, composioUserId: string): void {
+    getDb().prepare(`UPDATE users SET composioUserId = ? WHERE id = ?`).run(composioUserId, userId);
+  }
+
+  /** Identité Composio de l'utilisateur — null = legacy (user_id de l'env) */
+  getComposioUserId(userId: string): string | null {
+    const row = getDb().prepare(`SELECT composioUserId FROM users WHERE id = ?`).get(userId) as any;
+    return row?.composioUserId ?? null;
+  }
+
+  /** Enregistre (chiffré) ou supprime (null) le bot Telegram personnel */
+  setTelegramBot(userId: string, token: string | null, botName: string | null): void {
+    getDb()
+      .prepare(`UPDATE users SET telegramBotToken = ?, telegramBotName = ? WHERE id = ?`)
+      .run(token ? encryptSecret(token) : null, botName, userId);
+  }
+
+  getTelegramBot(userId: string): { token: string; botName: string | null } | null {
+    const row = getDb()
+      .prepare(`SELECT telegramBotToken, telegramBotName FROM users WHERE id = ?`)
+      .get(userId) as any;
+    if (!row?.telegramBotToken) return null;
+    return { token: decryptSecret(row.telegramBotToken), botName: row.telegramBotName ?? null };
+  }
+
+  /** Tous les bots personnels (démarrage des pollers au boot) */
+  getAllTelegramBots(): { userId: string; token: string }[] {
+    const rows = getDb()
+      .prepare(`SELECT id, telegramBotToken FROM users WHERE telegramBotToken IS NOT NULL`)
+      .all() as any[];
+    return rows.map((r) => ({ userId: r.id, token: decryptSecret(r.telegramBotToken) }));
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Plans
   // ──────────────────────────────────────────────────────────────

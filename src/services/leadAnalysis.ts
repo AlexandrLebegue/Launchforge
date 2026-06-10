@@ -92,6 +92,7 @@ export async function scanInbox(userId: string): Promise<LeadCandidate[]> {
   const company = buildCompanyContext(userId);
 
   const { reply, okCalls } = await runMcpTask(
+    userId,
     MAIL_KEYWORDS,
     `Tu es un analyste commercial avec accès à la boîte mail de l'utilisateur via les outils Composio.
 Mission : liste les emails REÇUS récents (30 derniers jours, ~20 emails max), repère ceux qui montrent un intérêt commercial pour l'entreprise (questions produit, demandes de démo/prix, propositions de partenariat, clients existants qui écrivent), et évalue chaque expéditeur.
@@ -124,6 +125,7 @@ export async function scanPostEngagement(
   const company = buildCompanyContext(userId);
 
   const { reply, okCalls } = await runMcpTask(
+    userId,
     platformKeywords(platform),
     `Tu es un analyste commercial avec accès aux outils ${platform} de l'utilisateur via Composio.
 Mission : retrouve le post indiqué (via son URL/identifiant), récupère ses COMMENTAIRES et, si les outils le permettent, la liste des personnes qui ont liké/réagi ou repartagé. Évalue ensuite chaque personne.
@@ -193,11 +195,13 @@ export async function draftEmailForContact(
 
 /** Envoie un email depuis la boîte de l'utilisateur via ses outils Composio */
 export async function sendEmailViaComposio(
+  userId: string,
   to: string,
   subject: string,
   body: string,
 ): Promise<string> {
   const result = await runMcpTask(
+    userId,
     MAIL_KEYWORDS,
     `Tu es un opérateur d'envoi d'emails. Tu disposes des outils de la boîte mail de l'utilisateur via Composio.
 Mission : envoyer l'email EXACTEMENT tel que fourni (destinataire, objet, corps — ne réécris rien) avec l'outil d'envoi approprié.

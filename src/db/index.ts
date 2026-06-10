@@ -292,6 +292,20 @@ function runMigrations(database: Database.Database): void {
     `);
   }
 
+  // ── Multi-utilisateur ──────────────────────────────────────────────────────
+  // Identité Composio par utilisateur (entité user_id distincte sur le même
+  // workspace) + bot Telegram personnel (token chiffré).
+  const userCols = database.pragma('table_info(users)') as { name: string }[];
+  if (!userCols.some((c) => c.name === 'composioUserId')) {
+    database.exec(`ALTER TABLE users ADD COLUMN composioUserId TEXT`);
+  }
+  if (!userCols.some((c) => c.name === 'telegramBotToken')) {
+    database.exec(`ALTER TABLE users ADD COLUMN telegramBotToken TEXT`);
+  }
+  if (!userCols.some((c) => c.name === 'telegramBotName')) {
+    database.exec(`ALTER TABLE users ADD COLUMN telegramBotName TEXT`);
+  }
+
   // Index pour les requêtes scopées par projet (idempotent)
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_plans_user        ON plans(userId, active);

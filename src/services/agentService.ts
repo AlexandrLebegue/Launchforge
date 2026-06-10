@@ -144,7 +144,7 @@ export async function publishContent(agent: Agent, content: string): Promise<str
 
   if (isComposioConfigured()) {
     try {
-      const result = await publishViaComposio(agent.platform, content);
+      const result = await publishViaComposio(agent.userId, agent.platform, content);
       if (result.trim().toUpperCase().startsWith('OK')) {
         return `✅ Publié via Composio — ${result.replace(/^OK:\s*/i, '')}\n\n— Contenu publié —\n${content}`;
       }

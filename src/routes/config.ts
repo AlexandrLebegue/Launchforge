@@ -9,8 +9,8 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured, getModel } from '../services/aiClient';
 import { isComposioConfigured } from '../services/mcpClient';
-import { composioUserId, createConnectLink } from '../services/composioConnect';
-import { isTelegramConfigured } from '../services/telegramBot';
+import { composioUserIdFor, createConnectLink } from '../services/composioConnect';
+import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/telegramBot';
 
 const router = Router();
 router.use(requireAuth);
@@ -30,41 +30,44 @@ const FEATURED_TOOLKITS = [
   { slug: 'github',         name: 'GitHub',          capability: 'Publication GitHub (releases, discussions)' },
 ];
 
-// Cache court : l'appel REST Composio est externe
-let toolkitCache: { at: number; connected: Set<string> } | null = null;
+// Cache court PAR identité Composio : l'appel REST est externe, et chaque
+// utilisateur a ses propres comptes connectés.
+const toolkitCache = new Map<string, { at: number; connected: Set<string> }>();
 
-async function getConnectedToolkits(fresh = false): Promise<Set<string>> {
-  if (!fresh && toolkitCache && Date.now() - toolkitCache.at < 60_000) return toolkitCache.connected;
+async function getConnectedToolkits(composioId: string | null, fresh = false): Promise<Set<string>> {
+  const cacheKey = composioId ?? '__none__';
+  const cached = toolkitCache.get(cacheKey);
+  if (!fresh && cached && Date.now() - cached.at < 60_000) return cached.connected;
 
   const connected = new Set<string>();
-  if (process.env.COMPOSIO_API_KEY) {
+  if (process.env.COMPOSIO_API_KEY && composioId) {
     try {
-      const res = await fetch('https://backend.composio.dev/api/v3/connected_accounts?limit=50', {
-        headers: { 'x-api-key': process.env.COMPOSIO_API_KEY },
-        signal: AbortSignal.timeout(10000),
-      });
+      const res = await fetch(
+        `https://backend.composio.dev/api/v3/connected_accounts?limit=100&user_ids=${encodeURIComponent(composioId)}`,
+        {
+          headers: { 'x-api-key': process.env.COMPOSIO_API_KEY },
+          signal: AbortSignal.timeout(10000),
+        },
+      );
       if (res.ok) {
         const data: any = await res.json();
-        // Seuls les comptes du user_id utilisé par le serveur MCP comptent :
-        // une connexion faite sur le playground du dashboard (pg-test-…) est
-        // ACTIVE chez Composio mais inutilisable par l'application.
-        const appUserId = composioUserId();
+        // Seuls les comptes ACTIFS de l'identité Composio du demandeur comptent
         for (const item of data?.items || []) {
           if (item?.status !== 'ACTIVE' || !item?.toolkit?.slug) continue;
-          if (appUserId && item?.user_id !== appUserId) continue;
+          if (item?.user_id !== composioId) continue;
           connected.add(String(item.toolkit.slug).toLowerCase());
         }
       }
     } catch { /* on renvoie ce qu'on sait */ }
   }
-  toolkitCache = { at: Date.now(), connected };
+  toolkitCache.set(cacheKey, { at: Date.now(), connected });
   return connected;
 }
 
 // ── GET /api/config/status ───────────────────────────────────────────────────
 router.get('/status', async (req: Request, res: Response) => {
   // ?fresh=1 contourne le cache (polling après une connexion de compte)
-  const connected = await getConnectedToolkits(req.query.fresh === '1');
+  const connected = await getConnectedToolkits(composioUserIdFor(req.user!.userId), req.query.fresh === '1');
   // Le mode de publication est un réglage du projet actif
   const agents = storage.getAgentsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId));
   const publishMode = agents.length > 0 && agents.every((a) => a.approvalMode === 'auto')
@@ -87,8 +90,10 @@ router.get('/status', async (req: Request, res: Response) => {
         })),
       },
       telegram: {
-        configured: isTelegramConfigured(),
+        configured: isTelegramConfigured(req.user!.userId),
         linked: storage.getTelegramLinksByUserId(req.user!.userId).length > 0,
+        ownBot: Boolean(storage.getTelegramBot(req.user!.userId)),
+        botUsername: storage.getTelegramBot(req.user!.userId)?.botName ?? null,
       },
       publishMode,
     },
@@ -107,9 +112,9 @@ router.post('/connect', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
   try {
-    const redirectUrl = await createConnectLink(toolkit.toLowerCase());
-    // Le statut devra refléter la nouvelle connexion dès l'autorisation faite
-    toolkitCache = null;
+    const redirectUrl = await createConnectLink(req.user!.userId, toolkit.toLowerCase());
+    // Le statut de CET utilisateur devra refléter la connexion dès l'autorisation
+    toolkitCache.delete(composioUserIdFor(req.user!.userId) ?? '__none__');
     res.json({ success: true, data: { redirectUrl } });
   } catch (err) {
     res.status(502).json({
@@ -117,6 +122,30 @@ router.post('/connect', async (req: Request, res: Response) => {
       error: err instanceof Error ? err.message : 'Connexion impossible',
     });
   }
+});
+
+// ── Bot Telegram personnel ───────────────────────────────────────────────────
+// Chaque utilisateur peut brancher SON bot (token @BotFather) : le serveur
+// démarre un poller dédié et tous les échanges passent par ce bot.
+router.patch('/telegram-bot', async (req: Request, res: Response) => {
+  const { token } = req.body as { token?: string };
+  if (!token || typeof token !== 'string' || !/^\d+:[\w-]{30,}$/.test(token.trim())) {
+    return res.status(400).json({ success: false, error: 'Token invalide — format attendu : 123456789:ABC… (fourni par @BotFather)' });
+  }
+  try {
+    const botName = await setUserBot(req.user!.userId, token.trim());
+    res.json({ success: true, data: { ownBot: true, botUsername: botName } });
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Token refusé par Telegram',
+    });
+  }
+});
+
+router.delete('/telegram-bot', (req: Request, res: Response) => {
+  removeUserBot(req.user!.userId);
+  res.json({ success: true, data: { ownBot: false } });
 });
 
 // ── PATCH /api/config/publish-mode ───────────────────────────────────────────
