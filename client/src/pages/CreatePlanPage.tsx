@@ -441,7 +441,7 @@ function ManualFallbackForm() {
     setBusy(false);
     if (res.success && res.data) {
       invalidateOverview();
-      navigate(`/plan/${res.data.id}`);
+      navigate('/');
     }
     else setError(res.error || 'Erreur lors de la création du plan');
   };

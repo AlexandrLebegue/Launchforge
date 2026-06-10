@@ -119,11 +119,7 @@ export default function ApprovalsPage() {
                       day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
                     })}
                   </span>
-                  {item.planId ? (
-                    <Link to={`/plan/${item.planId}`} className="btn btn-ghost btn-sm">
-                      Voir le plan →
-                    </Link>
-                  ) : (
+                  {!item.planId && (
                     <span className="chip" title="Tâche lancée depuis Telegram">💬 Telegram</span>
                   )}
                 </div>

@@ -7,7 +7,6 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import CreatePlanPage from './pages/CreatePlanPage';
-import PlanViewPage from './pages/PlanViewPage';
 import ApprovalsPage from './pages/ApprovalsPage';
 import ConfigPage from './pages/ConfigPage';
 import ContentHubPage from './pages/ContentHubPage';
@@ -55,7 +54,6 @@ export default function App() {
           <>
             <Route index element={<DashboardPage />} />
             <Route path="new" element={<CreatePlanPage />} />
-            <Route path="plan/:id" element={<PlanViewPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="config" element={<ConfigPage />} />
             <Route path="content" element={<ContentHubPage />} />

@@ -56,8 +56,8 @@ export default function Layout({ user, onLogout }: Props) {
     setPickerOpen(false);
     closeSidebar();
     if (plan.active) {
-      // Projet déjà actif : on ouvre simplement son plan détaillé
-      navigate(`/plan/${plan.id}`);
+      // Projet déjà actif : le tableau de bord EST sa vue d'ensemble
+      navigate('/');
       return;
     }
     setSwitching(plan.id);
@@ -156,7 +156,7 @@ export default function Layout({ user, onLogout }: Props) {
                       key={plan.id}
                       className={`layout-nav-item layout-project${plan.active ? ' active' : ''}`}
                       onClick={() => handleSelectProject(plan)}
-                      title={plan.active ? 'Projet actif — voir le plan' : 'Basculer sur ce projet'}
+                      title={plan.active ? 'Projet actif — tableau de bord' : 'Basculer sur ce projet'}
                     >
                       <span className="layout-nav-icon">{nicheEmojis[plan.niche] ?? '🚀'}</span>
                       <span className="layout-project-name">{plan.productName}</span>

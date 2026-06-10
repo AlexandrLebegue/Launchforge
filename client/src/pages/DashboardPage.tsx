@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getOverview, Overview } from '../api/client';
+import { getOverview, getPlan, Overview, LaunchPlan } from '../api/client';
 
 const nicheEmojis: Record<string, string> = {
   saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
@@ -9,20 +9,34 @@ const nicheEmojis: Record<string, string> = {
   'local-business': '🏠', services: '🧰', other: '🚀',
 };
 
+/**
+ * Tableau de bord = vue d'ensemble du projet courant, directement.
+ * Pas d'onglets ni de page intermédiaire : l'essentiel du projet actif
+ * (chiffres, objectifs, description, phases de lancement) sur une page.
+ */
 export default function DashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [plan,     setPlan]     = useState<LaunchPlan | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
-    // UNE requête : tout le contexte du projet actif (souvent déjà en cache
-    // car la sidebar vient de la faire — réponse instantanée).
-    getOverview().then((res) => {
-      if (res.success && res.data) setOverview(res.data);
-      else setError(res.error || 'Impossible de charger votre projet');
+    (async () => {
+      // L'overview (léger, souvent déjà en cache via la sidebar) donne le
+      // projet actif ; son plan complet est chargé dans la foulée.
+      const res = await getOverview();
+      if (res.success && res.data) {
+        setOverview(res.data);
+        if (res.data.project) {
+          const planRes = await getPlan(res.data.project.id);
+          if (planRes.success && planRes.data) setPlan(planRes.data);
+        }
+      } else {
+        setError(res.error || 'Impossible de charger votre projet');
+      }
       setLoading(false);
-    });
+    })();
   }, []);
 
   if (loading) return <div className="loading">⏳ Chargement de votre projet…</div>;
@@ -49,21 +63,31 @@ export default function DashboardPage() {
     );
   }
 
-  const { tasks, posts, approvals } = overview!;
+  const { posts, approvals } = overview!;
   const emoji = nicheEmojis[project.niche] ?? '🚀';
+  const input = plan?.input;
 
   return (
     <div className="animate-fadeIn">
-      {/* En-tête : le projet actif */}
+      {/* En-tête : le projet courant */}
       <div className="dashboard-header">
         <div>
           <h1>{emoji} {project.productName}</h1>
-          <p>
-            {project.targetAudience}
-            {project.companyName ? ` · ${project.companyName}` : ''}
-          </p>
+          <div className="plan-meta">
+            <span className="niche-badge">{project.niche}</span>
+            <span className="plan-meta-dot" />
+            <span>{project.targetAudience}</span>
+            {input?.pricing && (
+              <>
+                <span className="plan-meta-dot" />
+                <span>{input.pricing}</span>
+              </>
+            )}
+          </div>
         </div>
-        <Link to={`/plan/${project.id}`} className="btn btn-primary">📋 Plan & Kanban</Link>
+        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', paddingTop: 4 }}>
+          Créé le {new Date(project.createdAt).toLocaleDateString('fr-FR', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -80,25 +104,10 @@ export default function DashboardPage() {
         </Link>
       )}
 
-      {/* Statistiques du projet */}
+      {/* Chiffres du projet */}
       <div className="dashboard-stats">
         <div
           className="stat-card animate-fadeInUp stagger-1 stat-card-clickable"
-          onClick={() => navigate(`/plan/${project.id}`)}
-          role="button" tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && navigate(`/plan/${project.id}`)}
-        >
-          <span className="stat-card-icon">⚡</span>
-          <div className="stat-card-value">{tasks.inProgress}</div>
-          <div className="stat-card-label">Tâches en cours</div>
-        </div>
-        <div className="stat-card animate-fadeInUp stagger-2">
-          <span className="stat-card-icon">✅</span>
-          <div className="stat-card-value">{tasks.done}<span className="stat-card-sub">/{tasks.total}</span></div>
-          <div className="stat-card-label">Tâches terminées</div>
-        </div>
-        <div
-          className="stat-card animate-fadeInUp stagger-3 stat-card-clickable"
           onClick={() => navigate('/content')}
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
@@ -106,6 +115,21 @@ export default function DashboardPage() {
           <span className="stat-card-icon">🗓️</span>
           <div className="stat-card-value">{posts.scheduled}</div>
           <div className="stat-card-label">Posts programmés</div>
+        </div>
+        <div
+          className="stat-card animate-fadeInUp stagger-2 stat-card-clickable"
+          onClick={() => navigate('/content')}
+          role="button" tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
+        >
+          <span className="stat-card-icon">✏️</span>
+          <div className="stat-card-value">{posts.drafts}</div>
+          <div className="stat-card-label">Brouillons & idées</div>
+        </div>
+        <div className="stat-card animate-fadeInUp stagger-3">
+          <span className="stat-card-icon">✅</span>
+          <div className="stat-card-value">{posts.published}</div>
+          <div className="stat-card-label">Posts publiés</div>
         </div>
         <div
           className="stat-card animate-fadeInUp stagger-4 stat-card-clickable"
@@ -119,56 +143,59 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Avancement du plan + raccourcis */}
-      <div className="plan-grid">
-        <div
-          className="plan-card animate-fadeInUp stagger-2"
-          onClick={() => navigate(`/plan/${project.id}`)}
-          role="button" tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && navigate(`/plan/${project.id}`)}
-        >
-          <div className="plan-card-header">
-            <h3 className="plan-card-title">📋 Plan de lancement</h3>
-            <span className="chip chip-project">🎯 Projet actif</span>
-          </div>
-          <div className="plan-card-meta">
-            <span className="niche-badge">{project.niche}</span>
-            <span className="plan-card-date">
-              créé le {new Date(project.createdAt).toLocaleDateString('fr-FR', {
-                day: 'numeric', month: 'short', year: 'numeric',
-              })}
-            </span>
-          </div>
-          <div className="plan-progress-bar">
-            <div className="plan-progress-fill" style={{ width: `${tasks.progress}%` }} />
-          </div>
-          <div className="plan-progress-label">
-            {tasks.total > 0
-              ? `${tasks.done}/${tasks.total} tâches · ${tasks.progress} %`
-              : 'Kanban non initialisé — ouvrez le plan pour démarrer'}
-          </div>
-        </div>
-
-        <div
-          className="plan-card animate-fadeInUp stagger-3"
-          onClick={() => navigate('/content')}
-          role="button" tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
-        >
-          <div className="plan-card-header">
-            <h3 className="plan-card-title">📣 Hub de contenu</h3>
-          </div>
-          <p className="plan-card-audience">
-            {posts.drafts > 0 && `${posts.drafts} brouillon${posts.drafts > 1 ? 's' : ''} à valider · `}
-            {posts.published} publié{posts.published > 1 ? 's' : ''}
-          </p>
-          <div className="plan-progress-label">
-            {posts.next
-              ? `Prochain post : « ${posts.next.title || posts.next.platform} » le ${new Date(posts.next.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
-              : 'Aucun post programmé — générez un calendrier éditorial'}
-          </div>
-        </div>
+      {/* Prochain post */}
+      <div className="card animate-fadeInUp stagger-2" style={{ marginBottom: 20 }}>
+        <div className="card-header">📣 Prochaine publication</div>
+        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+          {posts.next
+            ? <>« {posts.next.title || posts.next.platform} » sur <strong style={{ color: 'var(--color-text)' }}>{posts.next.platform}</strong> le {new Date(posts.next.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
+            : <>Aucun post programmé — <Link to="/content">générez un calendrier éditorial</Link> dans le Hub de contenu.</>}
+        </p>
       </div>
+
+      {/* ── Vue d'ensemble du projet ── */}
+      {input && (
+        <>
+          {/* Objectifs */}
+          {input.goals?.length > 0 && (
+            <div className="plan-section card animate-fadeInUp stagger-3">
+              <div className="card-header">🎯 Objectifs</div>
+              <ul className="weekly-actions-list">
+                {input.goals.map((g, i) => <li key={i}>{g}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* Description */}
+          {input.description && (
+            <div className="card animate-fadeInUp stagger-4">
+              <div className="card-header">📖 Description</div>
+              <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
+                {input.description}
+              </p>
+            </div>
+          )}
+
+          {/* Phases de lancement */}
+          {(plan?.launch_sequencing || []).length > 0 && (
+            <div className="card animate-fadeInUp stagger-5">
+              <div className="card-header">🚀 Phases de lancement</div>
+              {plan!.launch_sequencing.map((ls, i) => (
+                <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < plan!.launch_sequencing.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div className="weekly-week-num" style={{ width: 28, height: 28, fontSize: '0.72rem' }}>{i + 1}</div>
+                    <strong style={{ fontSize: '0.9rem' }}>{ls.phase}</strong>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{ls.timeline}</span>
+                  </div>
+                  <ul className="weekly-actions-list">
+                    {(ls.activities || []).slice(0, 3).map((a, j) => <li key={j}>{a}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
