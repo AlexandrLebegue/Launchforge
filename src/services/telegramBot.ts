@@ -189,6 +189,30 @@ const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'calendar_events',
+    description: 'Lit l\'agenda Google Calendar de l\'utilisateur via Composio : prochains événements, ou recherche ciblée. Pour « mon agenda », « j\'ai quoi demain ? », « mes rendez-vous de la semaine ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Période ou recherche optionnelle, ex. "demain", "cette semaine", "rendez-vous client" — vide pour les prochains événements' },
+      },
+    },
+  },
+  {
+    name: 'create_calendar_event',
+    description: 'Crée un événement dans le Google Calendar de l\'utilisateur. Demande TOUJOURS confirmation (titre, date/heure, durée) avant d\'appeler cet outil.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title:           { type: 'string', description: 'Titre de l\'événement' },
+        startsAt:        { type: 'string', description: 'Début en ISO 8601 (calcule-le depuis la date courante, fuseau Europe/Paris)' },
+        durationMinutes: { type: 'number', description: 'Durée en minutes (défaut 60)' },
+        description:     { type: 'string', description: 'Description optionnelle' },
+      },
+      required: ['title', 'startsAt'],
+    },
+  },
+  {
     name: 'set_reminder',
     description: 'Programme un rappel envoyé sur ce chat Telegram à la date/heure donnée.',
     parameters: {
@@ -406,6 +430,49 @@ Ne fabrique JAMAIS d'emails : uniquement ce que les outils retournent réellemen
       return result.reply;
     }
 
+    case 'calendar_events': {
+      if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Google Calendar depuis la vue Configuration.';
+      const query = String(args.query || '').trim();
+      const result = await runMcpTask(
+        ['calendar'],
+        `Tu es l'assistant agenda de l'utilisateur. Tu disposes de ses outils Google Calendar via Composio.
+Date/heure actuelle : ${new Date().toISOString()} (l'utilisateur est en Europe/Paris).
+Mission : récupère ${query ? `les événements correspondant à « ${query} »` : 'les 10 prochains événements à venir'} avec les outils de listing du calendrier principal, puis présente-les en liste courte : date/heure — titre — lieu/détail en une ligne.
+Ne fabrique JAMAIS d'événements : uniquement ce que les outils retournent réellement. Si la lecture échoue, réponds "ERREUR :" avec la raison.`,
+        query ? `Cherche dans mon agenda : ${query}` : 'Liste mes prochains événements.',
+        ['list', 'events', 'get', 'find', 'search'],
+      );
+      // Anti-hallucination : un agenda résumé sans appel d'outil réussi est inventé
+      if (result.okCalls === 0) {
+        return `ERREUR : impossible d'interroger l'agenda — ${result.reply.replace(/^ERREUR\s*:\s*/i, '').slice(0, 300) || 'vérifiez que Google Calendar est connecté (vue Configuration)'}`;
+      }
+      return result.reply;
+    }
+
+    case 'create_calendar_event': {
+      if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Google Calendar depuis la vue Configuration.';
+      const title = String(args.title || '').trim().slice(0, 200);
+      const starts = new Date(String(args.startsAt || ''));
+      if (!title) return 'ERREUR : titre requis.';
+      if (Number.isNaN(starts.getTime())) return 'ERREUR : date de début invalide (attendu ISO 8601).';
+      const duration = Number.isFinite(Number(args.durationMinutes)) && Number(args.durationMinutes) > 0
+        ? Math.min(Math.round(Number(args.durationMinutes)), 24 * 60)
+        : 60;
+      const description = String(args.description || '').trim().slice(0, 500);
+      const result = await runMcpTask(
+        ['calendar'],
+        `Tu es l'assistant agenda de l'utilisateur. Tu disposes de ses outils Google Calendar via Composio.
+Mission : créer UN événement dans le calendrier principal, exactement avec le titre, le début (fourni en ISO UTC — laisse l'outil gérer le fuseau), la durée et la description fournis. N'invente rien d'autre.
+Si la création réussit, réponds "OK:" suivi d'une confirmation courte. Sinon "ECHEC:" avec la raison.
+IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant.`,
+        `Crée cet événement :\nTitre : ${title}\nDébut : ${starts.toISOString()}\nDurée : ${duration} minutes${description ? `\nDescription : ${description}` : ''}`,
+        ['create', 'event', 'quick', 'add', 'insert'],
+      );
+      const ok = result.reply.trim().toUpperCase().startsWith('OK') && result.okCalls > 0;
+      if (ok) return `Événement créé : « ${title} » le ${fmtDate(starts.toISOString())} (${duration} min).`;
+      return `Échec de création : ${result.reply.replace(/^(OK|ECHEC)\s*:\s*/i, '').slice(0, 300)}`;
+    }
+
     case 'set_reminder': {
       const due = new Date(String(args.dueAt || ''));
       if (Number.isNaN(due.getTime())) return 'ERREUR : date invalide (attendu ISO 8601).';
@@ -441,7 +508,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
@@ -499,6 +566,8 @@ Tu peux me demander par exemple :
 • « Envoie un mail à Marie pour proposer une démo »
 • « Envoie un mail à contact@exemple.com »
 • « Lis mes derniers mails »
+• « J'ai quoi dans mon agenda demain ? »
+• « Ajoute un rdv client vendredi 14h »
 • « Rappelle-moi demain 9h de relancer les leads »
 
 /reset — repartir de zéro · /aide — ce message`;
