@@ -663,8 +663,13 @@ export interface ConfigStatus {
   publishMode: 'auto' | 'manual';
 }
 
-export async function getConfigStatus(): Promise<ApiResponse<ConfigStatus>> {
-  return request('/config/status');
+export async function getConfigStatus(fresh = false): Promise<ApiResponse<ConfigStatus>> {
+  return request(`/config/status${fresh ? '?fresh=1' : ''}`);
+}
+
+/** Prépare la connexion d'un compte et renvoie le lien d'autorisation OAuth */
+export async function connectToolkit(toolkit: string): Promise<ApiResponse<{ redirectUrl: string }>> {
+  return request('/config/connect', { method: 'POST', body: JSON.stringify({ toolkit }) });
 }
 
 export async function setPublishMode(mode: 'auto' | 'manual'): Promise<ApiResponse<{ publishMode: string }>> {

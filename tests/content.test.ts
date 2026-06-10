@@ -142,6 +142,24 @@ describe('Posts (Content Hub)', () => {
   });
 });
 
+describe('Connexion de comptes (Configuration)', () => {
+  it('valide le nom du toolkit', async () => {
+    const res = await request(app).post('/api/config/connect').set(auth()).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('retourne 503 quand Composio n\'est pas configuré', async () => {
+    delete process.env.COMPOSIO_MCP_URL;
+    delete process.env.COMPOSIO_API_KEY;
+    const res = await request(app)
+      .post('/api/config/connect')
+      .set(auth())
+      .send({ toolkit: 'linkedin' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
+  });
+});
+
 describe('Knowledge base', () => {
   let entryId: string;
 

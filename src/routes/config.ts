@@ -9,6 +9,7 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured, getModel } from '../services/aiClient';
 import { isComposioConfigured } from '../services/mcpClient';
+import { composioUserId, createConnectLink } from '../services/composioConnect';
 import { isTelegramConfigured } from '../services/telegramBot';
 
 const router = Router();
@@ -29,20 +30,11 @@ const FEATURED_TOOLKITS = [
   { slug: 'github',         name: 'GitHub',          capability: 'Publication GitHub (releases, discussions)' },
 ];
 
-/** user_id Composio utilisé par l'app (extrait de COMPOSIO_MCP_URL) */
-function composioUserId(): string | null {
-  try {
-    return new URL(process.env.COMPOSIO_MCP_URL || '').searchParams.get('user_id');
-  } catch {
-    return null;
-  }
-}
-
 // Cache court : l'appel REST Composio est externe
 let toolkitCache: { at: number; connected: Set<string> } | null = null;
 
-async function getConnectedToolkits(): Promise<Set<string>> {
-  if (toolkitCache && Date.now() - toolkitCache.at < 60_000) return toolkitCache.connected;
+async function getConnectedToolkits(fresh = false): Promise<Set<string>> {
+  if (!fresh && toolkitCache && Date.now() - toolkitCache.at < 60_000) return toolkitCache.connected;
 
   const connected = new Set<string>();
   if (process.env.COMPOSIO_API_KEY) {
@@ -71,7 +63,8 @@ async function getConnectedToolkits(): Promise<Set<string>> {
 
 // ── GET /api/config/status ───────────────────────────────────────────────────
 router.get('/status', async (req: Request, res: Response) => {
-  const connected = await getConnectedToolkits();
+  // ?fresh=1 contourne le cache (polling après une connexion de compte)
+  const connected = await getConnectedToolkits(req.query.fresh === '1');
   const agents = storage.getAgentsByUserId(req.user!.userId);
   const publishMode = agents.length > 0 && agents.every((a) => a.approvalMode === 'auto')
     ? 'auto'
@@ -99,6 +92,30 @@ router.get('/status', async (req: Request, res: Response) => {
       publishMode,
     },
   });
+});
+
+// ── POST /api/config/connect ─────────────────────────────────────────────────
+// Prépare la connexion d'un compte (config d'auth + toolkit sur le serveur MCP)
+// et renvoie le lien d'autorisation OAuth à ouvrir dans le navigateur.
+router.post('/connect', async (req: Request, res: Response) => {
+  const { toolkit } = req.body as { toolkit?: string };
+  if (!toolkit || typeof toolkit !== 'string' || !/^[a-z0-9_-]{2,40}$/i.test(toolkit)) {
+    return res.status(400).json({ success: false, error: 'toolkit is required' });
+  }
+  if (!isComposioConfigured() || !process.env.COMPOSIO_API_KEY) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+  try {
+    const redirectUrl = await createConnectLink(toolkit.toLowerCase());
+    // Le statut devra refléter la nouvelle connexion dès l'autorisation faite
+    toolkitCache = null;
+    res.json({ success: true, data: { redirectUrl } });
+  } catch (err) {
+    res.status(502).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Connexion impossible',
+    });
+  }
 });
 
 // ── PATCH /api/config/publish-mode ───────────────────────────────────────────

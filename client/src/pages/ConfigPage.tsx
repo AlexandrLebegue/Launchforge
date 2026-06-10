@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
-  getConfigStatus, setPublishMode, getTelegramLinkCode,
+  getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit,
   ConfigStatus,
 } from '../api/client';
 
 const TOOLKIT_ICONS: Record<string, string> = {
   linkedin: '💼', twitter: '🐦', instagram: '📸', facebook: '📘',
   gmail: '✉️', googlecalendar: '🗓️', reddit: '🟠',
+  youtube: '▶️', discord: '🎮', slack: '💬', github: '🐙',
 };
 
 export default function ConfigPage() {
@@ -15,13 +16,58 @@ export default function ConfigPage() {
   const [tgCode,  setTgCode]  = useState<string | null>(null);
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
+  // Connexion de comptes : lien OAuth généré + erreurs, par toolkit
+  const [connectLinks,  setConnectLinks]  = useState<Record<string, string>>({});
+  const [connecting,    setConnecting]    = useState<string | null>(null);
+  const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = () => getConfigStatus().then((res) => {
+  const load = (fresh = false) => getConfigStatus(fresh).then((res) => {
     if (res.success && res.data) setStatus(res.data);
     setLoading(false);
+    return res;
   });
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
+  }, []);
+
+  /** Après ouverture du lien OAuth : rafraîchit le statut jusqu'à voir le compte connecté */
+  const startPolling = (slug: string) => {
+    if (pollTimer.current) clearInterval(pollTimer.current);
+    let remaining = 24; // ~2 minutes par pas de 5 s
+    pollTimer.current = setInterval(async () => {
+      remaining -= 1;
+      const res = await load(true);
+      const done = res.success &&
+        Boolean(res.data?.composio.toolkits.find((t) => t.slug === slug)?.connected);
+      if ((done || remaining <= 0) && pollTimer.current) {
+        clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
+    }, 5000);
+  };
+
+  const handleConnect = async (slug: string) => {
+    setConnecting(slug);
+    setConnectErrors((e) => ({ ...e, [slug]: '' }));
+    const res = await connectToolkit(slug);
+    setConnecting(null);
+    if (res.success && res.data) {
+      setConnectLinks((l) => ({ ...l, [slug]: res.data!.redirectUrl }));
+      // Ouverture directe ; le lien reste affiché si le navigateur bloque la popup
+      window.open(res.data.redirectUrl, '_blank', 'noopener');
+      startPolling(slug);
+    } else {
+      setConnectErrors((e) => ({
+        ...e,
+        [slug]: res.error === 'COMPOSIO_NOT_CONFIGURED'
+          ? 'Composio non configuré côté serveur (COMPOSIO_MCP_URL + COMPOSIO_API_KEY).'
+          : res.error || 'Connexion impossible.',
+      }));
+    }
+  };
 
   const handleMode = async (mode: 'auto' | 'manual') => {
     if (!status || status.publishMode === mode) return;
@@ -135,25 +181,41 @@ export default function ConfigPage() {
                 <span className="config-toolkit-main">
                   <span className="config-toolkit-name">{t.name}</span>
                   <span className="config-toolkit-cap">{t.capability}</span>
-                </span>
-                {t.connected
-                  ? <span className="config-badge ok">Fonctionnel</span>
-                  : (
-                    <a
-                      className="config-badge ko link"
-                      href={status.composio.dashboardUrl}
-                      target="_blank" rel="noopener noreferrer"
-                      title="Connecter ce compte sur Composio"
-                    >
-                      Non configuré ↗
-                    </a>
+                  {!t.connected && connectErrors[t.slug] && (
+                    <span className="config-toolkit-cap" style={{ color: 'var(--color-danger, #f87171)' }}>
+                      ⚠️ {connectErrors[t.slug]}
+                    </span>
                   )}
+                </span>
+                {t.connected ? (
+                  <span className="config-badge ok">Fonctionnel</span>
+                ) : connectLinks[t.slug] ? (
+                  <a
+                    className="config-badge warn link"
+                    href={connectLinks[t.slug]}
+                    target="_blank" rel="noopener noreferrer"
+                    title="Ouvrez ce lien et autorisez l'accès — le statut se met à jour tout seul"
+                  >
+                    ⏳ Autoriser ↗
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleConnect(t.slug)}
+                    disabled={connecting === t.slug || !status.composio.configured}
+                    title="Génère le lien d'autorisation et l'ouvre dans un nouvel onglet"
+                  >
+                    {connecting === t.slug ? '⏳…' : '🔗 Connecter'}
+                  </button>
+                )}
               </div>
             ))}
           </div>
           <p className="form-hint">
-            Connectez un compte sur dashboard.composio.dev (même user_id que votre serveur MCP),
-            il devient immédiatement utilisable — publication, métriques, emails, agenda.
+            Cliquez sur « Connecter », autorisez l'accès dans l'onglet qui s'ouvre, et le compte
+            devient utilisable — publication, métriques, emails, agenda. Le statut se rafraîchit
+            automatiquement après l'autorisation.
           </p>
         </div>
 
