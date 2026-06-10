@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, FormEvent, Fragment } from 'react';
 import { streamPostChat, PostChatMessage } from '../api/client';
+import Markdown from './Markdown';
 
 const STORAGE_KEY = 'lf_post_chat';
 
@@ -8,19 +9,6 @@ const WELCOME: PostChatMessage = {
   text: '👋 Je suis ton assistant de création de posts. Dis-moi ce que tu veux publier — je peux chercher des actus et des chiffres sur le web, proposer des angles, rédiger, et enregistrer le post dans ton Hub quand il te plaît.\n\nExemples : « Un post LinkedIn sur notre nouvelle fonctionnalité », « Trouve une actu de mon secteur et fais un post dessus », « 3 idées de threads X ».',
 };
 
-/** Markdown minimal : **gras**, _italique_, sauts de ligne */
-function renderText(text: string) {
-  return text.split('\n').map((line, i) => (
-    <Fragment key={i}>
-      {i > 0 && <br />}
-      {line.split(/(\*\*[^*]+\*\*|_[^_]+_)/g).map((part, j) => {
-        if (part.startsWith('**') && part.endsWith('**')) return <strong key={j}>{part.slice(2, -2)}</strong>;
-        if (part.startsWith('_') && part.endsWith('_') && part.length > 2) return <em key={j}>{part.slice(1, -1)}</em>;
-        return part;
-      })}
-    </Fragment>
-  ));
-}
 
 function loadHistory(): PostChatMessage[] {
   try {
@@ -133,7 +121,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
               <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
                 <div className="chat-avatar">{msg.role === 'assistant' ? '✨' : '👤'}</div>
                 <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                  {renderText(msg.text)}
+                  <Markdown text={msg.text} />
                 </div>
               </div>
             </Fragment>
@@ -148,7 +136,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
             <div className="chat-msg chat-msg-bot">
               <div className="chat-avatar">✨</div>
               {streamText
-                ? <div className="chat-bubble bot">{renderText(streamText)}<span className="chat-cursor">▋</span></div>
+                ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
                 : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
             </div>
           )}

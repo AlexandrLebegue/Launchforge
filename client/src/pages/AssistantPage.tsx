@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, FormEvent, Fragment } from 'react';
 import { streamAssistantChat, getOverview, PostChatMessage } from '../api/client';
+import Markdown from '../components/Markdown';
 
 const STORAGE_KEY = 'lf_assistant_chat';
 
@@ -18,19 +19,6 @@ const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
   { icon: '⏰', label: 'Programmer un rappel',    prompt: 'Rappelle-moi demain à 9h de vérifier les métriques des posts.' },
 ];
 
-/** Markdown minimal : **gras**, _italique_, sauts de ligne */
-function renderText(text: string) {
-  return text.split('\n').map((line, i) => (
-    <Fragment key={i}>
-      {i > 0 && <br />}
-      {line.split(/(\*\*[^*]+\*\*|_[^_]+_)/g).map((part, j) => {
-        if (part.startsWith('**') && part.endsWith('**')) return <strong key={j}>{part.slice(2, -2)}</strong>;
-        if (part.startsWith('_') && part.endsWith('_') && part.length > 2) return <em key={j}>{part.slice(1, -1)}</em>;
-        return part;
-      })}
-    </Fragment>
-  ));
-}
 
 function loadHistory(): PostChatMessage[] {
   try {
@@ -153,7 +141,7 @@ export default function AssistantPage() {
             <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
               <div className="chat-avatar">{msg.role === 'assistant' ? '🚀' : '👤'}</div>
               <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                {renderText(msg.text)}
+                <Markdown text={msg.text} />
               </div>
             </div>
           </Fragment>
@@ -168,7 +156,7 @@ export default function AssistantPage() {
           <div className="chat-msg chat-msg-bot">
             <div className="chat-avatar">🚀</div>
             {streamText
-              ? <div className="chat-bubble bot">{renderText(streamText)}<span className="chat-cursor">▋</span></div>
+              ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
               : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
           </div>
         )}

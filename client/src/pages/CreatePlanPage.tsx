@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, FormEvent, ChangeEvent, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Markdown from '../components/Markdown';
 import {
   startOnboarding,
   getOnboardingSession,
@@ -29,23 +30,6 @@ function readAsBase64(file: File): Promise<string> {
   });
 }
 
-/** Minimal markdown: **bold**, _italic_, line breaks */
-function renderText(text: string) {
-  return text.split('\n').map((line, i) => (
-    <Fragment key={i}>
-      {i > 0 && <br />}
-      {line.split(/(\*\*[^*]+\*\*|_[^_]+_)/g).map((part, j) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={j}>{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith('_') && part.endsWith('_') && part.length > 2) {
-          return <em key={j}>{part.slice(1, -1)}</em>;
-        }
-        return part;
-      })}
-    </Fragment>
-  ));
-}
 
 const profileLabels: { key: keyof OnboardingProfile; label: string }[] = [
   { key: 'productName',    label: 'Produit' },
@@ -283,7 +267,7 @@ export default function CreatePlanPage() {
                   <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
                     <div className="chat-avatar">{msg.role === 'assistant' ? '🤖' : '👤'}</div>
                     <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                      {renderText(msg.text)}
+                      <Markdown text={msg.text} />
                     </div>
                   </div>
                 </Fragment>
@@ -301,7 +285,7 @@ export default function CreatePlanPage() {
                 <div className="chat-msg chat-msg-bot">
                   <div className="chat-avatar">🤖</div>
                   {streamText
-                    ? <div className="chat-bubble bot">{renderText(streamText)}<span className="chat-cursor">▋</span></div>
+                    ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
                     : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
                 </div>
               )}
