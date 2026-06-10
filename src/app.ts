@@ -13,6 +13,7 @@ import postRoutes from './routes/posts';
 import knowledgeRoutes from './routes/knowledge';
 import contentRoutes from './routes/content';
 import contactRoutes from './routes/contacts';
+import telegramRoutes from './routes/telegram';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/contacts', contactRoutes);
+app.use('/api/telegram', telegramRoutes);
 
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));

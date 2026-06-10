@@ -12,7 +12,7 @@
 
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact, TelegramLink, Reminder } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -391,6 +391,51 @@ export class Storage {
 
   deleteContact(id: string): void {
     getDb().prepare(`DELETE FROM contacts WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Telegram & rappels
+  // ──────────────────────────────────────────────────────────────
+
+  saveTelegramLink(link: TelegramLink): void {
+    getDb()
+      .prepare(`INSERT OR REPLACE INTO telegram_links (chatId, userId, createdAt) VALUES (?, ?, ?)`)
+      .run(link.chatId, link.userId, link.createdAt);
+  }
+
+  getTelegramLinkByChatId(chatId: string): TelegramLink | undefined {
+    return getDb().prepare(`SELECT * FROM telegram_links WHERE chatId = ?`).get(chatId) as TelegramLink | undefined;
+  }
+
+  getTelegramLinksByUserId(userId: string): TelegramLink[] {
+    return getDb().prepare(`SELECT * FROM telegram_links WHERE userId = ?`).all(userId) as TelegramLink[];
+  }
+
+  deleteTelegramLink(chatId: string): void {
+    getDb().prepare(`DELETE FROM telegram_links WHERE chatId = ?`).run(chatId);
+  }
+
+  saveReminder(reminder: Reminder): void {
+    getDb()
+      .prepare(`INSERT INTO reminders (id, userId, text, dueAt, sent, createdAt) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(reminder.id, reminder.userId, reminder.text, reminder.dueAt, reminder.sent, reminder.createdAt);
+  }
+
+  getPendingRemindersByUserId(userId: string): Reminder[] {
+    return getDb()
+      .prepare(`SELECT * FROM reminders WHERE userId = ? AND sent = 0 ORDER BY dueAt ASC`)
+      .all(userId) as Reminder[];
+  }
+
+  /** Rappels dont l'échéance est passée et pas encore envoyés */
+  getDueReminders(nowIso: string): Reminder[] {
+    return getDb()
+      .prepare(`SELECT * FROM reminders WHERE sent = 0 AND dueAt <= ? ORDER BY dueAt ASC LIMIT 20`)
+      .all(nowIso) as Reminder[];
+  }
+
+  markReminderSent(id: string): void {
+    getDb().prepare(`UPDATE reminders SET sent = 1 WHERE id = ?`).run(id);
   }
 
   // ──────────────────────────────────────────────────────────────

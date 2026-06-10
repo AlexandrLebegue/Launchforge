@@ -314,6 +314,23 @@ export interface LeadCandidate {
   excerpt: string;
 }
 
+// ── Telegram ──────────────────────────────────────────────────────────────────
+
+export interface TelegramLink {
+  chatId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface Reminder {
+  id: string;
+  userId: string;
+  text: string;
+  dueAt: string;
+  sent: number;
+  createdAt: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;

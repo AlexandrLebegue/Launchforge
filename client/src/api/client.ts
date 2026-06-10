@@ -633,6 +633,13 @@ export async function sendContactEmail(
   return request(`/contacts/${id}/send-email`, { method: 'POST', body: JSON.stringify({ subject, body }) });
 }
 
+// ── Telegram ──────────────────────────────────────────────────────────────────
+
+/** Génère un code de liaison à envoyer au bot Telegram (valable 10 min) */
+export async function getTelegramLinkCode(): Promise<ApiResponse<{ code: string; linked: boolean }>> {
+  return request('/telegram/link-code', { method: 'POST' });
+}
+
 // ── Assistant de contenu ──────────────────────────────────────────────────────
 
 export interface GeneratedContent {

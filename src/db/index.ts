@@ -207,6 +207,23 @@ function runMigrations(database: Database.Database): void {
       updatedAt       TEXT NOT NULL,
       FOREIGN KEY (userId) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS telegram_links (
+      chatId    TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS reminders (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      text      TEXT NOT NULL,
+      dueAt     TEXT NOT NULL,
+      sent      INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
   `);
 
   // Additive migration: pipeline de validation par agent (idempotent, pour

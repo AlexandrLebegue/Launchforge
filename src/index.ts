@@ -4,6 +4,7 @@ dotenv.config();
 import { initEngine, getDb } from './db';
 import app from './app';
 import { startScheduler } from './services/scheduler';
+import { startTelegramBot } from './services/telegramBot';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -17,6 +18,7 @@ async function main() {
     console.log(`🔐 Auth:   http://localhost:${PORT}/api/auth`);
     console.log(`📚 Plans:  http://localhost:${PORT}/api/plan`);
     startScheduler();
+    startTelegramBot();
   });
 }
 
