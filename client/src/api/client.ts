@@ -759,10 +759,11 @@ export interface PostChatHandlers {
   onError: (error: string) => void;
 }
 
-/** Chat de création de posts — SSE (deltas, recherches web, posts enregistrés) */
-export async function streamPostChat(
+/** Lecteur SSE commun aux chats (création de posts, assistant intégré) */
+async function streamChat(
+  path: string,
   messages: { role: 'user' | 'assistant'; text: string }[],
-  handlers: PostChatHandlers
+  handlers: Omit<PostChatHandlers, 'onSaved'> & { onSaved?: PostChatHandlers['onSaved'] }
 ): Promise<void> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -770,7 +771,7 @@ export async function streamPostChat(
 
   let res: globalThis.Response;
   try {
-    res = await fetch(`${API_BASE}/content/chat/stream`, {
+    res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ messages }),
@@ -810,7 +811,7 @@ export async function streamPostChat(
         const payload = JSON.parse(line.slice(6));
         if (payload.type === 'delta') handlers.onDelta(payload.text);
         else if (payload.type === 'action') handlers.onAction(payload.text);
-        else if (payload.type === 'saved') handlers.onSaved(payload.postId, payload.title);
+        else if (payload.type === 'saved') handlers.onSaved?.(payload.postId, payload.title);
         else if (payload.type === 'done') { finished = true; handlers.onDone(payload.reply, payload.actions || []); }
         else if (payload.type === 'error') { finished = true; handlers.onError(payload.error); }
       } catch { /* chunk malformé — ignoré */ }
@@ -818,6 +819,22 @@ export async function streamPostChat(
   }
 
   if (!finished) handlers.onError('La connexion a été interrompue — réessayez.');
+}
+
+/** Chat de création de posts — SSE (deltas, recherches web, posts enregistrés) */
+export async function streamPostChat(
+  messages: { role: 'user' | 'assistant'; text: string }[],
+  handlers: PostChatHandlers
+): Promise<void> {
+  return streamChat('/content/chat/stream', messages, handlers);
+}
+
+/** Assistant LaunchForge intégré (vue 💬 Assistant) — mêmes outils que le bot Telegram */
+export async function streamAssistantChat(
+  messages: { role: 'user' | 'assistant'; text: string }[],
+  handlers: Omit<PostChatHandlers, 'onSaved'>
+): Promise<void> {
+  return streamChat('/assistant/chat/stream', messages, handlers);
 }
 
 // ── Telegram ──────────────────────────────────────────────────────────────────

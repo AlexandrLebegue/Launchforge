@@ -142,6 +142,32 @@ describe('Posts (Content Hub)', () => {
   });
 });
 
+describe('Assistant intégré (chat)', () => {
+  it('retourne 503 sans clé IA', async () => {
+    const res = await request(app)
+      .post('/api/assistant/chat/stream')
+      .set(auth())
+      .send({ messages: [{ role: 'user', text: 'Où en est-on ?' }] });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('AI_NOT_CONFIGURED');
+  });
+
+  it('valide que l\'historique se termine par un message utilisateur', async () => {
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    const empty = await request(app)
+      .post('/api/assistant/chat/stream')
+      .set(auth())
+      .send({ messages: [] });
+    const badEnd = await request(app)
+      .post('/api/assistant/chat/stream')
+      .set(auth())
+      .send({ messages: [{ role: 'assistant', text: 'Bonjour' }] });
+    delete process.env.OPENROUTER_API_KEY;
+    expect(empty.status).toBe(400);
+    expect(badEnd.status).toBe(400);
+  });
+});
+
 describe('Connexion de comptes (Configuration)', () => {
   it('valide le nom du toolkit', async () => {
     const res = await request(app).post('/api/config/connect').set(auth()).send({});

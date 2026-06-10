@@ -72,7 +72,7 @@ export function consumeLinkCode(code: string): string | null {
 
 // ── Outils LaunchForge exposés au modèle ──────────────────────────────────────
 
-const TOOLS: ToolDef[] = [
+export const TOOLS: ToolDef[] = [
   {
     name: 'get_overview',
     description: 'Vue d\'ensemble : posts programmés, contenus à valider, leads chauds, prochaine publication, rappels à venir. Appelle ça pour « où en est-on ? », « statut », « résumé ».',
@@ -240,7 +240,7 @@ function findByShortId<T extends { id: string }>(items: T[], ref: string): T | u
   return items.find((i) => i.id === ref || i.id.startsWith(ref));
 }
 
-async function executeTool(userId: string, _chatId: string, name: string, args: any): Promise<string> {
+export async function executeTool(userId: string, _chatId: string, name: string, args: any): Promise<string> {
   // Le bot travaille dans le contexte du projet actif, comme l'app web
   const planId = storage.getActivePlanId(userId);
   switch (name) {
