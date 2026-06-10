@@ -39,9 +39,14 @@ export function platformKeywords(platform: string): string[] {
 }
 
 function filterTools(tools: McpTool[], keywords: string[], priorityKeywords: string[] = []): McpTool[] {
-  const matched = tools.filter((t) =>
-    keywords.some((k) => t.name.toLowerCase().includes(k))
-  );
+  // Les outils Composio sont nommés TOOLKIT_ACTION : on filtre sur le préfixe
+  // toolkit uniquement. Filtrer sur le nom complet faisait matcher des outils
+  // d'autres toolkits (ex. « event » → GITHUB_*_EVENT pour la synchro calendrier,
+  // « email » → GITHUB_*_EMAIL_* pour le scan Gmail).
+  const matched = tools.filter((t) => {
+    const toolkit = t.name.split('_')[0].toLowerCase();
+    return keywords.some((k) => toolkit.includes(k));
+  });
   // SÉCURITÉ : pas de repli vers la totalité des outils — exposer des outils
   // sans rapport (ex. envoi Gmail pour une mission « publier sur LinkedIn »)
   // est dangereux. Mieux vaut un échec explicite qui guide l'utilisateur.

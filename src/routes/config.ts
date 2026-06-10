@@ -23,7 +23,20 @@ const FEATURED_TOOLKITS = [
   { slug: 'gmail',          name: 'Gmail',           capability: 'Scan boîte mail + envoi d\'emails' },
   { slug: 'googlecalendar', name: 'Google Calendar', capability: 'Synchro de vos posts dans l\'agenda' },
   { slug: 'reddit',         name: 'Reddit',          capability: 'Publication Reddit' },
+  { slug: 'youtube',        name: 'YouTube',         capability: 'Publication YouTube' },
+  { slug: 'discord',        name: 'Discord',         capability: 'Messages Discord' },
+  { slug: 'slack',          name: 'Slack',           capability: 'Messages Slack' },
+  { slug: 'github',         name: 'GitHub',          capability: 'Publication GitHub (releases, discussions)' },
 ];
+
+/** user_id Composio utilisé par l'app (extrait de COMPOSIO_MCP_URL) */
+function composioUserId(): string | null {
+  try {
+    return new URL(process.env.COMPOSIO_MCP_URL || '').searchParams.get('user_id');
+  } catch {
+    return null;
+  }
+}
 
 // Cache court : l'appel REST Composio est externe
 let toolkitCache: { at: number; connected: Set<string> } | null = null;
@@ -40,10 +53,14 @@ async function getConnectedToolkits(): Promise<Set<string>> {
       });
       if (res.ok) {
         const data: any = await res.json();
+        // Seuls les comptes du user_id utilisé par le serveur MCP comptent :
+        // une connexion faite sur le playground du dashboard (pg-test-…) est
+        // ACTIVE chez Composio mais inutilisable par l'application.
+        const appUserId = composioUserId();
         for (const item of data?.items || []) {
-          if (item?.status === 'ACTIVE' && item?.toolkit?.slug) {
-            connected.add(String(item.toolkit.slug).toLowerCase());
-          }
+          if (item?.status !== 'ACTIVE' || !item?.toolkit?.slug) continue;
+          if (appUserId && item?.user_id !== appUserId) continue;
+          connected.add(String(item.toolkit.slug).toLowerCase());
         }
       }
     } catch { /* on renvoie ce qu'on sait */ }
