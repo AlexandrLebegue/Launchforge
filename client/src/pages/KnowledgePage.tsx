@@ -3,6 +3,7 @@ import {
   getKnowledge, createKnowledge, updateKnowledge, deleteKnowledge,
   KnowledgeEntry, KnowledgeCategory,
 } from '../api/client';
+import ContactsPanel from '../components/ContactsPanel';
 
 const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint: string }[] = [
   { value: 'company',  label: 'Entreprise',       icon: '🏢', hint: 'Histoire, mission, valeurs, équipe…' },
@@ -105,6 +106,7 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
 }
 
 export default function KnowledgePage() {
+  const [tab,      setTab]      = useState<'knowledge' | 'contacts'>('knowledge');
   const [entries,  setEntries]  = useState<KnowledgeEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [editing,  setEditing]  = useState<KnowledgeEntry | null | 'new'>(null);
@@ -149,13 +151,26 @@ export default function KnowledgePage() {
         <div>
           <h1>📚 Base de connaissances</h1>
           <p>
-            Tout ce que l'IA doit savoir sur votre entreprise. Chaque fiche est injectée
-            dans l'assistant de contenu et les agents — écrivez une fois, réutilisé partout.
+            {tab === 'knowledge'
+              ? 'Tout ce que l\'IA doit savoir sur votre entreprise. Chaque fiche est injectée dans l\'assistant de contenu et les agents — écrivez une fois, réutilisé partout.'
+              : 'Vos prospects, clients et partenaires — détectés et scorés par l\'IA depuis vos commentaires et votre boîte mail.'}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouvelle fiche</button>
+        {tab === 'knowledge' && (
+          <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouvelle fiche</button>
+        )}
       </div>
 
+      {/* Onglets */}
+      <div className="hub-tabs" style={{ marginTop: 4 }}>
+        <button className={`hub-tab${tab === 'knowledge' ? ' active' : ''}`} onClick={() => setTab('knowledge')}>📚 Fiches</button>
+        <button className={`hub-tab${tab === 'contacts' ? ' active' : ''}`} onClick={() => setTab('contacts')}>🤝 Contacts</button>
+      </div>
+
+      {tab === 'contacts' ? (
+        <ContactsPanel />
+      ) : (
+      <>
       {/* Filtres par catégorie */}
       <div className="knowledge-cats">
         <button className={`knowledge-cat${catFilter === 'all' ? ' active' : ''}`} onClick={() => setCatFilter('all')}>
@@ -227,6 +242,8 @@ export default function KnowledgePage() {
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />
+      )}
+      </>
       )}
     </div>
   );

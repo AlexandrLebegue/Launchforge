@@ -12,6 +12,7 @@ import approvalRoutes from './routes/approvals';
 import postRoutes from './routes/posts';
 import knowledgeRoutes from './routes/knowledge';
 import contentRoutes from './routes/content';
+import contactRoutes from './routes/contacts';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/approvals', approvalRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/content', contentRoutes);
+app.use('/api/contacts', contactRoutes);
 
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));

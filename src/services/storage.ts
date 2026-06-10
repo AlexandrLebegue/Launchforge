@@ -12,7 +12,7 @@
 
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -320,6 +320,61 @@ export class Storage {
 
   deleteKnowledge(id: string): void {
     getDb().prepare(`DELETE FROM knowledge WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Contacts
+  // ──────────────────────────────────────────────────────────────
+
+  saveContact(contact: Contact): void {
+    getDb()
+      .prepare(
+        `INSERT INTO contacts
+           (id, userId, name, email, company, type, source, interestScore,
+            interestSummary, notes, lastInteraction, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        contact.id, contact.userId, contact.name, contact.email, contact.company,
+        contact.type, contact.source, contact.interestScore, contact.interestSummary,
+        contact.notes, contact.lastInteraction, contact.createdAt, contact.updatedAt
+      );
+  }
+
+  updateContact(id: string, patch: Partial<Contact>): void {
+    const allowed: (keyof Contact)[] = [
+      'name', 'email', 'company', 'type', 'source',
+      'interestScore', 'interestSummary', 'notes', 'lastInteraction',
+    ];
+    const fields: string[] = [];
+    const vals: any[] = [];
+    for (const key of allowed) {
+      if (patch[key] !== undefined) {
+        fields.push(`${key} = ?`);
+        vals.push(patch[key]);
+      }
+    }
+    if (fields.length === 0) return;
+    fields.push('updatedAt = ?');
+    vals.push(new Date().toISOString(), id);
+    getDb().prepare(`UPDATE contacts SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  getContactById(id: string): Contact | undefined {
+    return getDb().prepare(`SELECT * FROM contacts WHERE id = ?`).get(id) as Contact | undefined;
+  }
+
+  getContactsByUserId(userId: string): Contact[] {
+    return getDb()
+      .prepare(
+        `SELECT * FROM contacts WHERE userId = ?
+         ORDER BY CASE WHEN interestScore IS NULL THEN 1 ELSE 0 END, interestScore DESC, updatedAt DESC`
+      )
+      .all(userId) as Contact[];
+  }
+
+  deleteContact(id: string): void {
+    getDb().prepare(`DELETE FROM contacts WHERE id = ?`).run(id);
   }
 
   // ──────────────────────────────────────────────────────────────

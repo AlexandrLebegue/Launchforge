@@ -190,6 +190,23 @@ function runMigrations(database: Database.Database): void {
       updatedAt TEXT NOT NULL,
       FOREIGN KEY (userId) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS contacts (
+      id              TEXT PRIMARY KEY,
+      userId          TEXT NOT NULL,
+      name            TEXT NOT NULL,
+      email           TEXT,
+      company         TEXT,
+      type            TEXT NOT NULL DEFAULT 'prospect',
+      source          TEXT,
+      interestScore   INTEGER,
+      interestSummary TEXT,
+      notes           TEXT,
+      lastInteraction TEXT,
+      createdAt       TEXT NOT NULL,
+      updatedAt       TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
   `);
 
   // Additive migration: pipeline de validation par agent (idempotent, pour

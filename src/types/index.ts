@@ -273,6 +273,41 @@ export interface KnowledgeEntry {
   updatedAt: string;
 }
 
+// ── Contacts (prospects / clients / partenaires) ──────────────────────────────
+
+export type ContactType = 'prospect' | 'client' | 'partner';
+
+export interface Contact {
+  id: string;
+  userId: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  type: ContactType;
+  /** D'où vient ce contact : 'commentaire LinkedIn', 'boîte mail', 'manuel'… */
+  source: string | null;
+  /** Score d'intérêt 0-100 estimé par l'IA (null = jamais analysé) */
+  interestScore: number | null;
+  /** Justification du score par l'IA */
+  interestSummary: string | null;
+  notes: string | null;
+  /** Derniers échanges (commentaires/messages collés ou extraits de la boîte mail) */
+  lastInteraction: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Candidat détecté par l'analyse IA, avant import dans les contacts */
+export interface LeadCandidate {
+  name: string;
+  email: string | null;
+  company: string | null;
+  suggestedType: ContactType;
+  score: number;
+  summary: string;
+  excerpt: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;

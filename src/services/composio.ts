@@ -34,8 +34,11 @@ const PLATFORM_KEYWORDS: Record<string, string[]> = {
   indiehackers: ['indiehackers', 'indie_hackers'],
 };
 
-function filterTools(tools: McpTool[], platform: string): McpTool[] {
-  const keywords = PLATFORM_KEYWORDS[platform] || [platform];
+export function platformKeywords(platform: string): string[] {
+  return PLATFORM_KEYWORDS[platform] || [platform];
+}
+
+function filterTools(tools: McpTool[], keywords: string[]): McpTool[] {
   const matched = tools.filter((t) =>
     keywords.some((k) => t.name.toLowerCase().includes(k))
   );
@@ -51,11 +54,12 @@ function toToolDefs(tools: McpTool[]): ToolDef[] {
 }
 
 /**
- * Boucle agentique générique : le modèle reçoit les outils MCP filtrés et
- * une mission ; il appelle les outils via la session jusqu'à conclure.
+ * Boucle agentique générique : le modèle reçoit les outils MCP filtrés par
+ * mots-clés et une mission ; il appelle les outils via la session jusqu'à
+ * conclure. Réutilisée pour la publication, les métriques et la boîte mail.
  */
-async function runMcpTask(
-  platform: string,
+export async function runMcpTask(
+  keywords: string[],
   systemPrompt: string,
   userPrompt: string,
 ): Promise<string> {
@@ -68,7 +72,7 @@ async function runMcpTask(
   if (allTools.length === 0) {
     throw new Error('Aucun outil disponible sur le serveur MCP Composio — connectez vos comptes sur dashboard.composio.dev');
   }
-  const tools = toToolDefs(filterTools(allTools, platform));
+  const tools = toToolDefs(filterTools(allTools, keywords));
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -105,7 +109,7 @@ async function runMcpTask(
 
 export async function publishViaComposio(platform: string, content: string): Promise<string> {
   const reply = await runMcpTask(
-    platform,
+    platformKeywords(platform),
     `Tu es un opérateur de publication. Tu disposes des outils Composio de l'utilisateur pour la plateforme ${platform}.
 Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.
 Si la publication réussit, réponds en une phrase avec le résultat (et l'URL/id du post si disponible), préfixée par "OK:".
@@ -133,7 +137,7 @@ export async function syncMetricsViaComposio(
   title: string,
 ): Promise<SyncedMetrics> {
   const reply = await runMcpTask(
-    platform,
+    platformKeywords(platform),
     `Tu es un analyste social media. Tu disposes des outils Composio de l'utilisateur pour ${platform}.
 Mission : retrouver le post publié indiqué (via son URL/identifiant) et récupérer ses métriques de performance avec les outils de lecture/lookup disponibles.
 Mapping attendu : impressions = vues/impressions ; likes = likes/réactions/favoris ; comments = commentaires/réponses ; shares = partages/retweets/reposts ; clicks = clics sur lien si disponible.

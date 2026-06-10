@@ -551,6 +551,77 @@ export async function deleteKnowledge(id: string): Promise<ApiResponse<null>> {
   return request(`/knowledge/${id}`, { method: 'DELETE' });
 }
 
+// ── Contacts (prospects / clients / partenaires) ──────────────────────────────
+
+export type ContactType = 'prospect' | 'client' | 'partner';
+
+export interface Contact {
+  id: string;
+  userId: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  type: ContactType;
+  source: string | null;
+  interestScore: number | null;
+  interestSummary: string | null;
+  notes: string | null;
+  lastInteraction: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LeadCandidate {
+  name: string;
+  email: string | null;
+  company: string | null;
+  suggestedType: ContactType;
+  score: number;
+  summary: string;
+  excerpt: string;
+}
+
+export async function getContacts(): Promise<ApiResponse<Contact[]>> {
+  return request('/contacts');
+}
+
+export async function createContact(data: Partial<Contact> & { name: string }): Promise<ApiResponse<Contact>> {
+  return request('/contacts', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateContact(id: string, data: Partial<Contact>): Promise<ApiResponse<Contact>> {
+  return request(`/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteContact(id: string): Promise<ApiResponse<null>> {
+  return request(`/contacts/${id}`, { method: 'DELETE' });
+}
+
+/** Analyse IA d'un bloc de commentaires/messages collés */
+export async function analyzeLeads(text: string, source: string): Promise<ApiResponse<LeadCandidate[]>> {
+  return request('/contacts/analyze', { method: 'POST', body: JSON.stringify({ text, source }) });
+}
+
+/** Détection des leads dans la boîte mail (Composio MCP) */
+export async function scanInbox(): Promise<ApiResponse<LeadCandidate[]>> {
+  return request('/contacts/scan-inbox', { method: 'POST' });
+}
+
+export async function draftContactEmail(
+  id: string,
+  goal: string
+): Promise<ApiResponse<{ subject: string; body: string }>> {
+  return request(`/contacts/${id}/draft-email`, { method: 'POST', body: JSON.stringify({ goal }) });
+}
+
+export async function sendContactEmail(
+  id: string,
+  subject: string,
+  body: string
+): Promise<ApiResponse<{ result: string; contact: Contact }>> {
+  return request(`/contacts/${id}/send-email`, { method: 'POST', body: JSON.stringify({ subject, body }) });
+}
+
 // ── Assistant de contenu ──────────────────────────────────────────────────────
 
 export interface GeneratedContent {

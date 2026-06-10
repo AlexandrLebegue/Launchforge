@@ -3321,3 +3321,149 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   border-radius: var(--radius-md);
 }
 .metrics-section .metrics-grid { padding: 0; background: none; border: none; }
+
+/* ============================================================
+   CONTACTS (prospects / clients / partenaires)
+   ============================================================ */
+.contacts-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.contacts-hot {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.contact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.contact-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--gradient-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.contact-card:hover {
+  border-color: rgba(124, 127, 242, 0.4);
+  box-shadow: var(--shadow-card);
+}
+
+.contact-score-wrap {
+  flex: 0 0 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.contact-score {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.contact-score.muted { color: var(--color-text-subtle); }
+.contact-score-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.contact-score-bar div { height: 100%; border-radius: 999px; }
+
+.contact-main { flex: 1; min-width: 0; }
+.contact-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.contact-name { font-weight: 700; font-size: 0.92rem; }
+.contact-company { font-size: 0.78rem; color: var(--color-text-muted); }
+.contact-type {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+.contact-type-prospect { background: rgba(96, 165, 250, 0.12);  color: #60a5fa; }
+.contact-type-client   { background: rgba(52, 211, 153, 0.12);  color: var(--color-success); }
+.contact-type-partner  { background: rgba(196, 107, 240, 0.14); color: #c46bf0; }
+.contact-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.contact-summary {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 5px;
+  line-height: 1.45;
+}
+.contact-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Candidats détectés par l'analyse IA */
+.candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.candidate-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.candidate-row:hover { border-color: var(--color-primary); }
+.candidate-row.selected {
+  border-color: rgba(124, 127, 242, 0.5);
+  background: var(--color-primary-light);
+}
+.candidate-row input[type="checkbox"] { margin-top: 4px; accent-color: var(--color-primary); }
+.candidate-score {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  flex: 0 0 36px;
+  text-align: center;
+}
+.candidate-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.candidate-name { font-weight: 700; font-size: 0.85rem; }
+.candidate-company, .candidate-email { font-weight: 400; color: var(--color-text-muted); font-size: 0.78rem; }
+.candidate-summary { font-size: 0.76rem; color: var(--color-text-muted); line-height: 1.45; }
+.candidate-excerpt {
+  font-size: 0.74rem;
+  color: var(--color-text-subtle);
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .contact-card { flex-wrap: wrap; }
+  .contact-actions { margin-left: auto; }
+}
