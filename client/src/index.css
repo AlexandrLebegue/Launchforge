@@ -3310,3 +3310,14 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   .analytics-row span:nth-child(6) { display: none; }
   .platform-row-name { flex-basis: 90px; }
 }
+
+.metrics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(52, 211, 153, 0.05);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: var(--radius-md);
+}
+.metrics-section .metrics-grid { padding: 0; background: none; border: none; }

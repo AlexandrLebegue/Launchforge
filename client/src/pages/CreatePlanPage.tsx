@@ -402,7 +402,7 @@ function ManualFallbackForm() {
     <div className="manual-form-wrap">
       <div className="chat-page-title">🚀 Créer mon plan de promotion</div>
       <div className="alert-warning">
-        L'assistant IA n'est pas configuré sur ce serveur (variable <code>ANTHROPIC_API_KEY</code> manquante).
+        L'assistant IA n'est pas configuré sur ce serveur (variable <code>OPENROUTER_API_KEY</code> manquante).
         Remplissez le formulaire pour générer un plan basé sur nos modèles.
       </div>
       <form className="manual-form" onSubmit={submit}>

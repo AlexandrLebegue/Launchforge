@@ -168,6 +168,7 @@ function runMigrations(database: Database.Database): void {
       status      TEXT NOT NULL DEFAULT 'draft',
       scheduledAt TEXT,
       publishedAt TEXT,
+      externalUrl TEXT,
       recurrence  TEXT NOT NULL DEFAULT 'none',
       impressions INTEGER NOT NULL DEFAULT 0,
       likes       INTEGER NOT NULL DEFAULT 0,
@@ -198,5 +199,11 @@ function runMigrations(database: Database.Database): void {
     database.exec(
       `ALTER TABLE agents ADD COLUMN approval_mode TEXT NOT NULL DEFAULT 'manual'`
     );
+  }
+
+  // Additive migration: URL externe des posts pour la synchro de métriques
+  const postCols = database.pragma('table_info(posts)') as { name: string }[];
+  if (!postCols.some((c) => c.name === 'externalUrl')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN externalUrl TEXT`);
   }
 }

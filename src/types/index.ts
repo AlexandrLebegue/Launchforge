@@ -248,6 +248,8 @@ export interface Post {
   status: PostStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
+  /** URL du post une fois publié sur la plateforme (sert à la synchro des métriques) */
+  externalUrl: string | null;
   recurrence: Recurrence;
   /** Métriques saisies par l'utilisateur après publication */
   impressions: number;

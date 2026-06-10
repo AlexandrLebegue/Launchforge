@@ -236,12 +236,12 @@ export class Storage {
       .prepare(
         `INSERT INTO posts
            (id, userId, platform, title, content, status, scheduledAt, publishedAt,
-            recurrence, impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            externalUrl, recurrence, impressions, likes, comments, shares, clicks, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.platform, post.title, post.content, post.status,
-        post.scheduledAt, post.publishedAt, post.recurrence,
+        post.scheduledAt, post.publishedAt, post.externalUrl, post.recurrence,
         post.impressions, post.likes, post.comments, post.shares, post.clicks,
         post.createdAt, post.updatedAt
       );
@@ -250,7 +250,7 @@ export class Storage {
   updatePost(id: string, patch: Partial<Post>): void {
     const allowed: (keyof Post)[] = [
       'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
-      'recurrence', 'impressions', 'likes', 'comments', 'shares', 'clicks',
+      'externalUrl', 'recurrence', 'impressions', 'likes', 'comments', 'shares', 'clicks',
     ];
     const fields: string[] = [];
     const vals: any[] = [];

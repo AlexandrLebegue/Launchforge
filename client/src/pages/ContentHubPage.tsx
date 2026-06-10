@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  getPosts, createPost, updatePost, deletePost, publishPost, generateContent,
+  getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 
@@ -72,6 +72,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
     content:     post?.content ?? '',
     status:      (post?.status ?? 'draft') as PostStatus,
     scheduledAt: toLocalInput(post?.scheduledAt ?? null),
+    externalUrl: post?.externalUrl ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
     impressions: post?.impressions ?? 0,
     likes:       post?.likes ?? 0,
@@ -82,6 +83,8 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
   const [brief,      setBrief]      = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving,     setSaving]     = useState(false);
+  const [syncing,    setSyncing]    = useState(false);
+  const [syncNote,   setSyncNote]   = useState('');
   const [error,      setError]      = useState('');
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
@@ -105,8 +108,36 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
       }));
     } else {
       setError(res.error === 'AI_NOT_CONFIGURED'
-        ? 'IA non configurée sur le serveur (ANTHROPIC_API_KEY).'
+        ? 'IA non configurée sur le serveur (OPENROUTER_API_KEY).'
         : res.error || 'La génération a échoué.');
+    }
+  };
+
+  const handleSync = async () => {
+    if (!post) return;
+    if (!form.externalUrl.trim()) {
+      setError('Renseignez l\'URL du post publié pour synchroniser ses métriques.');
+      return;
+    }
+    setSyncing(true);
+    setError('');
+    setSyncNote('');
+    // L'URL doit être connue du serveur avant la synchro
+    await updatePost(post.id, { externalUrl: form.externalUrl.trim(), status: form.status });
+    const res = await syncPostMetrics(post.id);
+    setSyncing(false);
+    if (res.success && res.data) {
+      const p = res.data.post;
+      setForm((f) => ({
+        ...f,
+        impressions: p.impressions, likes: p.likes, comments: p.comments,
+        shares: p.shares, clicks: p.clicks,
+      }));
+      setSyncNote(`✅ Métriques synchronisées${res.data.note ? ` — ${res.data.note}` : ''}`);
+    } else {
+      setError(res.error === 'COMPOSIO_NOT_CONFIGURED'
+        ? 'Composio non configuré (COMPOSIO_MCP_URL) — connectez vos comptes sur dashboard.composio.dev et renseignez l\'URL MCP côté serveur.'
+        : res.error || 'La synchronisation a échoué.');
     }
   };
 
@@ -120,6 +151,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
       content:     form.content,
       status:      form.status,
       scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
+      externalUrl: form.externalUrl.trim() || null,
       recurrence:  form.recurrence,
       impressions: Number(form.impressions) || 0,
       likes:       Number(form.likes) || 0,
@@ -226,20 +258,42 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
 
           {/* Métriques (posts publiés) */}
           {form.status === 'published' && (
-            <div className="metrics-grid">
-              {([
-                ['impressions', '👁️ Impressions'], ['likes', '❤️ Likes'], ['comments', '💬 Commentaires'],
-                ['shares', '🔁 Partages'], ['clicks', '🔗 Clics'],
-              ] as const).map(([key, label]) => (
-                <label key={key} className="form-label-block">
-                  {label}
+            <div className="metrics-section">
+              <label className="form-label-block">
+                🔗 URL du post publié
+                <div className="ai-assist-row">
                   <input
-                    type="number" min={0} className="form-input"
-                    value={form[key]}
-                    onChange={(e) => set(key, Number(e.target.value) as never)}
+                    className="form-input"
+                    value={form.externalUrl}
+                    onChange={(e) => set('externalUrl', e.target.value)}
+                    placeholder="ex. https://x.com/vous/status/12345…"
                   />
-                </label>
-              ))}
+                  {post && (
+                    <button type="button" className="btn btn-ghost" onClick={handleSync} disabled={syncing}>
+                      {syncing ? '⏳ Synchro…' : '🔄 Synchroniser via Composio'}
+                    </button>
+                  )}
+                </div>
+                <span className="form-hint-inline">
+                  La synchro lit les métriques réelles via vos comptes connectés sur Composio. Sinon, saisie manuelle ci-dessous.
+                </span>
+              </label>
+              {syncNote && <div className="approval-feedback" style={{ marginBottom: 0 }}>{syncNote}</div>}
+              <div className="metrics-grid">
+                {([
+                  ['impressions', '👁️ Impressions'], ['likes', '❤️ Likes'], ['comments', '💬 Commentaires'],
+                  ['shares', '🔁 Partages'], ['clicks', '🔗 Clics'],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="form-label-block">
+                    {label}
+                    <input
+                      type="number" min={0} className="form-input"
+                      value={form[key]}
+                      onChange={(e) => set(key, Number(e.target.value) as never)}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 

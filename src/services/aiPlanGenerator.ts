@@ -1,10 +1,10 @@
 /**
- * AI plan generation — Claude (Anthropic API) with structured JSON output.
- * Falls back to the static templates when no API key is configured or the
- * request fails, so plan creation never hard-fails.
+ * Génération de plan par IA — OpenRouter, sortie JSON validée.
+ * Retombe sur les templates statiques si aucune clé n'est configurée ou si
+ * la requête échoue : la création de plan ne casse jamais.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import {
   PlanInput,
   WeeklyAction,
@@ -17,16 +17,6 @@ import {
 } from '../types';
 import { generatePlan } from '../templates';
 
-const MODEL = 'claude-opus-4-8';
-
-let client: Anthropic | null = null;
-
-function getClient(): Anthropic | null {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return client;
-}
-
 export interface AIPlanData {
   weekly_plan: WeeklyAction[];
   community_targets: CommunityTarget[];
@@ -37,115 +27,10 @@ export interface AIPlanData {
   first_users_tactics: FirstUsersTactic[];
 }
 
-const PLAN_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    weekly_plan: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          week: { type: 'integer' },
-          theme: { type: 'string' },
-          actions: { type: 'array', items: { type: 'string' } },
-          kpis: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['week', 'theme', 'actions', 'kpis'],
-      },
-    },
-    community_targets: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          platform: { type: 'string' },
-          communities: { type: 'array', items: { type: 'string' } },
-          approach: { type: 'string' },
-          frequency: { type: 'string' },
-        },
-        required: ['platform', 'communities', 'approach', 'frequency'],
-      },
-    },
-    content_angles: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          title: { type: 'string' },
-          format: { type: 'string' },
-          platforms: { type: 'array', items: { type: 'string' } },
-          description: { type: 'string' },
-        },
-        required: ['title', 'format', 'platforms', 'description'],
-      },
-    },
-    outreach_strategy: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          phase: { type: 'string' },
-          tactics: { type: 'array', items: { type: 'string' } },
-          target: { type: 'string' },
-        },
-        required: ['phase', 'tactics', 'target'],
-      },
-    },
-    launch_sequencing: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          phase: { type: 'string' },
-          timeline: { type: 'string' },
-          activities: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['phase', 'timeline', 'activities'],
-      },
-    },
-    validation_checklist: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          item: { type: 'string' },
-          status: { type: 'string', enum: ['pending'] },
-          details: { type: 'string' },
-        },
-        required: ['item', 'status', 'details'],
-      },
-    },
-    first_users_tactics: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          tactic: { type: 'string' },
-          effort: { type: 'string', enum: ['low', 'medium', 'high'] },
-          expectedResult: { type: 'string' },
-        },
-        required: ['tactic', 'effort', 'expectedResult'],
-      },
-    },
-  },
-  required: [
-    'weekly_plan',
-    'community_targets',
-    'content_angles',
-    'outreach_strategy',
-    'launch_sequencing',
-    'validation_checklist',
-    'first_users_tactics',
-  ],
-} as const;
+const REQUIRED_KEYS: (keyof AIPlanData)[] = [
+  'weekly_plan', 'community_targets', 'content_angles', 'outreach_strategy',
+  'launch_sequencing', 'validation_checklist', 'first_users_tactics',
+];
 
 const SYSTEM_PROMPT = `You are a startup launch & promotion strategist. Generate a tactical, highly specific launch plan for the company described by the user.
 
@@ -155,7 +40,18 @@ Rules:
 - Write the plan content in the same language as the company description (French input → French plan).
 - 4 weeks in weekly_plan, each with 3-5 actions and 2-3 measurable KPIs.
 - Each other array needs at least 3 well-differentiated items.
-- first_users_tactics: prioritize low-effort/high-impact tactics first.`;
+- first_users_tactics: prioritize low-effort/high-impact tactics first.
+
+Return ONLY a valid JSON object with exactly these 7 keys (no markdown fences, no commentary):
+{
+  "weekly_plan": [{"week": number, "theme": string, "actions": string[], "kpis": string[]}],
+  "community_targets": [{"platform": string, "communities": string[], "approach": string, "frequency": string}],
+  "content_angles": [{"title": string, "format": string, "platforms": string[], "description": string}],
+  "outreach_strategy": [{"phase": string, "tactics": string[], "target": string}],
+  "launch_sequencing": [{"phase": string, "timeline": string, "activities": string[]}],
+  "validation_checklist": [{"item": string, "status": "pending", "details": string}],
+  "first_users_tactics": [{"tactic": string, "effort": "low"|"medium"|"high", "expectedResult": string}]
+}`;
 
 function buildUserPrompt(input: PlanInput): string {
   const lines = [
@@ -184,31 +80,24 @@ function buildUserPrompt(input: PlanInput): string {
 }
 
 function isValidPlan(data: any): data is AIPlanData {
-  const keys = Object.keys(PLAN_SCHEMA.properties);
-  return keys.every((k) => Array.isArray(data?.[k]) && data[k].length > 0);
+  return REQUIRED_KEYS.every((k) => Array.isArray(data?.[k]) && data[k].length > 0);
 }
 
 export async function generateAIPlan(input: PlanInput): Promise<AIPlanData> {
-  const anthropic = getClient();
-  if (!anthropic) return generatePlan(input);
+  if (!isAIConfigured()) return generatePlan(input);
 
   try {
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 8192,
-      system: SYSTEM_PROMPT,
-      output_config: {
-        format: { type: 'json_schema', schema: PLAN_SCHEMA as any },
-      },
-      messages: [{ role: 'user', content: buildUserPrompt(input) }],
+    const result = await chatComplete({
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      maxTokens: 8192,
+      jsonMode: true,
+      timeoutMs: 180000,
     });
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
-
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(sanitizeJson(result.content));
     if (!isValidPlan(parsed)) return generatePlan(input);
     return parsed;
   } catch {

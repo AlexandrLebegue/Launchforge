@@ -7,7 +7,7 @@ let token: string;
 
 beforeAll(async () => {
   await initEngine();
-  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
 
   const res = await request(app).post('/api/auth/register').send({
     email: 'onboarding@launchforge.dev',

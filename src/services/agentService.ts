@@ -6,7 +6,8 @@
  * sur la plateforme (post, tweet, message, etc.).
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { chatComplete, isAIConfigured } from './aiClient';
+import { publishViaComposio, isComposioConfigured } from './composio';
 import { storage } from './storage';
 import { buildKnowledgeContext } from './contentAssistant';
 import { Agent, AgentPlatform, AgentTemplate, KanbanCard, LaunchPlan } from '../types';
@@ -116,7 +117,7 @@ export async function processAgentRun(runId: string, agent: Agent, card: KanbanC
     storage.updateRunStatus(
       runId,
       'failed',
-      `Aucune IA configurée (ANTHROPIC_API_KEY manquante) — impossible de rédiger le contenu pour "${card.title}".`
+      `Aucune IA configurée (OPENROUTER_API_KEY manquante) — impossible de rédiger le contenu pour "${card.title}".`
     );
     storage.updateAgent(agent.id, { status: 'error' });
     return;
@@ -135,37 +136,19 @@ export async function processAgentRun(runId: string, agent: Agent, card: KanbanC
 
 /**
  * Publication du contenu (appelée en mode auto, ou à la validation par
- * l'utilisateur). Tente Composio si configuré ; sinon le contenu est
- * fourni à copier-coller.
+ * l'utilisateur). Tente le serveur MCP Composio si configuré ; sinon le
+ * contenu est fourni à copier-coller.
  */
 export async function publishContent(agent: Agent, content: string): Promise<string> {
   const template = getCatalogByPlatform(agent.platform);
-  const composioKey = process.env.COMPOSIO_API_KEY;
 
-  if (composioKey && agent.apiKey && template) {
+  if (isComposioConfigured()) {
     try {
-      const response = await fetch('https://backend.composio.dev/api/v1/actions/execute/CLAUDE', {
-        method: 'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'x-api-key':     composioKey,
-        },
-        body: JSON.stringify({
-          appName:    template.composioApp,
-          entityId:   agent.userId,
-          authConfig: { api_key: agent.apiKey },
-          input:      { prompt: content },
-        }),
-      });
-
-      if (!response.ok) {
-        const txt = await response.text();
-        return `⚠️ Publication Composio échouée (${response.status}: ${txt.slice(0, 200)}) — voici le contenu à publier manuellement :\n\n${content}`;
+      const result = await publishViaComposio(agent.platform, content);
+      if (result.trim().toUpperCase().startsWith('OK')) {
+        return `✅ Publié via Composio — ${result.replace(/^OK:\s*/i, '')}\n\n— Contenu publié —\n${content}`;
       }
-
-      const data = await response.json() as any;
-      const output = data?.data?.output || data?.output || 'Action exécutée';
-      return `✅ Publié via Composio : ${output}\n\n— Contenu publié —\n${content}`;
+      return `⚠️ Publication Composio non aboutie (${result.replace(/^ECHEC:\s*/i, '')}) — voici le contenu à publier manuellement :\n\n${content}`;
     } catch (err: any) {
       return `⚠️ Publication Composio échouée (${err.message}) — voici le contenu à publier manuellement :\n\n${content}`;
     }
@@ -174,16 +157,7 @@ export async function publishContent(agent: Agent, content: string): Promise<str
   return `📝 Contenu validé, prêt à publier sur ${template?.name ?? agent.platform} (copier-coller) :\n\n${content}`;
 }
 
-// ── Rédaction du contenu par Claude ──────────────────────────────────────────
-
-const MODEL = 'claude-opus-4-8';
-let anthropicClient: Anthropic | null = null;
-
-function getAnthropic(): Anthropic | null {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return anthropicClient;
-}
+// ── Rédaction du contenu par l'IA ─────────────────────────────────────────────
 
 const PLATFORM_GUIDELINES: Partial<Record<AgentPlatform, string>> = {
   reddit:       'Format Reddit : titre accrocheur + corps de post authentique, pas de ton publicitaire (les subreddits détestent ça), apporte de la valeur avant de mentionner le produit. Suggère 2-3 subreddits pertinents.',
@@ -204,8 +178,7 @@ async function draftContent(
   template: AgentTemplate | undefined,
   plan: LaunchPlan | undefined,
 ): Promise<string | null> {
-  const anthropic = getAnthropic();
-  if (!anthropic) return null;
+  if (!isAIConfigured()) return null;
 
   const productContext = plan
     ? `Produit : ${plan.input.productName}
@@ -220,28 +193,27 @@ Entreprise : ${plan.input.company.name}${plan.input.company.website ? ` (${plan.
   const knowledge = buildKnowledgeContext(agent.userId, 6000);
 
   try {
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 1500,
-      system: `Tu rédiges du contenu de promotion prêt à publier pour des startups. Tu écris dans la langue du contexte produit (français si la description est en français). Tu produis UNIQUEMENT le contenu final, sans préambule ni commentaire. ${guidelines}${knowledge ? `\n\n## Base de connaissances de l'utilisateur (source de vérité)\n${knowledge}` : ''}`,
-      messages: [{
-        role: 'user',
-        content: `${productContext}
+    const result = await chatComplete({
+      messages: [
+        {
+          role: 'system',
+          content: `Tu rédiges du contenu de promotion prêt à publier pour des startups. Tu écris dans la langue du contexte produit (français si la description est en français). Tu produis UNIQUEMENT le contenu final, sans préambule ni commentaire. ${guidelines}${knowledge ? `\n\n## Base de connaissances de l'utilisateur (source de vérité)\n${knowledge}` : ''}`,
+        },
+        {
+          role: 'user',
+          content: `${productContext}
 
 Tâche du plan de lancement : ${card.title}
 Détails : ${card.description || '—'}
 Catégorie : ${card.category}
 
 Rédige le contenu correspondant pour ${template?.name ?? agent.platform}.`,
-      }],
+        },
+      ],
+      maxTokens: 1500,
     });
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-      .trim();
-    return text || null;
+    return result.content.trim() || null;
   } catch {
     return null;
   }

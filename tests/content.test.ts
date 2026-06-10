@@ -7,7 +7,7 @@ let token: string;
 
 beforeAll(async () => {
   await initEngine();
-  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
   const res = await request(app).post('/api/auth/register').send({
     email: 'content@launchforge.dev',
     password: 'password123',
@@ -84,6 +84,19 @@ describe('Posts (Content Hub)', () => {
     expect(res.status).toBe(200);
     const list = await request(app).get('/api/posts').set(auth());
     expect(list.body.data.find((p: any) => p.id === postId)).toBeUndefined();
+  });
+
+  it('sync-metrics returns 503 when Composio/IA are not configured', async () => {
+    delete process.env.COMPOSIO_MCP_URL;
+    const created = await request(app)
+      .post('/api/posts')
+      .set(auth())
+      .send({ platform: 'twitter', title: 'à synchroniser', status: 'published', externalUrl: 'https://x.com/u/status/1' });
+    const res = await request(app)
+      .post(`/api/posts/${created.body.data.id}/sync-metrics`)
+      .set(auth());
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
   });
 
   it('blocks access to another user posts', async () => {

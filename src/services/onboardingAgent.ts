@@ -1,31 +1,23 @@
 /**
- * Onboarding agent — a real conversational AI (Claude) that interviews the
- * founder, researches their company on the web when it already exists, reads
- * attached documents, and produces a structured profile used to generate the
- * launch plan.
+ * Onboarding agent — une vraie IA conversationnelle (via OpenRouter) qui
+ * interviewe le fondateur, recherche son entreprise sur le web quand elle
+ * existe déjà, lit les documents joints et produit un profil structuré
+ * utilisé pour générer le plan de lancement.
  *
- * Architecture: manual agentic loop over the Anthropic Messages API with three
- * tools — `web_search`, `fetch_website` (both executed server-side against the
- * research service) and `complete_onboarding` (the structured extraction that
- * ends the interview).
+ * Architecture : boucle agentique sur l'API chat completions (OpenRouter)
+ * avec trois outils — `web_search`, `fetch_website` (exécutés côté serveur
+ * via le service research) et `complete_onboarding` (l'extraction structurée
+ * qui clôt l'interview).
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { chatComplete, ChatMessage, ContentPart, ToolDef, isAIConfigured } from './aiClient';
 import { webSearch, fetchPageText } from './research';
 import { OnboardingAttachment, OnboardingChatMessage, OnboardingProfile } from '../types';
 
-const MODEL = 'claude-opus-4-8';
 const MAX_TOOL_ITERATIONS = 6;
 
-let client: Anthropic | null = null;
-
 export function isAgentConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
-}
-
-function getClient(): Anthropic {
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return client;
+  return isAIConfigured();
 }
 
 const SYSTEM_PROMPT = `You are LaunchForge's onboarding assistant. LaunchForge helps startups and small businesses promote themselves: it turns a company profile into a tactical, personalized launch & promotion plan (weekly actions, communities to target, content angles, outreach, first-users tactics).
@@ -57,12 +49,12 @@ Tool usage:
 
 Never invent facts about a real company — research or ask. Keep the whole interview under ~8 exchanges when possible.`;
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOLS: ToolDef[] = [
   {
     name: 'web_search',
     description:
       "Search the web. Call this when the user's company already exists to find its website, description, reviews, competitors or market info, instead of asking the user to type it. Returns raw result snippets.",
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Search query, e.g. "Acme Robotics site officiel" or "meal-prep SaaS competitors France"' },
@@ -74,7 +66,7 @@ const TOOLS: Anthropic.Tool[] = [
     name: 'fetch_website',
     description:
       "Fetch a web page and return its readable text. Use it on the company's own website, competitor sites, or any URL the user shares.",
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         url: { type: 'string', description: 'Full URL, e.g. https://acme.com' },
@@ -86,7 +78,7 @@ const TOOLS: Anthropic.Tool[] = [
     name: 'complete_onboarding',
     description:
       'Save the final, user-confirmed company profile and end the interview. Call exactly once, only after the user confirmed your recap.',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         company: {
@@ -142,36 +134,34 @@ function describeToolAction(name: string, input: any): string {
 function buildApiMessages(
   history: OnboardingChatMessage[],
   attachments: OnboardingAttachment[],
-): Anthropic.MessageParam[] {
-  const messages: Anthropic.MessageParam[] = history.map((m) => ({
-    role: m.role,
-    content: m.text,
-  }));
+): ChatMessage[] {
+  const messages: ChatMessage[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...history.map((m): ChatMessage => ({ role: m.role, content: m.text })),
+  ];
 
-  // Attachments ride along with the latest user message. PDFs become native
-  // document blocks (Claude reads them directly, including scanned pages);
-  // text files are inlined.
-  if (attachments.length > 0 && messages.length > 0) {
+  // Les pièces jointes accompagnent le dernier message utilisateur.
+  // PDF → bloc fichier natif (parsé par OpenRouter) ; texte → inliné.
+  if (attachments.length > 0 && messages.length > 1) {
     const last = messages[messages.length - 1];
-    const blocks: Anthropic.ContentBlockParam[] = [];
+    const parts: ContentPart[] = [];
 
     for (const a of attachments) {
       if (a.type === 'pdf') {
-        blocks.push({
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: a.content },
-          title: a.name,
+        parts.push({
+          type: 'file',
+          file: { filename: a.name, file_data: `data:application/pdf;base64,${a.content}` },
         });
       } else {
-        blocks.push({
+        parts.push({
           type: 'text',
           text: `<document name="${a.name}">\n${a.content.slice(0, 20000)}\n</document>`,
         });
       }
     }
 
-    blocks.push({ type: 'text', text: String(last.content) });
-    last.content = blocks;
+    parts.push({ type: 'text', text: String(last.content) });
+    last.content = parts;
   }
 
   return messages;
@@ -194,73 +184,57 @@ export async function runOnboardingTurn(
   attachments: OnboardingAttachment[] = [],
   onEvent?: (event: AgentTurnEvent) => void,
 ): Promise<AgentTurnResult> {
-  const anthropic = getClient();
   const messages = buildApiMessages(history, attachments);
 
   const actions: string[] = [];
   let profile: OnboardingProfile | null = null;
-  // The persisted reply accumulates the text of every iteration (intro text
-  // before a tool round + final answer), matching exactly what was streamed.
+  // La réponse persistée accumule le texte de chaque itération (texte avant
+  // un appel d'outil + réponse finale) — identique à ce qui est streamé.
   let fullText = '';
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     let emittedSeparator = fullText === '';
 
-    const stream = anthropic.messages.stream({
-      model: MODEL,
-      max_tokens: 2048,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      tools: TOOLS,
+    const result = await chatComplete({
       messages,
+      tools: TOOLS,
+      maxTokens: 2048,
+      onDelta: onEvent
+        ? (delta) => {
+            if (!emittedSeparator) {
+              emittedSeparator = true;
+              onEvent({ type: 'delta', text: '\n\n' });
+            }
+            onEvent({ type: 'delta', text: delta });
+          }
+        : undefined,
     });
 
-    if (onEvent) {
-      stream.on('text', (delta) => {
-        if (!emittedSeparator) {
-          emittedSeparator = true;
-          onEvent({ type: 'delta', text: '\n\n' });
-        }
-        onEvent({ type: 'delta', text: delta });
-      });
-    }
-
-    const response = await stream.finalMessage();
-
-    const textBlocks = response.content.filter(
-      (b): b is Anthropic.TextBlock => b.type === 'text'
-    );
-    const toolUses = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
-    );
-
-    const iterText = textBlocks.map((b) => b.text).join('\n').trim();
+    const iterText = result.content.trim();
     if (iterText) {
       fullText = fullText ? `${fullText}\n\n${iterText}` : iterText;
     }
 
-    if (response.stop_reason !== 'tool_use' || toolUses.length === 0) break;
+    if (result.toolCalls.length === 0) break;
 
-    messages.push({ role: 'assistant', content: response.content });
+    messages.push(result.rawAssistantMessage);
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const tool of toolUses) {
-      if (tool.name === 'complete_onboarding') {
-        profile = tool.input as OnboardingProfile;
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tool.id,
+    for (const call of result.toolCalls) {
+      if (call.name === 'complete_onboarding') {
+        profile = call.args as OnboardingProfile;
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
           content: 'Profile saved. Tell the user it is ready and they can generate their launch plan.',
         });
       } else {
-        const action = describeToolAction(tool.name, tool.input);
+        const action = describeToolAction(call.name, call.args);
         actions.push(action);
         onEvent?.({ type: 'action', text: action });
-        const result = await executeTool(tool.name, tool.input);
-        toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: result });
+        const output = await executeTool(call.name, call.args);
+        messages.push({ role: 'tool', tool_call_id: call.id, content: output.slice(0, 12000) });
       }
     }
-
-    messages.push({ role: 'user', content: toolResults });
   }
 
   if (!fullText) {

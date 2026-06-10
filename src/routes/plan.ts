@@ -14,7 +14,7 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
     // AI generation by default when configured; createAILaunchPlan falls back
     // to templates internally, and mode=template forces the static templates.
     const mode = (req.body as any).mode
-      || (process.env.ANTHROPIC_API_KEY ? 'ai' : 'template');
+      || (process.env.OPENROUTER_API_KEY ? 'ai' : 'template');
 
     const plan = mode === 'ai'
       ? await createAILaunchPlan(input, user.userId)

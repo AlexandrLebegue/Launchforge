@@ -477,6 +477,8 @@ export interface Post {
   status: PostStatus;
   scheduledAt: string | null;
   publishedAt: string | null;
+  /** URL du post publié sur la plateforme (pour la synchro des métriques) */
+  externalUrl: string | null;
   recurrence: Recurrence;
   impressions: number;
   likes: number;
@@ -505,6 +507,13 @@ export async function deletePost(id: string): Promise<ApiResponse<null>> {
 
 export async function publishPost(id: string): Promise<ApiResponse<{ post: Post; next: Post | null }>> {
   return request(`/posts/${id}/publish`, { method: 'POST' });
+}
+
+/** Synchronise les métriques réelles via le serveur MCP Composio */
+export async function syncPostMetrics(
+  id: string
+): Promise<ApiResponse<{ post: Post; note?: string }>> {
+  return request(`/posts/${id}/sync-metrics`, { method: 'POST' });
 }
 
 // ── Base de connaissances ─────────────────────────────────────────────────────

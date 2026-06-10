@@ -1,27 +1,17 @@
 /**
- * Assistant de génération de contenu — Claude + base de connaissances.
+ * Assistant de génération de contenu — OpenRouter + base de connaissances.
  *
  * Toutes les générations (assistant du Content Hub, agents Kanban) injectent
  * la base de connaissances de l'utilisateur et le contexte entreprise de son
  * dernier plan : l'utilisateur enrichit sa base une fois, toute l'IA en profite.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import { storage } from './storage';
 import { KnowledgeCategory } from '../types';
 
-const MODEL = 'claude-opus-4-8';
-
-let client: Anthropic | null = null;
-
 export function isContentAssistantConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
-}
-
-function getClient(): Anthropic | null {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return client;
+  return isAIConfigured();
 }
 
 const CATEGORY_LABELS: Record<KnowledgeCategory, string> = {
@@ -84,17 +74,6 @@ const PLATFORM_GUIDELINES: Record<string, string> = {
   github:       'GitHub : README/release notes/discussion, technique et précis.',
 };
 
-const GENERATION_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    title:    { type: 'string', description: 'Titre court du post (usage interne / titre de la publication)' },
-    content:  { type: 'string', description: 'Le contenu complet, prêt à publier' },
-    hashtags: { type: 'array', items: { type: 'string' }, description: 'Hashtags suggérés sans le #, vide si non pertinent' },
-  },
-  required: ['title', 'content', 'hashtags'],
-} as const;
-
 export interface GeneratedContent {
   title: string;
   content: string;
@@ -111,8 +90,7 @@ export interface GenerateParams {
 }
 
 export async function generateContent(params: GenerateParams): Promise<GeneratedContent> {
-  const anthropic = getClient();
-  if (!anthropic) {
+  if (!isAIConfigured()) {
     throw new Error('AI_NOT_CONFIGURED');
   }
 
@@ -128,27 +106,26 @@ export async function generateContent(params: GenerateParams): Promise<Generated
   if (company)   systemParts.push(`## Contexte entreprise\n${company}`);
   if (knowledge) systemParts.push(`## Base de connaissances de l'utilisateur (source de vérité — utilise ces informations en priorité)\n${knowledge}`);
   if (params.tone) systemParts.push(`Ton demandé : ${params.tone}`);
+  systemParts.push(
+    'Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni fences markdown :\n' +
+    '{"title": "titre court du post (usage interne)", "content": "le contenu complet prêt à publier", "hashtags": ["hashtag", "sans", "le", "diese"]}\n' +
+    'hashtags : tableau vide si non pertinent pour la plateforme.'
+  );
 
   const userPrompt = params.baseContent
     ? `Améliore ce contenu existant en suivant ces consignes : ${params.brief}\n\n--- Contenu actuel ---\n${params.baseContent}`
     : `Brief : ${params.brief}`;
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 3000,
-    system: systemParts.join('\n\n'),
-    output_config: {
-      format: { type: 'json_schema', schema: GENERATION_SCHEMA as any },
-    },
-    messages: [{ role: 'user', content: userPrompt }],
+  const result = await chatComplete({
+    messages: [
+      { role: 'system', content: systemParts.join('\n\n') },
+      { role: 'user', content: userPrompt },
+    ],
+    maxTokens: 3000,
+    jsonMode: true,
   });
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  const parsed = JSON.parse(text) as GeneratedContent;
+  const parsed = JSON.parse(sanitizeJson(result.content)) as GeneratedContent;
   if (!parsed.content) throw new Error('Empty generation');
   return {
     title: parsed.title || params.brief.slice(0, 60),
