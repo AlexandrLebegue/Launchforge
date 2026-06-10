@@ -265,4 +265,30 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'recurrenceBrief')) {
     database.exec(`ALTER TABLE posts ADD COLUMN recurrenceBrief TEXT`);
   }
+
+  // ── Isolation par projet ───────────────────────────────────────────────────
+  // Chaque projet (plan) a ses propres connaissances, contacts et agents.
+  const knowledgeCols = database.pragma('table_info(knowledge)') as { name: string }[];
+  if (!knowledgeCols.some((c) => c.name === 'planId')) {
+    database.exec(`ALTER TABLE knowledge ADD COLUMN planId TEXT`);
+  }
+  const contactCols = database.pragma('table_info(contacts)') as { name: string }[];
+  if (!contactCols.some((c) => c.name === 'planId')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN planId TEXT`);
+  }
+  if (!agentCols.some((c) => c.name === 'planId')) {
+    database.exec(`ALTER TABLE agents ADD COLUMN planId TEXT`);
+  }
+
+  // Backfill : les données créées avant l'isolation par projet sont rattachées
+  // au projet actif (à défaut le plus récent) de leur utilisateur. Idempotent
+  // (WHERE planId IS NULL) ; les utilisateurs sans aucun projet restent à NULL.
+  for (const table of ['posts', 'knowledge', 'contacts', 'agents']) {
+    database.exec(`
+      UPDATE ${table} SET planId = (
+        SELECT p.id FROM plans p WHERE p.userId = ${table}.userId
+        ORDER BY p.active DESC, p.createdAt DESC LIMIT 1
+      ) WHERE planId IS NULL
+    `);
+  }
 }

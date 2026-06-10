@@ -3803,6 +3803,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .layout-project-new:hover { color: var(--color-text); }
 
+/* Sélecteur de projet : un bouton (projet actif) + menu déroulant */
+.layout-project-picker { position: relative; }
+.layout-project-chevron {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+.layout-project-menu {
+  margin: 4px 0 0 10px;
+  padding: 4px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: var(--color-surface, rgba(255, 255, 255, 0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 0.12s ease-out;
+}
+
 .chip-project {
   background: var(--color-primary-light);
   color: var(--color-primary-hover);

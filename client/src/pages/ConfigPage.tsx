@@ -129,6 +129,7 @@ export default function ConfigPage() {
           </div>
           <p className="config-desc">
             Quand l'IA rédige un contenu (tâche Kanban, demande Telegram), il est :
+            <span className="form-hint-inline"> — réglage propre au projet actif</span>
           </p>
           <div className="approval-mode-picker">
             <button

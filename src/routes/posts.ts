@@ -34,8 +34,10 @@ function sanitizeMetric(value: unknown): number | undefined {
 }
 
 // ── GET /api/posts ───────────────────────────────────────────────────────────
+// Le Hub de contenu est propre au projet actif
 router.get('/', (req: Request, res: Response) => {
-  res.json({ success: true, data: storage.getPostsByUserId(req.user!.userId) });
+  const userId = req.user!.userId;
+  res.json({ success: true, data: storage.getPostsByPlan(userId, storage.getActivePlanId(userId)) });
 });
 
 // ── POST /api/posts ──────────────────────────────────────────────────────────
@@ -200,7 +202,7 @@ router.post('/sync-calendar', async (req: Request, res: Response) => {
   if (!isComposioConfigured() || !isAIConfigured()) {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
-  const toSync = storage.getPostsByUserId(req.user!.userId)
+  const toSync = storage.getPostsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId))
     .filter((p) => p.status === 'scheduled' && p.scheduledAt && !p.calendarSynced);
   if (toSync.length === 0) {
     return res.json({ success: true, data: { synced: 0, message: 'Tout est déjà synchronisé' } });

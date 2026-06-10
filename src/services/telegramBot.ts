@@ -194,15 +194,17 @@ function findByShortId<T extends { id: string }>(items: T[], ref: string): T | u
 }
 
 async function executeTool(userId: string, _chatId: string, name: string, args: any): Promise<string> {
+  // Le bot travaille dans le contexte du projet actif, comme l'app web
+  const planId = storage.getActivePlanId(userId);
   switch (name) {
     case 'get_overview': {
-      const posts = storage.getPostsByUserId(userId);
+      const posts = storage.getPostsByPlan(userId, planId);
       const scheduled = posts.filter((p) => p.status === 'scheduled');
       const nextPost = scheduled
         .filter((p) => p.scheduledAt)
         .sort((a, b) => a.scheduledAt!.localeCompare(b.scheduledAt!))[0];
-      const approvals = storage.getPendingApprovalsByUserId(userId);
-      const hotLeads = storage.getContactsByUserId(userId).filter((c) => (c.interestScore ?? 0) >= 70);
+      const approvals = storage.getPendingApprovalsByPlan(userId, planId);
+      const hotLeads = storage.getContactsByPlan(userId, planId).filter((c) => (c.interestScore ?? 0) >= 70);
       const reminders = storage.getPendingRemindersByUserId(userId);
       return [
         `Posts programmés : ${scheduled.length}${nextPost ? ` (prochain : « ${nextPost.title} » sur ${nextPost.platform} le ${fmtDate(nextPost.scheduledAt)})` : ''}`,
@@ -214,7 +216,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
     }
 
     case 'list_upcoming_posts': {
-      const posts = storage.getPostsByUserId(userId)
+      const posts = storage.getPostsByPlan(userId, planId)
         .filter((p) => p.status === 'scheduled')
         .slice(0, 10);
       if (posts.length === 0) return 'Aucun post programmé.';
@@ -224,7 +226,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
     }
 
     case 'list_pending_approvals': {
-      const items = storage.getPendingApprovalsByUserId(userId);
+      const items = storage.getPendingApprovalsByPlan(userId, planId);
       if (items.length === 0) return 'Aucun contenu en attente de validation.';
       return items.map((r) =>
         `[${shortId(r.id)}] ${r.agentName} (${r.agentPlatform}) — « ${r.cardTitle} »\nExtrait : ${(r.result || '').slice(0, 200)}…`
@@ -232,7 +234,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
     }
 
     case 'approve_run': {
-      const items = storage.getPendingApprovalsByUserId(userId);
+      const items = storage.getPendingApprovalsByPlan(userId, planId);
       const run = findByShortId(items as (AgentRun & { agentName: string })[], String(args.runId || ''));
       if (!run) return 'ERREUR : run introuvable parmi les validations en attente.';
       const agent = storage.getAgentById(run.agentId)!;
@@ -243,7 +245,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
     }
 
     case 'reject_run': {
-      const items = storage.getPendingApprovalsByUserId(userId);
+      const items = storage.getPendingApprovalsByPlan(userId, planId);
       const run = findByShortId(items as AgentRun[], String(args.runId || ''));
       if (!run) return 'ERREUR : run introuvable.';
       const reason = typeof args.reason === 'string' ? args.reason : '';
@@ -252,7 +254,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
     }
 
     case 'list_agents': {
-      const agents = storage.getAgentsByUserId(userId);
+      const agents = storage.getAgentsByPlan(userId, planId);
       if (agents.length === 0) return 'Aucun agent configuré. Créez-en depuis l\'app web (page Agents IA).';
       return agents.map((a) =>
         `${a.name} — ${a.platform} · ${a.approvalMode === 'auto' ? '⚡ publication directe' : '✋ validation requise'} · ${a.status}`
@@ -261,12 +263,12 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
 
     case 'run_agent': {
       const platform = String(args.platform || '').toLowerCase();
-      const agent = storage.getAgentsByUserId(userId).find((a) => a.platform === platform)
-        || storage.getAgentsByUserId(userId).find((a) => a.name.toLowerCase().includes(platform));
-      if (!agent) return `ERREUR : aucun agent pour « ${platform} ». Agents : ${storage.getAgentsByUserId(userId).map((a) => a.platform).join(', ') || 'aucun'}.`;
+      const agent = storage.getAgentsByPlan(userId, planId).find((a) => a.platform === platform)
+        || storage.getAgentsByPlan(userId, planId).find((a) => a.name.toLowerCase().includes(platform));
+      if (!agent) return `ERREUR : aucun agent pour « ${platform} ». Agents : ${storage.getAgentsByPlan(userId, planId).map((a) => a.platform).join(', ') || 'aucun'}.`;
 
       const run: AgentRun = {
-        id: uuid(), agentId: agent.id, planId: '',
+        id: uuid(), agentId: agent.id, planId: planId ?? '',
         cardId: `tg-${Date.now()}`, cardTitle: String(args.taskTitle).slice(0, 150),
         status: 'running', result: null,
         startedAt: new Date().toISOString(), completedAt: null,
@@ -306,7 +308,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
       const now = new Date().toISOString();
       const post: Post = {
         id: uuid(), userId,
-        planId: storage.getActivePlan(userId)?.id ?? null,
+        planId,
         platform: String(args.platform || 'linkedin'),
         title: generated.title, content: generated.content,
         status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,
@@ -319,7 +321,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
     }
 
     case 'publish_post': {
-      const posts = storage.getPostsByUserId(userId).filter((p) => p.status !== 'published');
+      const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status !== 'published');
       const post = findByShortId(posts, String(args.postId || ''));
       if (!post) return 'ERREUR : post introuvable (ou déjà publié).';
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — publication impossible depuis le chat, utilisez le copier-coller depuis l\'app.';
@@ -333,7 +335,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
 
     case 'send_email_to_contact': {
       const ref = String(args.contactName || '').toLowerCase();
-      const contact = storage.getContactsByUserId(userId)
+      const contact = storage.getContactsByPlan(userId, planId)
         .find((c) => c.name.toLowerCase().includes(ref));
       if (!contact) return `ERREUR : contact « ${args.contactName} » introuvable.`;
       if (!contact.email) return `ERREUR : ${contact.name} n'a pas d'adresse email.`;

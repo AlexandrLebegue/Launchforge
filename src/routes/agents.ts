@@ -30,8 +30,10 @@ router.get('/catalog', (_req: Request, res: Response) => {
 });
 
 // ── GET /api/agents ──────────────────────────────────────────────────────────
+// Les agents (et leur mode de validation) sont propres au projet actif
 router.get('/', (req: Request, res: Response) => {
-  const agents = storage.getAgentsByUserId(req.user!.userId);
+  const userId = req.user!.userId;
+  const agents = storage.getAgentsByPlan(userId, storage.getActivePlanId(userId));
   res.json({ success: true, data: agents.map(sanitizeAgent) });
 });
 
@@ -57,6 +59,7 @@ router.post('/', (req: Request, res: Response) => {
   const agent: Agent = {
     id:           uuid(),
     userId:       req.user!.userId,
+    planId:       storage.getActivePlanId(req.user!.userId),
     name:         name || template.name,
     platform,
     apiKey:       apiKey || '',
@@ -143,14 +146,16 @@ router.post('/assign-platform', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'planId, cardId and cardTitle are required' });
   }
 
-  let agent = storage.getAgentsByUserId(req.user!.userId).find((a) => a.platform === platform);
+  // L'agent (et son mode de validation) est propre au projet de la carte
+  let agent = storage.getAgentsByPlan(req.user!.userId, planId).find((a) => a.platform === platform);
   if (!agent) {
-    // Mode hérité du réglage global (auto si tous les agents existants le sont)
-    const others = storage.getAgentsByUserId(req.user!.userId);
+    // Mode hérité du réglage du projet (auto si tous les agents existants le sont)
+    const others = storage.getAgentsByPlan(req.user!.userId, planId);
     const mode: ApprovalMode = others.length > 0 && others.every((a) => a.approvalMode === 'auto') ? 'auto' : 'manual';
     agent = {
       id:           uuid(),
       userId:       req.user!.userId,
+      planId,
       name:         template.name,
       platform,
       apiKey:       '',

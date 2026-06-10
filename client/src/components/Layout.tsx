@@ -30,6 +30,8 @@ export default function Layout({ user, onLogout }: Props) {
   const [projects, setProjects] = useState<LaunchPlan[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
 
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const loadProjects = useCallback(() => {
     getPlans().then((res) => {
       if (res.success && res.data) setProjects(res.data);
@@ -39,15 +41,22 @@ export default function Layout({ user, onLogout }: Props) {
   // Rafraîchi à chaque navigation : un nouveau plan apparaît immédiatement
   useEffect(() => { loadProjects(); }, [loadProjects, location.pathname]);
 
+  const activeProject = projects.find((p) => p.active) ?? projects[0];
+
   const handleSelectProject = async (plan: LaunchPlan) => {
+    setPickerOpen(false);
     closeSidebar();
-    if (!plan.active) {
-      setSwitching(plan.id);
-      await activatePlan(plan.id);
-      setSwitching(null);
-      setProjects((prev) => prev.map((p) => ({ ...p, active: p.id === plan.id ? 1 : 0 })));
+    if (plan.active) {
+      // Projet déjà actif : on ouvre simplement son plan détaillé
+      navigate(`/plan/${plan.id}`);
+      return;
     }
-    navigate(`/plan/${plan.id}`);
+    setSwitching(plan.id);
+    await activatePlan(plan.id);
+    // Changement de contexte : TOUTES les vues (dashboard, hub, connaissances,
+    // validations, configuration) sont propres au projet — rechargement complet
+    // pour repartir sur des données fraîches.
+    window.location.href = '/';
   };
 
   // Badge "validations en attente" — rafraîchi à chaque navigation + toutes les 30 s
@@ -125,31 +134,52 @@ export default function Layout({ user, onLogout }: Props) {
             );
           })}
 
-          <span className="layout-nav-section" style={{ marginTop: 18 }}>Projets</span>
+          <span className="layout-nav-section" style={{ marginTop: 18 }}>Projet</span>
 
-          {projects.map((plan) => {
-            const isActive = Boolean(plan.active);
-            const isCurrent = location.pathname === `/plan/${plan.id}`;
-            return (
+          {/* Sélecteur de projet : un seul bouton, le projet actif. Cliquer
+              ouvre la liste pour changer de projet ou en créer un nouveau. */}
+          {activeProject ? (
+            <div className="layout-project-picker">
               <button
-                key={plan.id}
-                className={`layout-nav-item layout-project${isCurrent ? ' active' : ''}`}
-                onClick={() => handleSelectProject(plan)}
-                title={isActive ? 'Projet actif — contexte de travail courant' : 'Cliquer pour activer ce projet'}
+                className={`layout-nav-item layout-project${pickerOpen ? ' active' : ''}`}
+                onClick={() => setPickerOpen((o) => !o)}
+                title="Projet de travail courant — cliquer pour changer de projet"
               >
-                <span className="layout-nav-icon">{nicheEmojis[plan.input.niche] ?? '🚀'}</span>
-                <span className="layout-project-name">{plan.input.productName}</span>
-                {switching === plan.id
-                  ? <span className="layout-project-dot loading">⏳</span>
-                  : isActive && <span className="layout-project-dot" title="Projet actif" />}
+                <span className="layout-nav-icon">{nicheEmojis[activeProject.input.niche] ?? '🚀'}</span>
+                <span className="layout-project-name">{activeProject.input.productName}</span>
+                <span className="layout-project-dot" title="Projet actif" />
+                <span className="layout-project-chevron">{pickerOpen ? '▴' : '▾'}</span>
               </button>
-            );
-          })}
 
-          <Link to="/new" className="layout-nav-item layout-project-new" onClick={closeSidebar}>
-            <span className="layout-nav-icon">＋</span>
-            Nouveau projet
-          </Link>
+              {pickerOpen && (
+                <div className="layout-project-menu">
+                  {projects.map((plan) => (
+                    <button
+                      key={plan.id}
+                      className={`layout-nav-item layout-project${plan.active ? ' active' : ''}`}
+                      onClick={() => handleSelectProject(plan)}
+                      title={plan.active ? 'Projet actif — voir le plan' : 'Basculer sur ce projet'}
+                    >
+                      <span className="layout-nav-icon">{nicheEmojis[plan.input.niche] ?? '🚀'}</span>
+                      <span className="layout-project-name">{plan.input.productName}</span>
+                      {switching === plan.id
+                        ? <span className="layout-project-dot loading">⏳</span>
+                        : Boolean(plan.active) && <span className="layout-project-dot" title="Projet actif" />}
+                    </button>
+                  ))}
+                  <Link to="/new" className="layout-nav-item layout-project-new" onClick={() => { setPickerOpen(false); closeSidebar(); }}>
+                    <span className="layout-nav-icon">＋</span>
+                    Nouveau projet
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link to="/new" className="layout-nav-item layout-project-new" onClick={closeSidebar}>
+              <span className="layout-nav-icon">＋</span>
+              Nouveau projet
+            </Link>
+          )}
         </nav>
 
         {/* Footer: user info + logout */}

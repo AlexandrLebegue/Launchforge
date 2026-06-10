@@ -7,6 +7,7 @@ import app from '../src/app';
 
 let token: string;
 let agentId: string;
+let planId: string;
 
 beforeAll(async () => {
   await initEngine();
@@ -16,6 +17,21 @@ beforeAll(async () => {
     name: 'Agents Tester',
   });
   token = res.body.data.token;
+
+  // Les validations sont scopées au projet actif : les runs de test doivent
+  // porter le planId du projet actif de l'utilisateur.
+  const plan = await request(app)
+    .post('/api/plan')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      productName: 'AgentProj',
+      description: 'Projet de test pour le pipeline de validation des agents',
+      targetAudience: 'Testeurs',
+      niche: 'saas',
+      goals: ['tester'],
+      pricing: 'gratuit',
+    });
+  planId = plan.body.data.id;
 });
 
 describe('Secrets', () => {
@@ -100,7 +116,7 @@ describe('Approval pipeline', () => {
     const now = new Date().toISOString();
     const mkRun = (id: string) => {
       storage.saveAgentRun({
-        id, agentId, planId: 'plan-x', cardId: `card-${id}`, cardTitle: `Tâche ${id}`,
+        id, agentId, planId, cardId: `card-${id}`, cardTitle: `Tâche ${id}`,
         status: 'running', result: null, startedAt: now, completedAt: null,
       });
       storage.updateRunStatus(id, 'awaiting_approval', 'Brouillon de post Reddit');
@@ -151,7 +167,7 @@ describe('Approval pipeline', () => {
     const otherToken = other.body.data.token;
 
     storage.saveAgentRun({
-      id: 'run-foreign', agentId, planId: 'plan-x', cardId: 'card-f', cardTitle: 'Tâche privée',
+      id: 'run-foreign', agentId, planId, cardId: 'card-f', cardTitle: 'Tâche privée',
       status: 'running', result: null, startedAt: new Date().toISOString(), completedAt: null,
     });
     storage.updateRunStatus('run-foreign', 'awaiting_approval', 'Contenu privé');

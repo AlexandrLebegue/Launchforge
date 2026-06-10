@@ -23,8 +23,10 @@ function loadOwnedEntry(req: Request, res: Response): KnowledgeEntry | null {
   return entry;
 }
 
+// La base de connaissances est propre au projet actif
 router.get('/', (req: Request, res: Response) => {
-  res.json({ success: true, data: storage.getKnowledgeByUserId(req.user!.userId) });
+  const userId = req.user!.userId;
+  res.json({ success: true, data: storage.getKnowledgeByPlan(userId, storage.getActivePlanId(userId)) });
 });
 
 router.post('/', (req: Request, res: Response) => {
@@ -37,6 +39,7 @@ router.post('/', (req: Request, res: Response) => {
   const entry: KnowledgeEntry = {
     id:        uuid(),
     userId:    req.user!.userId,
+    planId:    storage.getActivePlanId(req.user!.userId),
     category:  CATEGORIES.includes(category as KnowledgeCategory) ? (category as KnowledgeCategory) : 'other',
     title:     title.trim(),
     content:   content.trim(),

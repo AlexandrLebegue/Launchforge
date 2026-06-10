@@ -106,6 +106,11 @@ export class Storage {
     return this.getPlansByUserId(userId)[0];
   }
 
+  /** Id du projet actif — clé d'isolation de toutes les données projet */
+  getActivePlanId(userId: string): string | null {
+    return this.getActivePlan(userId)?.id ?? null;
+  }
+
   getPlansByUserId(userId: string): LaunchPlan[] {
     const rows = getDb()
       .prepare(`SELECT * FROM plans WHERE userId = ? ORDER BY createdAt DESC`)
@@ -300,6 +305,16 @@ export class Storage {
       .all(userId) as Post[];
   }
 
+  /** Posts du projet — `IS ?` matche aussi NULL (utilisateur sans projet) */
+  getPostsByPlan(userId: string, planId: string | null): Post[] {
+    return getDb()
+      .prepare(
+        `SELECT * FROM posts WHERE userId = ? AND planId IS ?
+         ORDER BY CASE WHEN scheduledAt IS NULL THEN 1 ELSE 0 END, scheduledAt ASC, createdAt DESC`
+      )
+      .all(userId, planId) as Post[];
+  }
+
   deletePost(id: string): void {
     getDb().prepare(`DELETE FROM posts WHERE id = ?`).run(id);
   }
@@ -324,10 +339,10 @@ export class Storage {
   saveKnowledge(entry: KnowledgeEntry): void {
     getDb()
       .prepare(
-        `INSERT INTO knowledge (id, userId, category, title, content, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO knowledge (id, userId, planId, category, title, content, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(entry.id, entry.userId, entry.category, entry.title, entry.content, entry.createdAt, entry.updatedAt);
+      .run(entry.id, entry.userId, entry.planId, entry.category, entry.title, entry.content, entry.createdAt, entry.updatedAt);
   }
 
   updateKnowledge(id: string, patch: Partial<Pick<KnowledgeEntry, 'category' | 'title' | 'content'>>): void {
@@ -352,6 +367,13 @@ export class Storage {
       .all(userId) as KnowledgeEntry[];
   }
 
+  /** Base de connaissances du projet */
+  getKnowledgeByPlan(userId: string, planId: string | null): KnowledgeEntry[] {
+    return getDb()
+      .prepare(`SELECT * FROM knowledge WHERE userId = ? AND planId IS ? ORDER BY updatedAt DESC`)
+      .all(userId, planId) as KnowledgeEntry[];
+  }
+
   deleteKnowledge(id: string): void {
     getDb().prepare(`DELETE FROM knowledge WHERE id = ?`).run(id);
   }
@@ -364,12 +386,12 @@ export class Storage {
     getDb()
       .prepare(
         `INSERT INTO contacts
-           (id, userId, name, email, company, type, source, interestScore,
+           (id, userId, planId, name, email, company, type, source, interestScore,
             interestSummary, notes, lastInteraction, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        contact.id, contact.userId, contact.name, contact.email, contact.company,
+        contact.id, contact.userId, contact.planId, contact.name, contact.email, contact.company,
         contact.type, contact.source, contact.interestScore, contact.interestSummary,
         contact.notes, contact.lastInteraction, contact.createdAt, contact.updatedAt
       );
@@ -405,6 +427,16 @@ export class Storage {
          ORDER BY CASE WHEN interestScore IS NULL THEN 1 ELSE 0 END, interestScore DESC, updatedAt DESC`
       )
       .all(userId) as Contact[];
+  }
+
+  /** Contacts du projet */
+  getContactsByPlan(userId: string, planId: string | null): Contact[] {
+    return getDb()
+      .prepare(
+        `SELECT * FROM contacts WHERE userId = ? AND planId IS ?
+         ORDER BY CASE WHEN interestScore IS NULL THEN 1 ELSE 0 END, interestScore DESC, updatedAt DESC`
+      )
+      .all(userId, planId) as Contact[];
   }
 
   deleteContact(id: string): void {
@@ -463,12 +495,13 @@ export class Storage {
   saveAgent(agent: Agent): void {
     getDb()
       .prepare(
-        `INSERT INTO agents (id, userId, name, platform, api_key, status, approval_mode, lastRunAt, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO agents (id, userId, planId, name, platform, api_key, status, approval_mode, lastRunAt, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         agent.id,
         agent.userId,
+        agent.planId,
         agent.name,
         agent.platform,
         encryptSecret(agent.apiKey),
@@ -490,6 +523,14 @@ export class Storage {
     const rows = getDb()
       .prepare(`SELECT * FROM agents WHERE userId = ? ORDER BY createdAt DESC`)
       .all(userId) as any[];
+    return rows.map((r) => this.rowToAgent(r));
+  }
+
+  /** Agents (et leur mode de validation) du projet */
+  getAgentsByPlan(userId: string, planId: string | null): Agent[] {
+    const rows = getDb()
+      .prepare(`SELECT * FROM agents WHERE userId = ? AND planId IS ? ORDER BY createdAt DESC`)
+      .all(userId, planId) as any[];
     return rows.map((r) => this.rowToAgent(r));
   }
 
@@ -586,10 +627,29 @@ export class Storage {
     }));
   }
 
+  /** Validations en attente du projet (les runs portent le planId du Kanban) */
+  getPendingApprovalsByPlan(userId: string, planId: string | null): (AgentRun & { agentName: string; agentPlatform: string })[] {
+    const rows = getDb()
+      .prepare(
+        `SELECT r.*, a.name AS agentName, a.platform AS agentPlatform
+         FROM agent_runs r
+         JOIN agents a ON a.id = r.agentId
+         WHERE a.userId = ? AND r.planId IS ? AND r.status = 'awaiting_approval'
+         ORDER BY r.startedAt DESC`
+      )
+      .all(userId, planId) as any[];
+    return rows.map((r) => ({
+      ...this.rowToRun(r),
+      agentName: r.agentName,
+      agentPlatform: r.agentPlatform,
+    }));
+  }
+
   private rowToAgent(row: any): Agent {
     return {
       id:           row.id,
       userId:       row.userId,
+      planId:       row.planId ?? null,
       name:         row.name,
       platform:     row.platform,
       apiKey:       decryptSecret(row.api_key),

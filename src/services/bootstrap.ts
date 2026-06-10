@@ -12,9 +12,9 @@ import { v4 as uuid } from 'uuid';
 import { storage } from './storage';
 import { OnboardingProfile, KnowledgeEntry, KnowledgeCategory } from '../types';
 
-function upsertEntry(userId: string, category: KnowledgeCategory, title: string, content: string): boolean {
+function upsertEntry(userId: string, planId: string | null, category: KnowledgeCategory, title: string, content: string): boolean {
   if (!content.trim()) return false;
-  const existing = storage.getKnowledgeByUserId(userId).find(
+  const existing = storage.getKnowledgeByPlan(userId, planId).find(
     (e) => e.category === category && e.title === title
   );
   if (existing) {
@@ -23,7 +23,7 @@ function upsertEntry(userId: string, category: KnowledgeCategory, title: string,
   }
   const now = new Date().toISOString();
   const entry: KnowledgeEntry = {
-    id: uuid(), userId, category,
+    id: uuid(), userId, planId, category,
     title, content: content.trim(),
     createdAt: now, updatedAt: now,
   };
@@ -32,11 +32,11 @@ function upsertEntry(userId: string, category: KnowledgeCategory, title: string,
 }
 
 /**
- * Alimente la base de connaissances depuis le profil d'onboarding validé.
- * Idempotent : relancer l'onboarding met à jour les fiches au lieu de les dupliquer.
+ * Alimente la base de connaissances du projet depuis le profil validé.
+ * Idempotent : regénérer le plan met à jour les fiches au lieu de les dupliquer.
  * Retourne le nombre de fiches créées.
  */
-export function bootstrapKnowledgeFromProfile(userId: string, profile: OnboardingProfile): number {
+export function bootstrapKnowledgeFromProfile(userId: string, planId: string | null, profile: OnboardingProfile): number {
   let created = 0;
 
   const companyLines = [
@@ -48,12 +48,12 @@ export function bootstrapKnowledgeFromProfile(userId: string, profile: Onboardin
     profile.company.competitors?.length && `Concurrents identifiés : ${profile.company.competitors.join(', ')}`,
     profile.company.notes && `Notes : ${profile.company.notes}`,
   ].filter(Boolean).join('\n');
-  if (upsertEntry(userId, 'company', `Fiche entreprise — ${profile.company.name}`, companyLines)) created++;
+  if (upsertEntry(userId, planId, 'company', `Fiche entreprise — ${profile.company.name}`, companyLines)) created++;
 
-  if (upsertEntry(userId, 'product', `Produit — ${profile.productName}`, profile.description)) created++;
-  if (upsertEntry(userId, 'audience', 'Audience cible', profile.targetAudience)) created++;
+  if (upsertEntry(userId, planId, 'product', `Produit — ${profile.productName}`, profile.description)) created++;
+  if (upsertEntry(userId, planId, 'audience', 'Audience cible', profile.targetAudience)) created++;
   if (upsertEntry(
-    userId, 'offers', 'Tarification',
+    userId, planId, 'offers', 'Tarification',
     `${profile.pricing}\n\nObjectifs de promotion : ${profile.goals.join(' ; ')}`,
   )) created++;
 

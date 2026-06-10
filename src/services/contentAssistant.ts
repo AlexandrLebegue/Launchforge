@@ -24,9 +24,9 @@ const CATEGORY_LABELS: Record<KnowledgeCategory, string> = {
   other:    'Divers',
 };
 
-/** Concatène la base de connaissances de l'utilisateur (bornée en taille) */
+/** Concatène la base de connaissances du projet actif (bornée en taille) */
 export function buildKnowledgeContext(userId: string, maxChars = 8000): string {
-  const entries = storage.getKnowledgeByUserId(userId);
+  const entries = storage.getKnowledgeByPlan(userId, storage.getActivePlanId(userId));
   if (entries.length === 0) return '';
 
   let out = '';
@@ -112,7 +112,7 @@ export async function generateContent(params: GenerateParams): Promise<Generated
 
   // Variabilité : même brief ≠ même post. On interdit les angles déjà
   // utilisés et on impose un angle neuf à chaque génération.
-  const recentTitles = storage.getPostsByUserId(params.userId)
+  const recentTitles = storage.getPostsByPlan(params.userId, storage.getActivePlanId(params.userId))
     .slice(0, 15)
     .map((p) => p.title)
     .filter(Boolean);

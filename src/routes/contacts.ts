@@ -38,8 +38,10 @@ const str = (v: unknown, max = 300): string | null =>
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
 
+// Les contacts sont propres au projet actif
 router.get('/', (req: Request, res: Response) => {
-  res.json({ success: true, data: storage.getContactsByUserId(req.user!.userId) });
+  const userId = req.user!.userId;
+  res.json({ success: true, data: storage.getContactsByPlan(userId, storage.getActivePlanId(userId)) });
 });
 
 router.post('/', (req: Request, res: Response) => {
@@ -54,6 +56,7 @@ router.post('/', (req: Request, res: Response) => {
   const contact: Contact = {
     id:              uuid(),
     userId:          req.user!.userId,
+    planId:          storage.getActivePlanId(req.user!.userId),
     name,
     email:           str(body.email, 200),
     company:         str(body.company, 120),

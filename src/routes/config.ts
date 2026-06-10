@@ -65,7 +65,8 @@ async function getConnectedToolkits(fresh = false): Promise<Set<string>> {
 router.get('/status', async (req: Request, res: Response) => {
   // ?fresh=1 contourne le cache (polling après une connexion de compte)
   const connected = await getConnectedToolkits(req.query.fresh === '1');
-  const agents = storage.getAgentsByUserId(req.user!.userId);
+  // Le mode de publication est un réglage du projet actif
+  const agents = storage.getAgentsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId));
   const publishMode = agents.length > 0 && agents.every((a) => a.approvalMode === 'auto')
     ? 'auto'
     : 'manual';
@@ -125,7 +126,8 @@ router.patch('/publish-mode', (req: Request, res: Response) => {
   if (mode !== 'auto' && mode !== 'manual') {
     return res.status(400).json({ success: false, error: 'mode must be auto or manual' });
   }
-  for (const agent of storage.getAgentsByUserId(req.user!.userId)) {
+  // Réglage propre au projet actif : les autres projets gardent le leur
+  for (const agent of storage.getAgentsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId))) {
     storage.updateAgent(agent.id, { approvalMode: mode });
   }
   res.json({ success: true, data: { publishMode: mode } });

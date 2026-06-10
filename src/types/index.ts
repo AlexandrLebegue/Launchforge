@@ -202,6 +202,8 @@ export type ApprovalMode = 'auto' | 'manual';
 export interface Agent {
   id: string;
   userId: string;
+  /** Projet auquel cet agent (et son mode de validation) appartient */
+  planId: string | null;
   name: string;
   platform: AgentPlatform;
   apiKey: string;
@@ -282,6 +284,8 @@ export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'o
 export interface KnowledgeEntry {
   id: string;
   userId: string;
+  /** Projet auquel cette fiche appartient — chaque projet a sa propre base */
+  planId: string | null;
   category: KnowledgeCategory;
   title: string;
   content: string;
@@ -296,6 +300,8 @@ export type ContactType = 'prospect' | 'client' | 'partner';
 export interface Contact {
   id: string;
   userId: string;
+  /** Projet auquel ce contact appartient — chaque projet a son propre carnet */
+  planId: string | null;
   name: string;
   email: string | null;
   company: string | null;

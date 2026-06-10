@@ -4,7 +4,7 @@ import { validatePlanInput } from '../middleware/validation';
 import { storage } from '../services/storage';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import { generateContentCalendar } from '../services/calendarGenerator';
-import { platformsForNiche } from '../services/bootstrap';
+import { platformsForNiche, bootstrapKnowledgeFromProfile } from '../services/bootstrap';
 import { notifyLinkedChats } from '../services/telegramBot';
 import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState, Post } from '../types';
 
@@ -22,6 +22,20 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
     const plan = mode === 'ai'
       ? await createAILaunchPlan(input, user.userId)
       : createLaunchPlan(input, user.userId);
+
+    // La base de connaissances DU PROJET se remplit toute seule depuis le
+    // profil — avant le bootstrap du calendrier, qui s'appuie dessus.
+    try {
+      bootstrapKnowledgeFromProfile(user.userId, plan.id, {
+        company:        input.company ?? { name: input.productName, exists: false },
+        productName:    input.productName,
+        description:    input.description,
+        targetAudience: input.targetAudience,
+        niche:          input.niche,
+        goals:          input.goals,
+        pricing:        input.pricing,
+      });
+    } catch { /* best-effort */ }
 
     // Bootstrap automatique du Hub de contenu : l'IA rédige et date les
     // premières idées de posts (brouillons à valider) dans la même requête —

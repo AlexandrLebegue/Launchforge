@@ -33,9 +33,10 @@ function loadOwnedPendingRun(req: Request, res: Response): AgentRun | null {
   return run;
 }
 
-// ── GET /api/approvals — demandes en attente ─────────────────────────────────
+// ── GET /api/approvals — demandes en attente du projet actif ─────────────────
 router.get('/', (req: Request, res: Response) => {
-  const items = storage.getPendingApprovalsByUserId(req.user!.userId);
+  const userId = req.user!.userId;
+  const items = storage.getPendingApprovalsByPlan(userId, storage.getActivePlanId(userId));
   res.json({ success: true, data: items });
 });
 

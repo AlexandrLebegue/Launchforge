@@ -64,7 +64,7 @@ const TOOLS: ToolDef[] = [
 function systemPrompt(userId: string): string {
   const company   = buildCompanyContext(userId);
   const knowledge = buildKnowledgeContext(userId, 6000);
-  const recentTitles = storage.getPostsByUserId(userId)
+  const recentTitles = storage.getPostsByPlan(userId, storage.getActivePlanId(userId))
     .slice(0, 12)
     .map((p) => p.title)
     .filter(Boolean);
