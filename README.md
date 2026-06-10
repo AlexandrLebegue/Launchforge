@@ -235,7 +235,7 @@ Client → Express → rateLimit → validation → route handler → planGenera
 | `JWT_SECRET` | dev fallback | Secret for auth tokens — set in production |
 | `OPENROUTER_API_KEY` | — | Clé OpenRouter — toute l'IA (onboarding, plans, contenu, agents). Sans elle : formulaire manuel + templates. |
 | `OPENROUTER_MODEL` | `openrouter/auto` | Modèle OpenRouter à utiliser (ex. `anthropic/claude-sonnet-4.5`). |
-| `COMPOSIO_MCP_URL` | — | URL du serveur MCP Composio — publication réelle + synchro des métriques via vos comptes connectés. |
+| `COMPOSIO_MCP_URL` | — | URL du serveur MCP Composio — publication réelle (worker automatique inclus), synchro métriques, scan mail/réactions, emails sortants, synchro calendrier personnel. |
 
 Copy `.env.example` to `.env`:
 ```bash
