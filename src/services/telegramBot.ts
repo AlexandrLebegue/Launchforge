@@ -19,6 +19,7 @@ import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio } from './leadAnalysis';
 import { markPublished } from './postPublisher';
 import { publishViaComposio, isComposioConfigured } from './composio';
+import { webSearch, fetchPageText } from './research';
 import { AgentRun, Post, Reminder } from '../types';
 
 const API = 'https://api.telegram.org';
@@ -116,8 +117,28 @@ const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'web_search',
+    description: 'Recherche sur le web : actualités du secteur, chiffres, tendances, inspiration pour un post. Utilise des requêtes ciblées, puis exploite les résultats dans ta rédaction.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Requête, ex. "tendances SaaS France 2026"' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'fetch_website',
+    description: 'Lit le contenu texte d\'une page web précise (article, étude) pour s\'en inspirer ou en citer des éléments.',
+    parameters: {
+      type: 'object',
+      properties: { url: { type: 'string', description: 'URL complète' } },
+      required: ['url'],
+    },
+  },
+  {
     name: 'draft_post',
-    description: 'Rédige un post complet pour une plateforme (via la base de connaissances) et l\'enregistre en brouillon dans le Hub de contenu. Renvoie le contenu rédigé.',
+    description: 'Rédige un post complet pour une plateforme (base de connaissances + projet actif ; combine avec web_search pour ancrer le post dans l\'actu) et l\'enregistre en brouillon dans le Hub. Renvoie le contenu rédigé — montre-le à l\'utilisateur.',
     parameters: {
       type: 'object',
       properties: {
@@ -264,6 +285,18 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
       return `Agent ${agent.name} lancé sur « ${run.cardTitle} ». ${agent.approvalMode === 'manual' ? 'Le contenu arrivera dans les validations (je peux te les lister dans une minute).' : 'Publication automatique après rédaction.'}`;
     }
 
+    case 'web_search': {
+      const results = await webSearch(String(args.query || ''));
+      return results.length > 0
+        ? results.map((r, i) => `[${i + 1}] ${r}`).join('\n')
+        : 'Aucun résultat.';
+    }
+
+    case 'fetch_website': {
+      const text = await fetchPageText(String(args.url || ''));
+      return text || 'Page inaccessible.';
+    }
+
     case 'draft_post': {
       const generated = await generateContent({
         userId,
@@ -351,7 +384,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts, envoi d'emails, rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), envoi d'emails, rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
@@ -405,6 +438,7 @@ Tu peux me demander par exemple :
 • « Quoi à valider ? » puis « valide le premier »
 • « Lance l'agent reddit sur l'annonce de la v2 »
 • « Écris un post LinkedIn sur [sujet] »
+• « Cherche une actu de mon secteur et fais un post dessus »
 • « Envoie un mail à Marie pour proposer une démo »
 • « Rappelle-moi demain 9h de relancer les leads »
 
