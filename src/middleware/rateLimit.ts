@@ -2,7 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 const WINDOW_MS = 60_000;
-const MAX_REQUESTS = 30;
+// L'app fait du polling léger (statut des runs Kanban toutes les 3 s, badge
+// validations toutes les 30 s) : une limite trop basse provoquait des 429 en
+// usage normal. 300/min absorbe les pollings tout en bloquant les abus.
+const MAX_REQUESTS = 300;
 
 export function rateLimit(req: Request, res: Response, next: NextFunction): void {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';

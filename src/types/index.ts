@@ -173,6 +173,7 @@ export interface KanbanState {
     backlog: KanbanCard[];
     todo: KanbanCard[];
     in_progress: KanbanCard[];
+    review: KanbanCard[];
     done: KanbanCard[];
   };
 }

@@ -6,11 +6,11 @@ import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 
 // ── Types ────────────────────────────────────────────────────
 const tabs = [
-  { key: 'overview',   label: '📋 Overview'    },
-  { key: 'weekly',     label: '📅 Weekly Plan' },
-  { key: 'community',  label: '🎯 Community'   },
-  { key: 'content',    label: '📝 Content'     },
-  { key: 'kanban',     label: '📊 Kanban'      },
+  { key: 'overview',   label: '📋 Vue d\'ensemble' },
+  { key: 'weekly',     label: '📅 Plan hebdo'      },
+  { key: 'community',  label: '🎯 Communautés'     },
+  { key: 'content',    label: '📝 Contenu'         },
+  { key: 'kanban',     label: '📊 Kanban'          },
 ] as const;
 
 type TabKey = typeof tabs[number]['key'];
@@ -22,7 +22,7 @@ function buildKanbanFromPlan(plan: LaunchPlan): KanbanState {
 
   (plan.weekly_plan || []).forEach((w) =>
     (w.actions || []).forEach((a) => {
-      cards.push({ id: `w${w.week}-${order}`, title: a, description: `Week ${w.week}: ${w.theme}`, category: 'Marketing', effort: 'medium', column: 'todo', week: w.week, order: order++, createdAt: plan.createdAt });
+      cards.push({ id: `w${w.week}-${order}`, title: a, description: `Semaine ${w.week} : ${w.theme}`, category: 'Marketing', effort: 'medium', column: 'todo', week: w.week, order: order++, createdAt: plan.createdAt });
     })
   );
   (plan.community_targets || []).forEach((c) =>
@@ -95,13 +95,13 @@ export default function PlanViewPage() {
     })();
   }, [id]);
 
-  if (loading) return <div className="loading">⏳ Loading plan…</div>;
+  if (loading) return <div className="loading">⏳ Chargement du plan…</div>;
 
   if (error || !plan || !kanban) {
     return (
       <div>
         <div className="error-banner">{error || 'Plan not found'}</div>
-        <Link to="/" className="btn btn-ghost">&larr; Back to Dashboard</Link>
+        <Link to="/" className="btn btn-ghost">&larr; Retour au tableau de bord</Link>
       </div>
     );
   }
@@ -110,7 +110,7 @@ export default function PlanViewPage() {
     <div className="animate-fadeIn">
       {/* Back */}
       <Link to="/" className="plan-back-btn">
-        ← Back to Dashboard
+        ← Retour au tableau de bord
       </Link>
 
       {/* Header */}
@@ -127,7 +127,7 @@ export default function PlanViewPage() {
             </div>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', paddingTop: 4 }}>
-            Created {new Date(plan.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            Créé le {new Date(plan.createdAt).toLocaleDateString('fr-FR', { month: 'long', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
       </div>
@@ -150,10 +150,10 @@ export default function PlanViewPage() {
         <div className="plan-tab-content">
           <div className="plan-overview-grid">
             {[
-              { label: 'Product',        value: plan.input.productName    },
+              { label: 'Produit',        value: plan.input.productName    },
               { label: 'Niche',          value: plan.input.niche          },
-              { label: 'Target Audience',value: plan.input.targetAudience },
-              { label: 'Pricing',        value: plan.input.pricing        },
+              { label: 'Audience cible', value: plan.input.targetAudience },
+              { label: 'Prix',           value: plan.input.pricing        },
             ].map((item, i) => (
               <div key={i} className={`plan-overview-card animate-fadeInUp stagger-${i + 1}`}>
                 <div className="plan-overview-label">{item.label}</div>
@@ -165,7 +165,7 @@ export default function PlanViewPage() {
           {/* Goals */}
           {plan.input.goals?.length > 0 && (
             <div className="plan-section card animate-fadeInUp stagger-3">
-              <div className="card-header">🎯 Goals</div>
+              <div className="card-header">🎯 Objectifs</div>
               <ul className="weekly-actions-list">
                 {plan.input.goals.map((g, i) => <li key={i}>{g}</li>)}
               </ul>

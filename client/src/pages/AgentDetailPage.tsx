@@ -158,9 +158,9 @@ export default function AgentDetailPage() {
               <span className={`agent-status-badge agent-status-${agent.status}`}>
                 {agentStatusLabel(agent.status)}
               </span>
-              {!agent.hasApiKey && (
-                <span className="chip chip-warning">⚠️ Mode simulation</span>
-              )}
+              <span className={`kanban-mode-badge mode-${agent.approvalMode}`}>
+                {agent.approvalMode === 'auto' ? '⚡ publication directe' : '✋ validation requise'}
+              </span>
             </div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
@@ -215,9 +215,9 @@ export default function AgentDetailPage() {
               </button>
             </div>
             <p className="form-hint">
-              Connectez votre compte {tpl?.name ?? agent.platform} via{' '}
-              <a href="https://composio.dev" target="_blank" rel="noopener noreferrer">Composio</a>{' '}
-              pour activer les actions réelles.
+              Optionnelle : la publication passe par votre serveur MCP{' '}
+              <a href="https://dashboard.composio.dev" target="_blank" rel="noopener noreferrer">Composio</a>{' '}
+              (comptes connectés). Cette clé n'est utile que pour une configuration dédiée.
             </p>
           </div>
 
@@ -315,9 +315,13 @@ export default function AgentDetailPage() {
                     {run.result.length > 120 ? run.result.slice(0, 120) + '…' : run.result}
                   </div>
                 )}
-                <Link to={`/plan/${run.planId}`} className="btn btn-ghost btn-sm">
-                  Voir plan →
-                </Link>
+                {run.planId ? (
+                  <Link to={`/plan/${run.planId}`} className="btn btn-ghost btn-sm">
+                    Voir plan →
+                  </Link>
+                ) : (
+                  <span className="chip" title="Tâche lancée depuis Telegram">💬 Telegram</span>
+                )}
               </div>
             ))}
           </div>

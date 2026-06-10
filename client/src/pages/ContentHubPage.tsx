@@ -665,7 +665,7 @@ export default function ContentHubPage() {
                       )}
                       {p.status === 'scheduled' && (
                         <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); handlePublish(p); }}>
-                          ✅ Publié
+                          ✓ Marquer publié
                         </button>
                       )}
                     </div>

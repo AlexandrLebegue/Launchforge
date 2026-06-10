@@ -93,7 +93,7 @@ function AddAgentModal({ catalog, onClose, onAdded }: AddModalProps) {
               <label className="form-label">
                 Clé API {template.name}
                 <span style={{ color: 'var(--color-text-muted)', fontWeight: 400, marginLeft: 6 }}>
-                  (optionnelle — mode simulation si vide)
+                  (optionnelle — la publication passe par Composio MCP)
                 </span>
               </label>
               <input
@@ -186,8 +186,8 @@ function AgentCard({ agent, catalog, onToggle, onDelete }: AgentCardProps) {
           {agent.approvalMode === 'auto' ? '⚡ auto' : '✋ validation'}
         </span>
         {agent.hasApiKey
-          ? <span className="chip chip-success">🔑 Clé API configurée</span>
-          : <span className="chip chip-warning">⚠️ Mode simulation</span>
+          ? <span className="chip chip-success">🔑 Clé dédiée</span>
+          : <span className="chip">🔌 Publie via Composio MCP</span>
         }
       </div>
 
@@ -287,9 +287,9 @@ export default function AgentsPage() {
         </div>
         <div className="stat-card">
           <div className="stat-value" style={{ color: 'var(--color-primary)' }}>
-            {agents.filter((a) => a.hasApiKey).length}
+            {agents.filter((a) => a.approvalMode === 'auto').length}
           </div>
-          <div className="stat-label">Avec clé API</div>
+          <div className="stat-label">En publication directe</div>
         </div>
       </div>
 

@@ -23,7 +23,7 @@ export default function RegisterPage({ onRegister }: Props) {
     setBusy(false);
 
     if (!res.success || !res.data) {
-      setError(res.error || 'Registration failed');
+      setError(res.error || 'Inscription impossible');
       return;
     }
 
@@ -36,19 +36,19 @@ export default function RegisterPage({ onRegister }: Props) {
     <div className="auth-wrapper">
       <div className="auth-page">
         <div className="auth-page-logo">🚀</div>
-        <h1>Create account</h1>
-        <p>Start generating launch plans in seconds</p>
+        <h1>Créer un compte</h1>
+        <p>Votre hub de promotion, prêt en quelques secondes</p>
 
         {error && <div className="error">{error}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Name</label>
+            <label>Nom</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
+              placeholder="Votre nom"
               autoComplete="name"
             />
           </div>
@@ -58,18 +58,18 @@ export default function RegisterPage({ onRegister }: Props) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="vous@exemple.fr"
               autoComplete="email"
               required
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label>Mot de passe</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
+              placeholder="6 caractères minimum"
               autoComplete="new-password"
               minLength={6}
               required
@@ -81,13 +81,13 @@ export default function RegisterPage({ onRegister }: Props) {
             disabled={busy}
             style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
           >
-            {busy ? '⏳ Creating account…' : '→ Create Account'}
+            {busy ? '⏳ Création…' : '→ Créer mon compte'}
           </button>
         </form>
 
         <div className="footer-link">
-          Already have an account?{' '}
-          <Link to="/login">Sign in</Link>
+          Déjà un compte ?{' '}
+          <Link to="/login">Se connecter</Link>
         </div>
       </div>
     </div>

@@ -22,7 +22,7 @@ export default function LoginPage({ onLogin }: Props) {
     setBusy(false);
 
     if (!res.success || !res.data) {
-      setError(res.error || 'Login failed');
+      setError(res.error || 'Connexion impossible');
       return;
     }
 
@@ -35,8 +35,8 @@ export default function LoginPage({ onLogin }: Props) {
     <div className="auth-wrapper">
       <div className="auth-page">
         <div className="auth-page-logo">🚀</div>
-        <h1>Welcome back</h1>
-        <p>Sign in to your LaunchForge account</p>
+        <h1>Bon retour !</h1>
+        <p>Connectez-vous à votre compte LaunchForge</p>
 
         {error && <div className="error">{error}</div>}
 
@@ -47,13 +47,13 @@ export default function LoginPage({ onLogin }: Props) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="vous@exemple.fr"
               autoComplete="email"
               required
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label>Mot de passe</label>
             <input
               type="password"
               value={password}
@@ -69,13 +69,13 @@ export default function LoginPage({ onLogin }: Props) {
             disabled={busy}
             style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
           >
-            {busy ? '⏳ Signing in…' : '→ Sign In'}
+            {busy ? '⏳ Connexion…' : '→ Se connecter'}
           </button>
         </form>
 
         <div className="footer-link">
-          Don&apos;t have an account?{' '}
-          <Link to="/register">Create one free</Link>
+          Pas encore de compte ?{' '}
+          <Link to="/register">Créez-en un gratuitement</Link>
         </div>
       </div>
     </div>
