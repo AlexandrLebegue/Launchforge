@@ -14,7 +14,7 @@ import { McpSession, McpTool, isComposioConfigured } from './mcpClient';
 
 export { isComposioConfigured };
 
-const MAX_TOOL_ITERATIONS = 6;
+const MAX_TOOL_ITERATIONS = 8;
 const MAX_TOOLS_EXPOSED = 30;
 
 /** Mots-clés par plateforme pour ne montrer au modèle que les outils utiles */
@@ -104,6 +104,7 @@ export async function runMcpTask(
   let lastContent = '';
   let okCalls = 0;
   let failedCalls = 0;
+  let exhausted = true;
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const result = await chatComplete({ messages, tools, maxTokens: 2048 });
@@ -112,7 +113,7 @@ export async function runMcpTask(
     // restent détectables par tous les appelants.
     if (result.content) lastContent = result.content.replace(/^[\s*_#>`]+/, '');
 
-    if (result.toolCalls.length === 0) break;
+    if (result.toolCalls.length === 0) { exhausted = false; break; }
 
     messages.push(result.rawAssistantMessage);
     for (const call of result.toolCalls) {
@@ -130,6 +131,18 @@ export async function runMcpTask(
         content: output.slice(0, 12000),
       });
     }
+  }
+
+  // Limite d'itérations atteinte en pleine exploration (observé en test réel :
+  // la dernière réponse était un message d'étape, pas la conclusion). On force
+  // une réponse finale, sans outils, à partir de ce qui a déjà été collecté.
+  if (exhausted) {
+    messages.push({
+      role: 'user',
+      content: 'Tu as atteint la limite d\'appels d\'outils. Donne MAINTENANT ta réponse finale au format exact demandé dans ta mission (JSON ou OK:/ECHEC:), en te basant uniquement sur les données déjà obtenues. N\'appelle plus aucun outil.',
+    });
+    const final = await chatComplete({ messages, maxTokens: 2048 });
+    if (final.content) lastContent = final.content.replace(/^[\s*_#>`]+/, '');
   }
 
   return { reply: lastContent, okCalls, failedCalls };
