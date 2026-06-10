@@ -42,7 +42,13 @@ function filterTools(tools: McpTool[], keywords: string[], priorityKeywords: str
   const matched = tools.filter((t) =>
     keywords.some((k) => t.name.toLowerCase().includes(k))
   );
-  const pool = matched.length > 0 ? matched : tools;
+  // SÉCURITÉ : pas de repli vers la totalité des outils — exposer des outils
+  // sans rapport (ex. envoi Gmail pour une mission « publier sur LinkedIn »)
+  // est dangereux. Mieux vaut un échec explicite qui guide l'utilisateur.
+  if (matched.length === 0) {
+    throw new Error(`Aucun compte ${keywords[0]} connecté sur Composio — connectez-le depuis la vue Configuration`);
+  }
+  const pool = matched;
   // Le plafond MAX_TOOLS_EXPOSED coupait la liste alphabétiquement : sur un
   // toolkit Gmail de 64 outils, GMAIL_SEND_EMAIL passait à la trappe. On place
   // d'abord les outils correspondant à l'intention de la tâche.

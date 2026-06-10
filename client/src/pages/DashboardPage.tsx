@@ -43,7 +43,7 @@ export default function DashboardPage() {
       if (plansRes.success && plansRes.data) {
         setPlans(plansRes.data);
       } else {
-        setError(plansRes.error || 'Impossible de charger vos plans');
+        setError(plansRes.error || 'Impossible de charger vos projets');
       }
       if (approvalsRes.success && approvalsRes.data) {
         setApprovals(approvalsRes.data.length);
@@ -52,7 +52,7 @@ export default function DashboardPage() {
     })();
   }, []);
 
-  if (loading) return <div className="loading">⏳ Chargement de vos plans…</div>;
+  if (loading) return <div className="loading">⏳ Chargement de vos projets…</div>;
 
   const allStats   = plans.map(getTaskStats);
   const totalTasks = allStats.reduce((s, t) => s + t.total, 0);
@@ -67,11 +67,11 @@ export default function DashboardPage() {
           <h1>Tableau de bord</h1>
           <p>
             {plans.length === 0
-              ? 'Aucun plan pour l\'instant — créez le premier !'
-              : `${plans.length} plan${plans.length > 1 ? 's' : ''} de promotion · ${doneTasks}/${totalTasks} tâches terminées`}
+              ? 'Aucun projet pour l\'instant — créez le premier !'
+              : `${plans.length} projet${plans.length > 1 ? 's' : ''} · ${doneTasks}/${totalTasks} tâches terminées`}
           </p>
         </div>
-        <Link to="/new" className="btn btn-primary">✨ Nouveau plan</Link>
+        <Link to="/new" className="btn btn-primary">✨ Nouveau projet</Link>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -94,7 +94,7 @@ export default function DashboardPage() {
           <div className="stat-card animate-fadeInUp stagger-1">
             <span className="stat-card-icon">📋</span>
             <div className="stat-card-value">{plans.length}</div>
-            <div className="stat-card-label">Plans</div>
+            <div className="stat-card-label">Projets</div>
           </div>
           <div className="stat-card animate-fadeInUp stagger-2">
             <span className="stat-card-icon">⚡</span>
@@ -124,14 +124,14 @@ export default function DashboardPage() {
       {plans.length === 0 ? (
         <div className="plan-empty">
           <span className="plan-empty-icon">🚀</span>
-          <h2>Aucun plan de promotion</h2>
+          <h2>Aucun projet</h2>
           <p>L'assistant IA vous pose quelques questions, recherche votre entreprise, et génère votre plan d'action.</p>
           <Link
             to="/new"
             className="btn btn-primary btn-primary-glow btn-lg"
             style={{ display: 'inline-flex' }}
           >
-            ✨ Créer mon premier plan
+            ✨ Créer mon premier projet
           </Link>
         </div>
       ) : (
