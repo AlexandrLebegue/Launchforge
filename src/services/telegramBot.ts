@@ -310,7 +310,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
         platform: String(args.platform || 'linkedin'),
         title: generated.title, content: generated.content,
         status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,
-        imageUrl: null, recurrence: 'none', autoPublish: 0, publishError: null, calendarSynced: 0,
+        imageUrl: null, recurrence: 'none', recurrenceBrief: null, autoPublish: 0, publishError: null, calendarSynced: 0,
         impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
         createdAt: now, updatedAt: now,
       };

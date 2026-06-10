@@ -59,6 +59,7 @@ router.post('/', (req: Request, res: Response) => {
     externalUrl: typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null,
     imageUrl:    typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null,
     recurrence:  RECURRENCES.includes(body.recurrence as Recurrence) ? (body.recurrence as Recurrence) : 'none',
+    recurrenceBrief: typeof body.recurrenceBrief === 'string' && body.recurrenceBrief.trim() ? body.recurrenceBrief.trim().slice(0, 600) : null,
     autoPublish: body.autoPublish ? 1 : 0,
     publishError: null,
     calendarSynced: 0,
@@ -96,6 +97,11 @@ router.patch('/:id', (req: Request, res: Response) => {
     patch.imageUrl = typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null;
   }
   if (RECURRENCES.includes(body.recurrence as Recurrence)) patch.recurrence = body.recurrence as Recurrence;
+  if (body.recurrenceBrief !== undefined) {
+    patch.recurrenceBrief = typeof body.recurrenceBrief === 'string' && body.recurrenceBrief.trim()
+      ? body.recurrenceBrief.trim().slice(0, 600)
+      : null;
+  }
   if (body.autoPublish !== undefined) {
     patch.autoPublish = body.autoPublish ? 1 : 0;
     // Réactiver l'auto-publication efface l'erreur précédente
@@ -125,7 +131,8 @@ router.patch('/:id', (req: Request, res: Response) => {
 
 // ── POST /api/posts/:id/publish ──────────────────────────────────────────────
 // Marque le post publié ; si récurrent, crée automatiquement la prochaine
-// occurrence programmée (même contenu, métriques remises à zéro).
+// occurrence programmée (régénérée par l'IA si une instruction est définie,
+// sinon même contenu ; métriques remises à zéro).
 router.post('/:id/publish', (req: Request, res: Response) => {
   const post = loadOwnedPost(req, res);
   if (!post) return;

@@ -77,6 +77,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
     externalUrl: post?.externalUrl ?? '',
     imageUrl:    post?.imageUrl ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
+    recurrenceBrief: post?.recurrenceBrief ?? '',
     autoPublish: Boolean(post?.autoPublish),
     impressions: post?.impressions ?? 0,
     likes:       post?.likes ?? 0,
@@ -160,6 +161,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
       externalUrl: form.externalUrl.trim() || null,
       imageUrl:    form.imageUrl.trim() || null,
       recurrence:  form.recurrence,
+      recurrenceBrief: form.recurrence !== 'none' && form.recurrenceBrief.trim() ? form.recurrenceBrief.trim() : null,
       autoPublish: form.autoPublish ? 1 : 0,
       impressions: Number(form.impressions) || 0,
       likes:       Number(form.likes) || 0,
@@ -281,6 +283,26 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
               )}
             </label>
           </div>
+
+          {/* Régénération IA des occurrences récurrentes */}
+          {form.recurrence !== 'none' && (
+            <label className="form-label-block">
+              🪄 Instruction de régénération IA <span className="form-hint-inline">(optionnel)</span>
+              <textarea
+                className="form-input"
+                value={form.recurrenceBrief}
+                onChange={(e) => set('recurrenceBrief', e.target.value)}
+                rows={3}
+                maxLength={600}
+                placeholder="ex. « Partage un conseil actionnable différent à chaque fois sur la prospection LinkedIn, avec un exemple concret »"
+              />
+              <span className="form-hint-inline">
+                Si renseignée, chaque nouvelle occurrence est <strong>réécrite par l'IA</strong> à partir de cette
+                consigne (et de votre base de connaissances) — fini le même contenu republié à l'identique.
+                Laissez vide pour reprendre le contenu tel quel.
+              </span>
+            </label>
+          )}
 
           {/* Publication automatique (worker + Composio) */}
           {form.status === 'scheduled' && (
@@ -665,6 +687,7 @@ export default function ContentHubPage() {
                 <span className="upcoming-icon">{platformIcon(p.platform)}</span>
                 <span className="upcoming-name" onClick={() => setEditing(p)}>{p.title || platformLabel(p.platform)}</span>
                 {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                {p.recurrence !== 'none' && p.recurrenceBrief && <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">🪄 IA</span>}
                 {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">⚡ auto</span>}
                 {Boolean(p.calendarSynced) && <span title="Ajouté à votre calendrier personnel">🗓️</span>}
                 <span className={`upcoming-date${overdue ? ' overdue' : ''}`}>
@@ -733,6 +756,9 @@ export default function ContentHubPage() {
                     {p.content && <div className="post-card-excerpt">{p.content.slice(0, 140)}{p.content.length > 140 ? '…' : ''}</div>}
                     <div className="post-card-footer">
                       {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                      {p.recurrence !== 'none' && p.recurrenceBrief && (
+                        <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">🪄 IA</span>
+                      )}
                       {Boolean(p.autoPublish) && p.status === 'scheduled' && (
                         <span className="chip chip-auto" title="Sera publié automatiquement à l'heure programmée">⚡ auto</span>
                       )}

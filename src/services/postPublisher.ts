@@ -6,6 +6,8 @@
 
 import { v4 as uuid } from 'uuid';
 import { storage } from './storage';
+import { isAIConfigured } from './aiClient';
+import { generateContent } from './contentAssistant';
 import { Post, Recurrence } from '../types';
 
 /** Prochaine occurrence d'un post récurrent */
@@ -21,8 +23,36 @@ export function nextOccurrence(from: Date, recurrence: Recurrence): Date | null 
 }
 
 /**
+ * Régénère le contenu d'une occurrence récurrente à partir de son instruction
+ * (recurrenceBrief). Best-effort en arrière-plan : en cas d'échec, l'occurrence
+ * garde le contenu copié du post précédent — la publication n'est jamais bloquée.
+ */
+export function regenerateOccurrenceInBackground(next: Post): void {
+  if (!next.recurrenceBrief || !isAIConfigured()) return;
+  void generateContent({
+    userId: next.userId,
+    platform: next.platform,
+    brief: next.recurrenceBrief,
+  })
+    .then((gen) => {
+      // Le post a pu être modifié/supprimé entre-temps : ne pas écraser
+      const fresh = storage.getPostById(next.id);
+      if (!fresh || fresh.status === 'published') return;
+      const tags = gen.hashtags.length > 0 ? `\n\n${gen.hashtags.map((h) => `#${h}`).join(' ')}` : '';
+      storage.updatePost(next.id, {
+        title: gen.title,
+        content: gen.content + tags,
+      });
+    })
+    .catch((err) => {
+      console.error(`⚠️  Régénération IA de l'occurrence ${next.id} échouée (contenu précédent conservé) :`, err instanceof Error ? err.message : err);
+    });
+}
+
+/**
  * Marque le post publié et, s'il est récurrent, crée la prochaine occurrence
- * programmée (même contenu, métriques à zéro, à re-synchroniser au calendrier).
+ * programmée (métriques à zéro, à re-synchroniser au calendrier). Si une
+ * instruction de régénération est définie, l'IA réécrit le contenu en fond.
  */
 export function markPublished(post: Post): { post: Post; next: Post | null } {
   const now = new Date();
@@ -54,6 +84,7 @@ export function markPublished(post: Post): { post: Post; next: Post | null } {
         updatedAt:   ts,
       };
       storage.savePost(next);
+      regenerateOccurrenceInBackground(next);
     }
   }
 

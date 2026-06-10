@@ -116,6 +116,7 @@ async function executeTool(userId: string, name: string, args: any): Promise<{ o
       externalUrl: null,
       imageUrl: typeof args.imageUrl === 'string' && args.imageUrl.trim() ? args.imageUrl.trim() : null,
       recurrence: 'none',
+      recurrenceBrief: null,
       autoPublish: 0,
       publishError: null,
       calendarSynced: 0,

@@ -175,6 +175,7 @@ function runMigrations(database: Database.Database): void {
       externalUrl TEXT,
       imageUrl    TEXT,
       recurrence  TEXT NOT NULL DEFAULT 'none',
+      recurrenceBrief TEXT,
       impressions INTEGER NOT NULL DEFAULT 0,
       likes       INTEGER NOT NULL DEFAULT 0,
       comments    INTEGER NOT NULL DEFAULT 0,
@@ -260,5 +261,8 @@ function runMigrations(database: Database.Database): void {
   }
   if (!postCols.some((c) => c.name === 'planId')) {
     database.exec(`ALTER TABLE posts ADD COLUMN planId TEXT`);
+  }
+  if (!postCols.some((c) => c.name === 'recurrenceBrief')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN recurrenceBrief TEXT`);
   }
 }

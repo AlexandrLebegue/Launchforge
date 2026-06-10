@@ -32,11 +32,35 @@ describe('Posts (Content Hub)', () => {
         status: 'scheduled',
         scheduledAt: '2026-06-15T09:00:00.000Z',
         recurrence: 'weekly',
+        recurrenceBrief: 'Un conseil actionnable différent chaque semaine sur la prospection',
       });
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('scheduled');
     expect(res.body.data.recurrence).toBe('weekly');
+    expect(res.body.data.recurrenceBrief).toBe('Un conseil actionnable différent chaque semaine sur la prospection');
     postId = res.body.data.id;
+  });
+
+  it('updates and clears the recurrence brief via PATCH', async () => {
+    const upd = await request(app)
+      .patch(`/api/posts/${postId}`)
+      .set(auth())
+      .send({ recurrenceBrief: '  Nouvelle consigne de régénération  ' });
+    expect(upd.status).toBe(200);
+    expect(upd.body.data.recurrenceBrief).toBe('Nouvelle consigne de régénération');
+
+    const cleared = await request(app)
+      .patch(`/api/posts/${postId}`)
+      .set(auth())
+      .send({ recurrenceBrief: '   ' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.data.recurrenceBrief).toBeNull();
+
+    // On remet la consigne pour le test de publication récurrente
+    await request(app)
+      .patch(`/api/posts/${postId}`)
+      .set(auth())
+      .send({ recurrenceBrief: 'Un conseil actionnable différent chaque semaine' });
   });
 
   it('updates metrics on a post', async () => {
@@ -72,6 +96,10 @@ describe('Posts (Content Hub)', () => {
     expect(next.recurrence).toBe('weekly');
     expect(next.likes).toBe(0); // métriques remises à zéro
     expect(new Date(next.scheduledAt).getTime()).toBeGreaterThan(Date.now());
+    // L'instruction de régénération est portée par chaque nouvelle occurrence ;
+    // sans clé IA configurée le contenu précédent est conservé tel quel.
+    expect(next.recurrenceBrief).toBe('Un conseil actionnable différent chaque semaine');
+    expect(next.content).toBe('Contenu du post LinkedIn');
   });
 
   it('cannot publish twice', async () => {

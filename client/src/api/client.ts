@@ -491,6 +491,9 @@ export interface Post {
   /** URL du visuel à joindre au post */
   imageUrl: string | null;
   recurrence: Recurrence;
+  /** Instruction de régénération IA : chaque nouvelle occurrence est réécrite
+   *  par l'IA à partir de cette consigne (null = même contenu repris) */
+  recurrenceBrief: string | null;
   /** 1 = publié automatiquement à l'heure programmée par le worker (Composio) */
   autoPublish: number;
   /** Dernière erreur de publication automatique */

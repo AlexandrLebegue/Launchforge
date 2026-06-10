@@ -254,13 +254,13 @@ export class Storage {
       .prepare(
         `INSERT INTO posts
            (id, userId, planId, platform, title, content, status, scheduledAt, publishedAt,
-            externalUrl, imageUrl, recurrence, autoPublish, publishError, calendarSynced,
+            externalUrl, imageUrl, recurrence, recurrenceBrief, autoPublish, publishError, calendarSynced,
             impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.planId, post.platform, post.title, post.content, post.status,
-        post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.recurrence,
+        post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.recurrence, post.recurrenceBrief,
         post.autoPublish, post.publishError, post.calendarSynced,
         post.impressions, post.likes, post.comments, post.shares, post.clicks,
         post.createdAt, post.updatedAt
@@ -270,7 +270,7 @@ export class Storage {
   updatePost(id: string, patch: Partial<Post>): void {
     const allowed: (keyof Post)[] = [
       'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
-      'externalUrl', 'imageUrl', 'recurrence', 'autoPublish', 'publishError', 'calendarSynced',
+      'externalUrl', 'imageUrl', 'recurrence', 'recurrenceBrief', 'autoPublish', 'publishError', 'calendarSynced',
       'impressions', 'likes', 'comments', 'shares', 'clicks',
     ];
     const fields: string[] = [];
