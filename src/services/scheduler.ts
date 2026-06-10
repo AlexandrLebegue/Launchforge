@@ -40,7 +40,8 @@ export async function processDuePosts(
     inFlight.add(post.id);
 
     try {
-      const result = await publish(post.platform, post.content);
+      const contentWithImage = post.imageUrl ? `${post.content}\n\n[Image à joindre au post : ${post.imageUrl}]` : post.content;
+      const result = await publish(post.platform, contentWithImage);
 
       // Re-vérifie l'état : l'utilisateur a pu publier/supprimer entre-temps
       const fresh = storage.getPostById(post.id);

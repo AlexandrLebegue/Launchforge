@@ -55,6 +55,45 @@ const profileLabels: { key: keyof OnboardingProfile; label: string }[] = [
   { key: 'pricing',        label: 'Prix' },
 ];
 
+const SPLASH_STEPS = [
+  { at: 0,   icon: '🧠', text: 'Analyse de votre profil et de vos objectifs…' },
+  { at: 12,  icon: '🗺️', text: 'Construction du plan de lancement semaine par semaine…' },
+  { at: 45,  icon: '🎯', text: 'Sélection des communautés et angles de contenu…' },
+  { at: 75,  icon: '✍️', text: 'Rédaction de vos premières idées de posts…' },
+  { at: 110, icon: '🗓️', text: 'Datation des publications dans votre calendrier…' },
+  { at: 140, icon: '✨', text: 'Dernières touches — votre hub se remplit…' },
+];
+
+function GenerationSplash() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const stepIndex = SPLASH_STEPS.reduce((acc, s, i) => (elapsed >= s.at ? i : acc), 0);
+  const step = SPLASH_STEPS[stepIndex];
+  const pct = Math.min(96, Math.round((elapsed / 170) * 100));
+
+  return (
+    <div className="gen-splash">
+      <div className="gen-splash-rocket">
+        <span className="gen-splash-emoji">🚀</span>
+        <span className="gen-splash-ring" />
+        <span className="gen-splash-ring r2" />
+        <span className="gen-splash-ring r3" />
+      </div>
+      <h2 className="gen-splash-title">Génération de votre plan de promotion</h2>
+      <div className="gen-splash-step" key={stepIndex}>{step.icon} {step.text}</div>
+      <div className="gen-splash-bar"><div style={{ width: `${pct}%` }} /></div>
+      <p className="gen-splash-hint">
+        L'IA construit votre stratégie, rédige vos premiers posts et remplit votre base de
+        connaissances — comptez 2 à 3 minutes. Ne fermez pas cette page.
+      </p>
+      <div className="gen-splash-elapsed">{Math.floor(elapsed / 60)} min {String(elapsed % 60).padStart(2, '0')} s</div>
+    </div>
+  );
+}
+
 export default function CreatePlanPage() {
   const navigate = useNavigate();
 
@@ -190,7 +229,8 @@ export default function CreatePlanPage() {
     });
     setGenerating(false);
     if (res.success && res.data) {
-      navigate(`/plan/${res.data.id}`);
+      // Direction le Hub : les brouillons générés par l'IA y attendent
+      navigate(`/content?drafts=${res.bootstrappedPosts ?? 0}&plan=${res.data.id}`);
     } else {
       setError(res.error || 'La génération du plan a échoué — réessayez.');
     }
@@ -209,6 +249,8 @@ export default function CreatePlanPage() {
   };
 
   if (loading) return <div className="loading">Chargement…</div>;
+
+  if (generating) return <GenerationSplash />;
 
   if (aiOffline) return <ManualFallbackForm />;
 

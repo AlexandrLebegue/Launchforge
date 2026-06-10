@@ -3,7 +3,10 @@ import { createLaunchPlan, createAILaunchPlan, getLaunchPlan, getPlansByUserId }
 import { validatePlanInput } from '../middleware/validation';
 import { storage } from '../services/storage';
 import { requireAuth, optionalAuth } from '../middleware/auth';
-import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState } from '../types';
+import { generateContentCalendar } from '../services/calendarGenerator';
+import { platformsForNiche } from '../services/bootstrap';
+import { notifyLinkedChats } from '../services/telegramBot';
+import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState, Post } from '../types';
 
 const router = Router();
 
@@ -20,7 +23,35 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
       ? await createAILaunchPlan(input, user.userId)
       : createLaunchPlan(input, user.userId);
 
-    const response: ApiResponse<LaunchPlan> = { success: true, data: plan };
+    // Bootstrap automatique du Hub de contenu : l'IA rédige et date les
+    // premières idées de posts (brouillons à valider) dans la même requête —
+    // le splashscreen côté client couvre l'attente, et l'utilisateur arrive
+    // sur un hub déjà rempli.
+    let bootstrappedPosts: Post[] = [];
+    if (mode === 'ai' && process.env.OPENROUTER_API_KEY) {
+      try {
+        const start = new Date();
+        start.setDate(start.getDate() + 1);
+        bootstrappedPosts = await generateContentCalendar({
+          userId: user.userId,
+          weeks: 2,
+          postsPerWeek: 3,
+          platforms: platformsForNiche(input.niche),
+          startDate: start,
+          status: 'draft',
+        });
+        notifyLinkedChats(
+          user.userId,
+          `🚀 Ton plan « ${input.productName} » est prêt !\n📝 ${bootstrappedPosts.length} idées de posts ont été rédigées et datées dans ton Hub de contenu — relis-les et valide. Demande-moi « mes brouillons » pour les voir ici.`,
+        ).catch(() => { /* best-effort */ });
+      } catch { /* le plan reste valide même si le bootstrap contenu échoue */ }
+    }
+
+    const response: ApiResponse<LaunchPlan> & { bootstrappedPosts?: number } = {
+      success: true,
+      data: plan,
+      bootstrappedPosts: bootstrappedPosts.length,
+    };
     res.status(201).json(response);
   } catch (err) {
     const response: ApiResponse<null> = {

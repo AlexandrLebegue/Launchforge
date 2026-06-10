@@ -169,6 +169,7 @@ function runMigrations(database: Database.Database): void {
       scheduledAt TEXT,
       publishedAt TEXT,
       externalUrl TEXT,
+      imageUrl    TEXT,
       recurrence  TEXT NOT NULL DEFAULT 'none',
       impressions INTEGER NOT NULL DEFAULT 0,
       likes       INTEGER NOT NULL DEFAULT 0,
@@ -249,5 +250,8 @@ function runMigrations(database: Database.Database): void {
   }
   if (!postCols.some((c) => c.name === 'calendarSynced')) {
     database.exec(`ALTER TABLE posts ADD COLUMN calendarSynced INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!postCols.some((c) => c.name === 'imageUrl')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN imageUrl TEXT`);
   }
 }

@@ -43,6 +43,14 @@ export async function sendTelegramMessage(chatId: string, text: string): Promise
   }).catch(() => { /* best-effort */ });
 }
 
+/** Notifie tous les chats Telegram liés à un compte (no-op si bot inactif) */
+export async function notifyLinkedChats(userId: string, text: string): Promise<void> {
+  if (!isTelegramConfigured()) return;
+  for (const link of storage.getTelegramLinksByUserId(userId)) {
+    await sendTelegramMessage(link.chatId, text);
+  }
+}
+
 // ── Codes de liaison (générés dans l'app web, valables 10 min) ───────────────
 
 const linkCodes = new Map<string, { userId: string; expires: number }>();
@@ -268,7 +276,7 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
         platform: String(args.platform || 'linkedin'),
         title: generated.title, content: generated.content,
         status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,
-        recurrence: 'none', autoPublish: 0, publishError: null, calendarSynced: 0,
+        imageUrl: null, recurrence: 'none', autoPublish: 0, publishError: null, calendarSynced: 0,
         impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
         createdAt: now, updatedAt: now,
       };

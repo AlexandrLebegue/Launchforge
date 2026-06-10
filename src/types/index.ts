@@ -251,6 +251,8 @@ export interface Post {
   publishedAt: string | null;
   /** URL du post une fois publié sur la plateforme (sert à la synchro des métriques) */
   externalUrl: string | null;
+  /** URL du visuel à joindre au post (image hébergée) */
+  imageUrl: string | null;
   recurrence: Recurrence;
   /** Publication automatique à l'heure programmée par le worker (via Composio) */
   autoPublish: number;

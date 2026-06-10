@@ -153,7 +153,7 @@ export async function getTemplates(): Promise<ApiResponse<any[]>> {
 
 export async function createPlan(
   input: PlanInput
-): Promise<ApiResponse<LaunchPlan>> {
+): Promise<ApiResponse<LaunchPlan> & { bootstrappedPosts?: number }> {
   return request('/plan', {
     method: 'POST',
     body: JSON.stringify(input),
@@ -479,6 +479,8 @@ export interface Post {
   publishedAt: string | null;
   /** URL du post publié sur la plateforme (pour la synchro des métriques) */
   externalUrl: string | null;
+  /** URL du visuel à joindre au post */
+  imageUrl: string | null;
   recurrence: Recurrence;
   /** 1 = publié automatiquement à l'heure programmée par le worker (Composio) */
   autoPublish: number;
@@ -633,6 +635,48 @@ export async function sendContactEmail(
   return request(`/contacts/${id}/send-email`, { method: 'POST', body: JSON.stringify({ subject, body }) });
 }
 
+// ── Configuration ─────────────────────────────────────────────────────────────
+
+export interface ConfigToolkit {
+  slug: string;
+  name: string;
+  capability: string;
+  connected: boolean;
+}
+
+export interface ConfigStatus {
+  ai: { configured: boolean; model: string | null };
+  composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[] };
+  telegram: { configured: boolean; linked: boolean };
+  publishMode: 'auto' | 'manual';
+}
+
+export async function getConfigStatus(): Promise<ApiResponse<ConfigStatus>> {
+  return request('/config/status');
+}
+
+export async function setPublishMode(mode: 'auto' | 'manual'): Promise<ApiResponse<{ publishMode: string }>> {
+  return request('/config/publish-mode', { method: 'PATCH', body: JSON.stringify({ mode }) });
+}
+
+/** Assigne une tâche Kanban à une plateforme (l'agent est géré côté serveur) */
+export async function assignPlatformToCard(data: {
+  platform: string;
+  planId: string;
+  cardId: string;
+  cardTitle: string;
+  cardDescription: string;
+  cardCategory: string;
+  cardEffort: 'low' | 'medium' | 'high';
+}): Promise<ApiResponse<AgentRun>> {
+  return request('/agents/assign-platform', { method: 'POST', body: JSON.stringify(data) });
+}
+
+/** Synchronise tous les posts programmés vers le calendrier personnel */
+export async function syncAllToCalendar(): Promise<ApiResponse<{ synced: number; message?: string }>> {
+  return request('/posts/sync-calendar', { method: 'POST' });
+}
+
 // ── Telegram ──────────────────────────────────────────────────────────────────
 
 /** Génère un code de liaison à envoyer au bot Telegram (valable 10 min) */
@@ -653,6 +697,7 @@ export async function generateContent(data: {
   brief: string;
   tone?: string;
   baseContent?: string;
+  useNews?: boolean;
 }): Promise<ApiResponse<GeneratedContent>> {
   return request('/content/generate', { method: 'POST', body: JSON.stringify(data) });
 }

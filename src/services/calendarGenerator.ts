@@ -16,6 +16,8 @@ export interface CalendarParams {
   postsPerWeek: number;   // 1-7
   platforms: string[];    // plateformes choisies
   startDate: Date;
+  /** 'draft' = idées à valider par l'utilisateur (bootstrap auto), 'scheduled' = programmées */
+  status?: 'draft' | 'scheduled';
 }
 
 interface PlannedPost {
@@ -124,10 +126,11 @@ export async function generateContentCalendar(params: CalendarParams): Promise<P
       platform,
       title:       typeof p.title === 'string' && p.title.trim() ? p.title.trim().slice(0, 150) : `Post ${i + 1}`,
       content:     p.content.trim(),
-      status:      'scheduled',
+      status:      params.status ?? 'scheduled',
       scheduledAt: scheduled.toISOString(),
       publishedAt: null,
       externalUrl: null,
+      imageUrl:    null,
       recurrence:  'none',
       autoPublish: 0,
       publishError: null,

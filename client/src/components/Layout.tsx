@@ -1,62 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { User, setToken, getApprovals, getTelegramLinkCode } from '../api/client';
-
-function TelegramModal({ onClose }: { onClose: () => void }) {
-  const [code,   setCode]   = useState<string | null>(null);
-  const [linked, setLinked] = useState(false);
-  const [error,  setError]  = useState('');
-
-  useEffect(() => {
-    getTelegramLinkCode().then((res) => {
-      if (res.success && res.data) {
-        setCode(res.data.code);
-        setLinked(res.data.linked);
-      } else {
-        setError(res.error === 'TELEGRAM_NOT_CONFIGURED'
-          ? 'Bot non configuré côté serveur : créez un bot via @BotFather sur Telegram et renseignez TELEGRAM_BOT_TOKEN dans le .env.'
-          : res.error || 'Erreur');
-      }
-    });
-  }, []);
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>💬 Bot Telegram</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        {error ? (
-          <div className="chat-error">{error}</div>
-        ) : code === null ? (
-          <div className="loading">⏳…</div>
-        ) : (
-          <div className="post-editor">
-            {linked && (
-              <div className="approval-feedback" style={{ marginBottom: 0 }}>
-                ✅ Un chat Telegram est déjà lié à votre compte. Ce code permet d'en lier un autre.
-              </div>
-            )}
-            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-              Pilotez LaunchForge depuis Telegram : état des activités, posts à venir,
-              validations, lancement d'agents, rédaction de posts/emails, rappels.
-            </p>
-            <ol style={{ fontSize: '0.85rem', paddingLeft: 20, lineHeight: 2 }}>
-              <li>Ouvrez votre bot dans Telegram</li>
-              <li>Envoyez-lui ce code (valable 10 minutes) :</li>
-            </ol>
-            <div className="telegram-code">{code}</div>
-            <p className="form-hint">
-              Ensuite, parlez-lui naturellement : « Où en est-on ? », « Écris un post LinkedIn sur… »,
-              « Rappelle-moi demain 9h de relancer Marie ».
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+import { User, setToken, getApprovals } from '../api/client';
 
 interface Props {
   user: User;
@@ -68,15 +12,14 @@ const navItems = [
   { to: '/content',   icon: '📣', label: 'Hub de contenu'  },
   { to: '/new',       icon: '✨', label: 'Nouveau plan'    },
   { to: '/knowledge', icon: '📚', label: 'Connaissances'   },
-  { to: '/agents',    icon: '🤖', label: 'Agents IA'       },
   { to: '/approvals', icon: '✋', label: 'Validations'     },
+  { to: '/config',    icon: '⚙️', label: 'Configuration'   },
 ];
 
 export default function Layout({ user, onLogout }: Props) {
   const location  = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [showTelegram, setShowTelegram] = useState(false);
 
   // Badge "validations en attente" — rafraîchi à chaque navigation + toutes les 30 s
   useEffect(() => {
@@ -166,14 +109,6 @@ export default function Layout({ user, onLogout }: Props) {
 
           <button
             className="layout-nav-item"
-            onClick={() => { setShowTelegram(true); closeSidebar(); }}
-          >
-            <span className="layout-nav-icon">💬</span>
-            Bot Telegram
-          </button>
-
-          <button
-            className="layout-nav-item"
             onClick={handleLogout}
           >
             <span className="layout-nav-icon">🚪</span>
@@ -187,7 +122,6 @@ export default function Layout({ user, onLogout }: Props) {
         <Outlet />
       </main>
 
-      {showTelegram && <TelegramModal onClose={() => setShowTelegram(false)} />}
     </div>
   );
 }

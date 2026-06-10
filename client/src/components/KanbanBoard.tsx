@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, DragEvent as ReactDragEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  KanbanState, KanbanCard, updateKanban, getAgents, assignCardToAgent,
+  KanbanState, KanbanCard, updateKanban, getAgents, assignPlatformToCard,
   getPlanRuns, Agent, AgentRun, RunStatus,
 } from '../api/client';
 
@@ -27,6 +27,11 @@ const COLORS: Record<string, string> = {
   Launch: '#ec4899',
   Growth: '#14b8a6',
 };
+
+const ASSIGNABLE_PLATFORMS = [
+  'linkedin', 'twitter', 'reddit', 'instagram', 'producthunt',
+  'hackernews', 'indiehackers', 'discord', 'slack', 'github',
+] as const;
 
 const PLATFORM_ICONS: Record<string, string> = {
   reddit: '🟠', twitter: '🐦', linkedin: '💼', instagram: '📸',
@@ -240,20 +245,21 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
     swipeDx.current     = 0;
   };
 
-  // ── Assignation à un agent ──
-  const handleAssign = async (card: KanbanCard, agent: Agent) => {
+  // ── Rédaction IA par plateforme (l'agent est géré côté serveur, invisible) ──
+  const handleAssign = async (card: KanbanCard, platform: string) => {
     setOpenAssign(null);
 
     // Run optimiste le temps que le serveur réponde
     const optimistic: AgentRun = {
-      id: `tmp-${Date.now()}`, agentId: agent.id, planId,
+      id: `tmp-${Date.now()}`, agentId: `platform:${platform}`, planId,
       cardId: card.id, cardTitle: card.title,
       status: 'running', result: null,
       startedAt: new Date().toISOString(), completedAt: null,
     };
     setRuns((prev) => [optimistic, ...prev]);
 
-    const res = await assignCardToAgent(agent.id, {
+    const res = await assignPlatformToCard({
+      platform,
       planId,
       cardId:          card.id,
       cardTitle:       card.title,
@@ -264,6 +270,8 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
 
     if (res.success && res.data) {
       setRuns((prev) => [res.data!, ...prev.filter((r) => r.id !== optimistic.id)]);
+      // L'agent a pu être créé à la volée : on rafraîchit la résolution des noms
+      getAgents().then((r) => { if (r.success && r.data) setAgents(r.data); });
     } else {
       setRuns((prev) => prev.filter((r) => r.id !== optimistic.id));
     }
@@ -361,41 +369,38 @@ export default function KanbanBoard({ planId, initialKanban }: Props) {
                       {run && (
                         run.status === 'awaiting_approval' ? (
                           <Link to="/approvals" className="kanban-run-badge run-awaiting_approval" onClick={(e) => e.stopPropagation()}>
-                            {PLATFORM_ICONS[runAgent?.platform ?? ''] ?? '🤖'} {runAgent?.name ?? 'Agent'}
+                            {PLATFORM_ICONS[runAgent?.platform ?? ''] ?? '✨'} Rédaction IA{runAgent ? ` (${runAgent.platform})` : ''}
                             {' · '}✋ À valider →
                           </Link>
                         ) : (
                           <div className={`kanban-run-badge run-${run.status}`}>
-                            {PLATFORM_ICONS[runAgent?.platform ?? ''] ?? '🤖'} {runAgent?.name ?? 'Agent'}
+                            {PLATFORM_ICONS[runAgent?.platform ?? ''] ?? '✨'} Rédaction IA{runAgent ? ` (${runAgent.platform})` : ''}
                             {' · '}{RUN_BADGES[run.status].icon} {RUN_BADGES[run.status].label}
                           </div>
                         )
                       )}
 
-                      {/* Assignation */}
-                      {agents.length > 0 && (!run || run.status === 'failed' || run.status === 'rejected') && (
+                      {/* Rédaction IA — choisir la plateforme cible */}
+                      {(!run || run.status === 'failed' || run.status === 'rejected') && (
                         <div className="kanban-assign-wrapper" onClick={(e) => e.stopPropagation()}>
                           <button
                             className="kanban-assign-btn"
                             onClick={() => setOpenAssign(openAssign === card.id ? null : card.id)}
                           >
-                            🤖 {run ? 'Réassigner' : 'Assigner à un agent'}
+                            ✨ {run ? 'Relancer la rédaction' : 'Rédiger via IA'}
                           </button>
 
                           {openAssign === card.id && (
                             <div className="kanban-assign-dropdown">
-                              <div className="kanban-assign-title">Choisir un agent</div>
-                              {agents.map((agent) => (
+                              <div className="kanban-assign-title">Pour quelle plateforme ?</div>
+                              {ASSIGNABLE_PLATFORMS.map((platform) => (
                                 <button
-                                  key={agent.id}
+                                  key={platform}
                                   className="kanban-assign-option"
-                                  onClick={() => handleAssign(card, agent)}
+                                  onClick={() => handleAssign(card, platform)}
                                 >
-                                  <span>{PLATFORM_ICONS[agent.platform] ?? '🤖'}</span>
-                                  <span className="kanban-assign-name">{agent.name}</span>
-                                  <span className={`kanban-mode-badge mode-${agent.approvalMode}`}>
-                                    {agent.approvalMode === 'auto' ? '⚡ auto' : '✋ validation'}
-                                  </span>
+                                  <span>{PLATFORM_ICONS[platform] ?? '🤖'}</span>
+                                  <span className="kanban-assign-name">{platform}</span>
                                 </button>
                               ))}
                             </div>

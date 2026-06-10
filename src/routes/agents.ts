@@ -120,6 +120,75 @@ router.get('/:id/runs', (req: Request, res: Response) => {
   res.json({ success: true, data: runs });
 });
 
+// ── POST /api/agents/assign-platform ─────────────────────────────────────────
+// Assigne une tâche Kanban à une PLATEFORME : l'agent correspondant est trouvé
+// ou créé silencieusement (le concept d'agent est invisible pour l'utilisateur,
+// seule la plateforme compte).
+router.post('/assign-platform', async (req: Request, res: Response) => {
+  const { platform, planId, cardId, cardTitle, cardDescription, cardCategory, cardEffort } = req.body as {
+    platform:        AgentPlatform;
+    planId:          string;
+    cardId:          string;
+    cardTitle:       string;
+    cardDescription: string;
+    cardCategory:    string;
+    cardEffort:      'low' | 'medium' | 'high';
+  };
+
+  const template = getCatalog().find((t) => t.platform === platform);
+  if (!template) {
+    return res.status(400).json({ success: false, error: `Unknown platform: ${platform}` });
+  }
+  if (!planId || !cardId || !cardTitle) {
+    return res.status(400).json({ success: false, error: 'planId, cardId and cardTitle are required' });
+  }
+
+  let agent = storage.getAgentsByUserId(req.user!.userId).find((a) => a.platform === platform);
+  if (!agent) {
+    // Mode hérité du réglage global (auto si tous les agents existants le sont)
+    const others = storage.getAgentsByUserId(req.user!.userId);
+    const mode: ApprovalMode = others.length > 0 && others.every((a) => a.approvalMode === 'auto') ? 'auto' : 'manual';
+    agent = {
+      id:           uuid(),
+      userId:       req.user!.userId,
+      name:         template.name,
+      platform,
+      apiKey:       '',
+      status:       'active',
+      approvalMode: mode,
+      lastRunAt:    null,
+      createdAt:    new Date().toISOString(),
+    };
+    storage.saveAgent(agent);
+  }
+
+  const run: AgentRun = {
+    id:          uuid(),
+    agentId:     agent.id,
+    planId,
+    cardId,
+    cardTitle,
+    status:      'running',
+    result:      null,
+    startedAt:   new Date().toISOString(),
+    completedAt: null,
+  };
+  storage.saveAgentRun(run);
+  storage.updateAgent(agent.id, { lastRunAt: run.startedAt });
+  res.status(202).json({ success: true, data: run });
+
+  const card = {
+    id: cardId, title: cardTitle,
+    description: cardDescription || '', category: cardCategory || 'General',
+    effort: (cardEffort || 'medium') as 'low' | 'medium' | 'high',
+    column: 'in_progress' as const, order: 0,
+    createdAt: new Date().toISOString(),
+  };
+  processAgentRun(run.id, agent, card, planId).catch((err: Error) => {
+    storage.updateRunStatus(run.id, 'failed', err.message);
+  });
+});
+
 // ── POST /api/agents/:id/runs ────────────────────────────────────────────────
 // Assigne une carte Kanban à l'agent et déclenche l'exécution
 router.post('/:id/runs', async (req: Request, res: Response) => {

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { storage } from '../services/storage';
 import { requireAuth } from '../middleware/auth';
 import { isAgentConfigured, runOnboardingTurn } from '../services/onboardingAgent';
+import { bootstrapKnowledgeFromProfile } from '../services/bootstrap';
 import {
   ApiResponse,
   AuthPayload,
@@ -101,10 +102,16 @@ function applyTurn(
   if (turn.completed && turn.profile) {
     session.status = 'completed';
     session.profile = turn.profile;
+    // La base de connaissances se remplit toute seule depuis le profil validé
+    try {
+      bootstrapKnowledgeFromProfile(session.userId, turn.profile as OnboardingProfileFull);
+    } catch { /* best-effort */ }
   }
   session.updatedAt = new Date().toISOString();
   storage.updateOnboardingSession(session);
 }
+
+type OnboardingProfileFull = import('../types').OnboardingProfile;
 
 // Send a user message (optionally with attached documents) and get the AI reply
 router.post('/:id/message', requireAuth, async (req: Request, res: Response) => {

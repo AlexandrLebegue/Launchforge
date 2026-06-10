@@ -17,11 +17,12 @@ router.post('/generate', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { platform, brief, tone, baseContent } = req.body as {
+  const { platform, brief, tone, baseContent, useNews } = req.body as {
     platform?: string;
     brief?: string;
     tone?: string;
     baseContent?: string;
+    useNews?: boolean;
   };
 
   if (!platform || typeof platform !== 'string') {
@@ -38,6 +39,7 @@ router.post('/generate', async (req: Request, res: Response) => {
       brief: brief.trim(),
       tone: typeof tone === 'string' ? tone : undefined,
       baseContent: typeof baseContent === 'string' && baseContent.trim() ? baseContent : undefined,
+      useNews: Boolean(useNews),
     });
     res.json({ success: true, data: result });
   } catch (err) {

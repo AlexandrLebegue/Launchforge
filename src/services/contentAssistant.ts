@@ -8,6 +8,7 @@
 
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import { storage } from './storage';
+import { webSearch } from './research';
 import { KnowledgeCategory } from '../types';
 
 export function isContentAssistantConfigured(): boolean {
@@ -87,6 +88,8 @@ export interface GenerateParams {
   tone?: string;
   /** Contenu existant à améliorer plutôt que créer de zéro */
   baseContent?: string;
+  /** Enrichir avec une recherche d'actualités web sur le sujet */
+  useNews?: boolean;
 }
 
 export async function generateContent(params: GenerateParams): Promise<GeneratedContent> {
@@ -106,6 +109,32 @@ export async function generateContent(params: GenerateParams): Promise<Generated
   if (company)   systemParts.push(`## Contexte entreprise\n${company}`);
   if (knowledge) systemParts.push(`## Base de connaissances de l'utilisateur (source de vérité — utilise ces informations en priorité)\n${knowledge}`);
   if (params.tone) systemParts.push(`Ton demandé : ${params.tone}`);
+
+  // Variabilité : même brief ≠ même post. On interdit les angles déjà
+  // utilisés et on impose un angle neuf à chaque génération.
+  const recentTitles = storage.getPostsByUserId(params.userId)
+    .slice(0, 15)
+    .map((p) => p.title)
+    .filter(Boolean);
+  if (recentTitles.length > 0 && !params.baseContent) {
+    systemParts.push(
+      `## Angles déjà utilisés (NE PAS répéter — trouve un angle réellement différent : autre accroche, autre format, autre bénéfice mis en avant)\n- ${recentTitles.join('\n- ')}`
+    );
+  }
+  systemParts.push(`Contexte temporel : nous sommes le ${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}. Chaque génération doit être unique.`);
+
+  // Actualités du web : ancrer le post dans l'actu du sujet
+  if (params.useNews && !params.baseContent) {
+    try {
+      const companyName = company.match(/Entreprise : ([^\n(]+)/)?.[1]?.trim() ?? '';
+      const snippets = await webSearch(`${params.brief.slice(0, 80)} ${companyName} actualité ${new Date().getFullYear()}`, 6);
+      if (snippets.length > 0) {
+        systemParts.push(
+          `## Actualités du web sur le sujet (résultats de recherche bruts — sers-t'en pour ancrer le post dans l'actualité, ne cite que ce qui est crédible)\n${snippets.map((s) => `- ${s.slice(0, 220)}`).join('\n')}`
+        );
+      }
+    } catch { /* la génération reste possible sans actus */ }
+  }
   systemParts.push(
     'Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni fences markdown :\n' +
     '{"title": "titre court du post (usage interne)", "content": "le contenu complet prêt à publier", "hashtags": ["hashtag", "sans", "le", "diese"]}\n' +

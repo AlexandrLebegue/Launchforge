@@ -9,7 +9,7 @@ import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
 import { markPublished } from '../services/postPublisher';
-import { syncPostsToCalendarInBackground } from '../services/calendarSync';
+import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { Post, PostStatus, Recurrence } from '../types';
 
 const router = Router();
@@ -56,6 +56,7 @@ router.post('/', (req: Request, res: Response) => {
     scheduledAt: body.scheduledAt || null,
     publishedAt: null,
     externalUrl: typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null,
+    imageUrl:    typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null,
     recurrence:  RECURRENCES.includes(body.recurrence as Recurrence) ? (body.recurrence as Recurrence) : 'none',
     autoPublish: body.autoPublish ? 1 : 0,
     publishError: null,
@@ -89,6 +90,9 @@ router.patch('/:id', (req: Request, res: Response) => {
   if (body.scheduledAt !== undefined) patch.scheduledAt = body.scheduledAt || null;
   if (body.externalUrl !== undefined) {
     patch.externalUrl = typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null;
+  }
+  if (body.imageUrl !== undefined) {
+    patch.imageUrl = typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null;
   }
   if (RECURRENCES.includes(body.recurrence as Recurrence)) patch.recurrence = body.recurrence as Recurrence;
   if (body.autoPublish !== undefined) {
@@ -179,6 +183,25 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
       error: err instanceof Error ? err.message : 'Sync failed',
     });
   }
+});
+
+// ── POST /api/posts/sync-calendar ────────────────────────────────────────────
+// Synchronise tous les posts programmés non encore présents dans le calendrier
+// personnel (bouton de la vue Frise).
+router.post('/sync-calendar', async (req: Request, res: Response) => {
+  if (!isComposioConfigured() || !isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+  const toSync = storage.getPostsByUserId(req.user!.userId)
+    .filter((p) => p.status === 'scheduled' && p.scheduledAt && !p.calendarSynced);
+  if (toSync.length === 0) {
+    return res.json({ success: true, data: { synced: 0, message: 'Tout est déjà synchronisé' } });
+  }
+  const ok = await syncPostsToCalendar(toSync);
+  if (!ok) {
+    return res.status(502).json({ success: false, error: 'La création des événements a échoué — vérifiez que Google Calendar est connecté sur Composio' });
+  }
+  res.json({ success: true, data: { synced: toSync.length } });
 });
 
 // ── DELETE /api/posts/:id ────────────────────────────────────────────────────

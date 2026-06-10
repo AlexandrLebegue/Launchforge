@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  generateCalendar,
+  generateCalendar, syncAllToCalendar,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 
@@ -74,6 +74,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
     status:      (post?.status ?? 'draft') as PostStatus,
     scheduledAt: toLocalInput(post?.scheduledAt ?? null),
     externalUrl: post?.externalUrl ?? '',
+    imageUrl:    post?.imageUrl ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
     autoPublish: Boolean(post?.autoPublish),
     impressions: post?.impressions ?? 0,
@@ -83,6 +84,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
     clicks:      post?.clicks ?? 0,
   });
   const [brief,      setBrief]      = useState('');
+  const [useNews,    setUseNews]    = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [syncing,    setSyncing]    = useState(false);
@@ -100,6 +102,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
       platform: form.platform,
       brief: brief.trim() || 'Améliore la clarté et l\'impact de ce contenu sans en changer le fond.',
       baseContent: improve ? form.content : undefined,
+      useNews,
     });
     setGenerating(false);
     if (res.success && res.data) {
@@ -154,6 +157,7 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
       status:      form.status,
       scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
       externalUrl: form.externalUrl.trim() || null,
+      imageUrl:    form.imageUrl.trim() || null,
       recurrence:  form.recurrence,
       autoPublish: form.autoPublish ? 1 : 0,
       impressions: Number(form.impressions) || 0,
@@ -222,6 +226,10 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
                 </button>
               )}
             </div>
+            <label className="ai-news-toggle">
+              <input type="checkbox" checked={useNews} onChange={(e) => setUseNews(e.target.checked)} />
+              📰 S'appuyer sur les actus du web (recherche en direct sur le sujet)
+            </label>
           </div>
 
           <label className="form-label-block">
@@ -234,6 +242,20 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
               placeholder="Le contenu du post — ou laissez l'assistant IA le rédiger…"
             />
             <span className="form-hint-inline">{form.content.length} caractères</span>
+          </label>
+
+          <label className="form-label-block">
+            🖼️ Image du post <span className="form-hint-inline">(URL d'un visuel hébergé — jointe à la publication)</span>
+            <input
+              className="form-input"
+              value={form.imageUrl}
+              onChange={(e) => set('imageUrl', e.target.value)}
+              placeholder="https://…/visuel.png"
+            />
+            {form.imageUrl.trim() && (
+              <img src={form.imageUrl.trim()} alt="aperçu" className="post-image-preview"
+                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            )}
           </label>
 
           <div className="post-editor-row">
@@ -454,7 +476,7 @@ function CalendarModal({ onClose, onGenerated }: {
 // Page principale
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'posts' | 'analytics';
+type Tab = 'posts' | 'timeline' | 'analytics';
 
 export default function ContentHubPage() {
   const [posts,    setPosts]    = useState<Post[]>([]);
@@ -463,6 +485,36 @@ export default function ContentHubPage() {
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [feedback,     setFeedback]     = useState('');
+  const [syncingCal,   setSyncingCal]   = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Arrivée depuis la génération du plan : accueil + brouillons à valider
+  useEffect(() => {
+    const drafts = searchParams.get('drafts');
+    if (drafts !== null) {
+      setFeedback(Number(drafts) > 0
+        ? `🎉 Votre plan est prêt — et ${drafts} idées de posts ont été rédigées et datées par l'IA (statut Brouillon). Relisez-les, ajustez, puis programmez-les.`
+        : '🎉 Votre plan est prêt ! Générez votre calendrier de contenu avec le bouton ci-dessus.');
+      setSearchParams({}, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSyncCalendar = async () => {
+    setSyncingCal(true);
+    const res = await syncAllToCalendar();
+    setSyncingCal(false);
+    if (res.success && res.data) {
+      setFeedback(res.data.synced > 0
+        ? `🗓️ ${res.data.synced} post(s) ajoutés à votre calendrier personnel.`
+        : `🗓️ ${res.data.message || 'Tout est déjà synchronisé.'}`);
+      load();
+    } else {
+      setFeedback(res.error === 'COMPOSIO_NOT_CONFIGURED'
+        ? '⚠️ Connectez Google Calendar sur Composio (vue Configuration) pour synchroniser votre agenda.'
+        : `⚠️ ${res.error || 'La synchronisation a échoué.'}`);
+    }
+  };
   const [statusFilter,   setStatusFilter]   = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [search,   setSearch]   = useState('');
@@ -606,10 +658,18 @@ export default function ContentHubPage() {
       {/* Tabs */}
       <div className="hub-tabs">
         <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>📝 Posts</button>
+        <button className={`hub-tab${tab === 'timeline' ? ' active' : ''}`} onClick={() => setTab('timeline')}>🕒 Frise</button>
         <button className={`hub-tab${tab === 'analytics' ? ' active' : ''}`} onClick={() => setTab('analytics')}>📊 Analyse</button>
       </div>
 
-      {tab === 'posts' ? (
+      {tab === 'timeline' ? (
+        <TimelineView
+          posts={posts}
+          onOpen={(p) => setEditing(p)}
+          onSync={handleSyncCalendar}
+          syncing={syncingCal}
+        />
+      ) : tab === 'posts' ? (
         <>
           {/* Filtres */}
           <div className="kanban-toolbar">
@@ -765,6 +825,101 @@ export default function ContentHubPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vue Frise chronologique — les posts dans le temps, avec la date courante
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TimelineView({ posts, onOpen, onSync, syncing }: {
+  posts: Post[];
+  onOpen: (p: Post) => void;
+  onSync: () => void;
+  syncing: boolean;
+}) {
+  const now = new Date();
+  const todayKey = now.toDateString();
+
+  // Posts datés : programmés + brouillons datés (à valider), passés récents inclus
+  const dated = posts
+    .filter((p) => p.scheduledAt && (p.status === 'scheduled' || p.status === 'draft'))
+    .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime());
+
+  if (dated.length === 0) {
+    return (
+      <div className="plan-empty">
+        <span className="plan-empty-icon">🕒</span>
+        <h2>Aucun post daté</h2>
+        <p>Programmez des posts (ou générez votre calendrier) pour les voir apparaître sur la frise.</p>
+      </div>
+    );
+  }
+
+  // Groupement par jour
+  const groups: { key: string; date: Date; items: Post[] }[] = [];
+  for (const p of dated) {
+    const d = new Date(p.scheduledAt!);
+    const key = d.toDateString();
+    const existing = groups.find((g) => g.key === key);
+    if (existing) existing.items.push(p);
+    else groups.push({ key, date: d, items: [p] });
+  }
+
+  // Position du marqueur « Aujourd'hui »
+  const todayIndex = groups.findIndex((g) => g.date.getTime() >= new Date(todayKey).getTime());
+
+  return (
+    <div className="timeline-wrap">
+      <div className="timeline-toolbar">
+        <span className="form-hint-inline">
+          {dated.filter((p) => new Date(p.scheduledAt!) >= now).length} publication(s) à venir
+          {' · '}les brouillons datés apparaissent en pointillés (à valider)
+        </span>
+        <button className="btn btn-ghost" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
+          {syncing ? '⏳ Synchronisation…' : '🗓️ Synchroniser Google Calendar'}
+        </button>
+      </div>
+
+      <div className="timeline">
+        {groups.map((g, gi) => {
+          const isPast = g.date < new Date(todayKey);
+          const isToday = g.key === todayKey;
+          return (
+            <div key={g.key}>
+              {gi === (todayIndex === -1 ? groups.length : todayIndex) && !isToday && (
+                <div className="timeline-today"><span>Aujourd\'hui — {now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
+              )}
+              <div className={`timeline-day${isPast ? ' past' : ''}${isToday ? ' today' : ''}`}>
+                <div className="timeline-date">
+                  <span className="timeline-dot" />
+                  {isToday ? '📍 Aujourd\'hui — ' : ''}
+                  {g.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </div>
+                <div className="timeline-items">
+                  {g.items.map((p) => (
+                    <button key={p.id} className={`timeline-item${p.status === 'draft' ? ' draft' : ''}`} onClick={() => onOpen(p)}>
+                      <span className="timeline-time">
+                        {new Date(p.scheduledAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="timeline-platform">{platformIcon(p.platform)}</span>
+                      <span className="timeline-title">{p.title || '(sans titre)'}</span>
+                      {p.status === 'draft' && <span className="post-status post-status-draft">✏️ à valider</span>}
+                      {Boolean(p.autoPublish) && p.status === 'scheduled' && <span className="chip chip-auto">⚡ auto</span>}
+                      {Boolean(p.calendarSynced) && <span title="Dans votre agenda">🗓️</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {todayIndex === -1 && (
+          <div className="timeline-today"><span>Aujourd\'hui — tout est passé, programmez la suite !</span></div>
+        )}
+      </div>
     </div>
   );
 }

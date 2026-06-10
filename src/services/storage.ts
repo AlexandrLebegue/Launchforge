@@ -236,13 +236,13 @@ export class Storage {
       .prepare(
         `INSERT INTO posts
            (id, userId, platform, title, content, status, scheduledAt, publishedAt,
-            externalUrl, recurrence, autoPublish, publishError, calendarSynced,
+            externalUrl, imageUrl, recurrence, autoPublish, publishError, calendarSynced,
             impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.platform, post.title, post.content, post.status,
-        post.scheduledAt, post.publishedAt, post.externalUrl, post.recurrence,
+        post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.recurrence,
         post.autoPublish, post.publishError, post.calendarSynced,
         post.impressions, post.likes, post.comments, post.shares, post.clicks,
         post.createdAt, post.updatedAt
@@ -252,7 +252,7 @@ export class Storage {
   updatePost(id: string, patch: Partial<Post>): void {
     const allowed: (keyof Post)[] = [
       'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
-      'externalUrl', 'recurrence', 'autoPublish', 'publishError', 'calendarSynced',
+      'externalUrl', 'imageUrl', 'recurrence', 'autoPublish', 'publishError', 'calendarSynced',
       'impressions', 'likes', 'comments', 'shares', 'clicks',
     ];
     const fields: string[] = [];
