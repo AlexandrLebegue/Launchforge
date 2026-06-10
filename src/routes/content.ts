@@ -8,6 +8,7 @@ import { requireAuth } from '../middleware/auth';
 import { generateContent, isContentAssistantConfigured } from '../services/contentAssistant';
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
 import { syncPostsToCalendarInBackground } from '../services/calendarSync';
+import { runPostChatTurn, PostChatMessage } from '../services/postAssistant';
 
 const router = Router();
 router.use(requireAuth);
@@ -88,6 +89,49 @@ router.post('/calendar', async (req: Request, res: Response) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Generation failed';
     res.status(msg === 'AI_NOT_CONFIGURED' ? 503 : 502).json({ success: false, error: msg });
+  }
+});
+
+// ── POST /api/content/chat/stream ────────────────────────────────────────────
+// Assistant conversationnel de création de posts (SSE) :
+//   data: {"type":"delta","text":…}   — texte de la réponse en continu
+//   data: {"type":"action","text":…}  — recherche web effectuée
+//   data: {"type":"saved","postId":…,"title":…} — post enregistré dans le Hub
+//   data: {"type":"done","reply":…}   — fin du tour
+//   data: {"type":"error","error":…}
+// Sans état côté serveur : le client envoie l'historique complet.
+router.post('/chat/stream', async (req: Request, res: Response) => {
+  if (!isContentAssistantConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+
+  const raw = (req.body as { messages?: unknown }).messages;
+  const history: PostChatMessage[] = Array.isArray(raw)
+    ? raw
+        .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string')
+        .map((m: any) => ({ role: m.role, text: String(m.text).slice(0, 8000) }))
+    : [];
+
+  if (history.length === 0 || history[history.length - 1].role !== 'user') {
+    return res.status(400).json({ success: false, error: 'messages must end with a user message' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (payload: unknown) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  try {
+    const result = await runPostChatTurn(req.user!.userId, history, send);
+    send({ type: 'done', reply: result.reply, actions: result.actions, savedPosts: result.savedPosts });
+  } catch (err) {
+    send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });
+  } finally {
+    res.end();
   }
 });
 

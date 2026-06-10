@@ -686,6 +686,83 @@ export async function syncAllToCalendar(): Promise<ApiResponse<{ synced: number;
   return request('/posts/sync-calendar', { method: 'POST' });
 }
 
+// ── Assistant de création de posts (chat) ────────────────────────────────────
+
+export interface PostChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  actions?: string[];
+}
+
+export interface PostChatHandlers {
+  onDelta: (text: string) => void;
+  onAction: (text: string) => void;
+  onSaved: (postId: string, title: string) => void;
+  onDone: (reply: string, actions: string[]) => void;
+  onError: (error: string) => void;
+}
+
+/** Chat de création de posts — SSE (deltas, recherches web, posts enregistrés) */
+export async function streamPostChat(
+  messages: { role: 'user' | 'assistant'; text: string }[],
+  handlers: PostChatHandlers
+): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  let res: globalThis.Response;
+  try {
+    res = await fetch(`${API_BASE}/content/chat/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ messages }),
+    });
+  } catch {
+    handlers.onError('Connexion au serveur impossible');
+    return;
+  }
+
+  if (!res.ok || !res.body) {
+    try {
+      const json = await res.json();
+      handlers.onError(json.error || `Erreur serveur (${res.status})`);
+    } catch {
+      handlers.onError(`Erreur serveur (${res.status})`);
+    }
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finished = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+
+    for (const event of events) {
+      const line = event.split('\n').find((l) => l.startsWith('data: '));
+      if (!line) continue;
+      try {
+        const payload = JSON.parse(line.slice(6));
+        if (payload.type === 'delta') handlers.onDelta(payload.text);
+        else if (payload.type === 'action') handlers.onAction(payload.text);
+        else if (payload.type === 'saved') handlers.onSaved(payload.postId, payload.title);
+        else if (payload.type === 'done') { finished = true; handlers.onDone(payload.reply, payload.actions || []); }
+        else if (payload.type === 'error') { finished = true; handlers.onError(payload.error); }
+      } catch { /* chunk malformé — ignoré */ }
+    }
+  }
+
+  if (!finished) handlers.onError('La connexion a été interrompue — réessayez.');
+}
+
 // ── Telegram ──────────────────────────────────────────────────────────────────
 
 /** Génère un code de liaison à envoyer au bot Telegram (valable 10 min) */

@@ -3812,3 +3812,71 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   padding: 2px 10px;
   border-radius: 999px;
 }
+
+/* ============================================================
+   ASSISTANT DE CRÉATION DE POSTS (tiroir + bouton flottant)
+   ============================================================ */
+.assistant-fab {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 90;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  font-size: 1.5rem;
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-glow), 0 4px 20px rgba(0,0,0,0.4);
+  cursor: pointer;
+  transition: var(--transition-bounce);
+}
+.assistant-fab:hover { transform: scale(1.08) translateY(-2px); }
+
+.assistant-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(4, 5, 10, 0.5);
+  backdrop-filter: blur(3px);
+  animation: fadeIn 0.2s ease;
+}
+.assistant-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 120;
+  width: min(480px, 96vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  background: var(--color-surface-solid);
+  border-left: 1px solid var(--color-border);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.5);
+  animation: slideInRight 0.25s ease;
+}
+.assistant-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.assistant-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+}
+.assistant-header .modal-close { margin-left: auto; }
+.assistant-header .btn { margin-left: auto; }
+.assistant-header .btn + .modal-close { margin-left: 0; }
+.assistant-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+.assistant-messages .chat-bubble { max-width: 92%; }

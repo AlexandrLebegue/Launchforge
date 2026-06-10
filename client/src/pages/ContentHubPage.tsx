@@ -5,6 +5,7 @@ import {
   generateCalendar, syncAllToCalendar, getPlans,
   Post, PostStatus, Recurrence,
 } from '../api/client';
+import PostAssistant from '../components/PostAssistant';
 
 export const PLATFORMS: { value: string; label: string; icon: string }[] = [
   { value: 'linkedin',     label: 'LinkedIn',      icon: '💼' },
@@ -485,6 +486,7 @@ export default function ContentHubPage() {
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   const [feedback,     setFeedback]     = useState('');
   const [syncingCal,   setSyncingCal]   = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -630,6 +632,9 @@ export default function ContentHubPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost" onClick={() => setShowAssistant(true)} title="Chat IA : idées, recherche web, rédaction, enregistrement direct">
+            💬 Assistant
+          </button>
           <button className="btn btn-ghost" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
             🗓️ Générer mon calendrier
           </button>
@@ -831,6 +836,18 @@ export default function ContentHubPage() {
           onSaved={handleSaved}
         />
       )}
+      {!showAssistant && (
+        <button
+          className="assistant-fab"
+          onClick={() => setShowAssistant(true)}
+          title="Assistant de création de posts"
+        >💬</button>
+      )}
+      <PostAssistant
+        open={showAssistant}
+        onClose={() => setShowAssistant(false)}
+        onPostsSaved={() => { load(); setFeedback('✨ L\'assistant a enregistré un post — il est dans la liste ci-dessous.'); }}
+      />
       {showCalendar && (
         <CalendarModal
           onClose={() => setShowCalendar(false)}
