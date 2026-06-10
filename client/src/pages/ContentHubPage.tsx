@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
+  generateCalendar,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 
@@ -312,6 +313,119 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Modal — génération du calendrier éditorial
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CALENDAR_PLATFORMS = ['linkedin', 'twitter', 'instagram', 'facebook', 'reddit', 'blog', 'newsletter'];
+
+function CalendarModal({ onClose, onGenerated }: {
+  onClose: () => void;
+  onGenerated: (posts: Post[]) => void;
+}) {
+  const [weeks,        setWeeks]        = useState(2);
+  const [postsPerWeek, setPostsPerWeek] = useState(3);
+  const [platforms,    setPlatforms]    = useState<Set<string>>(new Set(['linkedin', 'twitter']));
+  const [startDate,    setStartDate]    = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [busy,  setBusy]  = useState(false);
+  const [error, setError] = useState('');
+
+  const togglePlatform = (p: string) =>
+    setPlatforms((prev) => {
+      const next = new Set(prev);
+      next.has(p) ? next.delete(p) : next.add(p);
+      return next;
+    });
+
+  const generate = async () => {
+    if (platforms.size === 0) { setError('Choisissez au moins une plateforme.'); return; }
+    setBusy(true);
+    setError('');
+    const res = await generateCalendar({
+      weeks,
+      postsPerWeek,
+      platforms: [...platforms],
+      startDate: new Date(`${startDate}T09:00:00`).toISOString(),
+    });
+    setBusy(false);
+    if (res.success && res.data) {
+      onGenerated(res.data);
+    } else {
+      setError(res.error === 'AI_NOT_CONFIGURED'
+        ? 'IA non configurée sur le serveur (OPENROUTER_API_KEY).'
+        : res.error || 'La génération a échoué — réessayez.');
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>🗓️ Générer mon calendrier</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="post-editor">
+          <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+            L'IA rédige et programme un lot de posts complets à partir de votre
+            plan de lancement et de votre base de connaissances — progression
+            cohérente : teasing → valeur → preuve sociale → conversion.
+          </p>
+
+          <div className="post-editor-row">
+            <label className="form-label-block">
+              Durée
+              <select className="form-input" value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
+                {[1, 2, 3, 4].map((w) => <option key={w} value={w}>{w} semaine{w > 1 ? 's' : ''}</option>)}
+              </select>
+            </label>
+            <label className="form-label-block">
+              Posts par semaine
+              <select className="form-input" value={postsPerWeek} onChange={(e) => setPostsPerWeek(Number(e.target.value))}>
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <label className="form-label-block">
+            Date de début
+            <input type="date" className="form-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </label>
+
+          <label className="form-label-block">
+            Plateformes
+            <div className="calendar-platforms">
+              {CALENDAR_PLATFORMS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`knowledge-cat${platforms.has(p) ? ' active' : ''}`}
+                  onClick={() => togglePlatform(p)}
+                >
+                  {platformIcon(p)} {platformLabel(p)}
+                </button>
+              ))}
+            </div>
+          </label>
+
+          {error && <div className="chat-error">{error}</div>}
+
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Annuler</button>
+            <button className="btn btn-primary" onClick={generate} disabled={busy}>
+              {busy ? '⏳ Rédaction de vos posts… (≈ 1 min)' : `✨ Générer ${Math.min(weeks * postsPerWeek, 20)} posts`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page principale
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -322,6 +436,8 @@ export default function ContentHubPage() {
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [feedback,     setFeedback]     = useState('');
   const [statusFilter,   setStatusFilter]   = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [search,   setSearch]   = useState('');
@@ -419,8 +535,17 @@ export default function ContentHubPage() {
           <h1>📣 Hub de contenu</h1>
           <p>Planifiez, rédigez avec l'IA, publiez et suivez les performances de vos posts.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouveau post</button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
+            🗓️ Générer mon calendrier
+          </button>
+          <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouveau post</button>
+        </div>
       </div>
+
+      {feedback && (
+        <div className="approval-feedback" onClick={() => setFeedback('')}>{feedback}</div>
+      )}
 
       {/* Stats */}
       <div className="dashboard-stats">
@@ -594,6 +719,17 @@ export default function ContentHubPage() {
           post={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
+        />
+      )}
+      {showCalendar && (
+        <CalendarModal
+          onClose={() => setShowCalendar(false)}
+          onGenerated={(created) => {
+            setShowCalendar(false);
+            setPosts((prev) => [...created, ...prev]);
+            setTab('posts');
+            setFeedback(`✅ ${created.length} posts rédigés et programmés — relisez-les dans la liste ci-dessous avant publication.`);
+          }}
         />
       )}
     </div>

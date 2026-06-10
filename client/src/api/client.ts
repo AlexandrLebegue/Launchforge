@@ -644,6 +644,16 @@ export async function generateContent(data: {
   return request('/content/generate', { method: 'POST', body: JSON.stringify(data) });
 }
 
+/** Génère un calendrier éditorial complet (posts rédigés + programmés) */
+export async function generateCalendar(data: {
+  weeks: number;
+  postsPerWeek: number;
+  platforms: string[];
+  startDate?: string;
+}): Promise<ApiResponse<Post[]>> {
+  return request('/content/calendar', { method: 'POST', body: JSON.stringify(data) });
+}
+
 export async function assignCardToAgent(
   agentId: string,
   data: {

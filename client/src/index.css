@@ -3475,3 +3475,9 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   width: 100%;
   color: var(--color-text);
 }
+
+.calendar-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

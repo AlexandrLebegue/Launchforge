@@ -169,3 +169,24 @@ describe('Content assistant', () => {
     expect([400, 503]).toContain(res.status);
   });
 });
+
+describe('Calendrier éditorial', () => {
+  it('retourne 503 sans clé IA', async () => {
+    const res = await request(app)
+      .post('/api/content/calendar')
+      .set(auth())
+      .send({ weeks: 2, postsPerWeek: 3, platforms: ['linkedin'] });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('AI_NOT_CONFIGURED');
+  });
+
+  it('rejette une date de début invalide', async () => {
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    const res = await request(app)
+      .post('/api/content/calendar')
+      .set(auth())
+      .send({ startDate: 'pas-une-date' });
+    delete process.env.OPENROUTER_API_KEY;
+    expect(res.status).toBe(400);
+  });
+});
