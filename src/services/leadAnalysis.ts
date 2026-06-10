@@ -9,7 +9,7 @@ import { runMcpTask, guardedReply, platformKeywords, isComposioConfigured } from
 import { buildCompanyContext, buildKnowledgeContext } from './contentAssistant';
 import { Contact, ContactType, LeadCandidate } from '../types';
 
-const MAIL_KEYWORDS = ['gmail', 'mail', 'outlook', 'email'];
+export const MAIL_KEYWORDS = ['gmail', 'mail', 'outlook', 'email'];
 
 const CANDIDATE_JSON_SPEC = `Réponds UNIQUEMENT avec un objet JSON :
 {"candidates": [{

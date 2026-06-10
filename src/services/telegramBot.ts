@@ -16,9 +16,9 @@ import { storage } from './storage';
 import { chatComplete, ChatMessage, ToolDef, isAIConfigured } from './aiClient';
 import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
-import { draftEmailForContact, sendEmailViaComposio } from './leadAnalysis';
+import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
 import { markPublished } from './postPublisher';
-import { publishViaComposio, isComposioConfigured } from './composio';
+import { publishViaComposio, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { AgentRun, Post, Reminder } from '../types';
 
@@ -155,7 +155,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: 'send_email_to_contact',
-    description: 'Rédige (IA) puis ENVOIE un email à un contact existant depuis la boîte mail de l\'utilisateur. Demande TOUJOURS confirmation explicite avant d\'appeler cet outil, en montrant à qui et dans quel but.',
+    description: 'Rédige (IA, avec le contexte du contact) puis ENVOIE un email à un contact du carnet d\'adresses. Pour une adresse email directe, utilise send_email. Demande TOUJOURS confirmation explicite avant d\'appeler cet outil, en montrant à qui et dans quel but.',
     parameters: {
       type: 'object',
       properties: {
@@ -163,6 +163,29 @@ const TOOLS: ToolDef[] = [
         goal: { type: 'string', description: 'Objectif de l\'email' },
       },
       required: ['contactName', 'goal'],
+    },
+  },
+  {
+    name: 'send_email',
+    description: 'ENVOIE un email à N\'IMPORTE QUELLE adresse depuis la boîte mail de l\'utilisateur. Rédige d\'abord l\'objet et le corps DANS le chat, fais-les valider explicitement par l\'utilisateur, puis appelle cet outil avec le texte validé tel quel.',
+    parameters: {
+      type: 'object',
+      properties: {
+        to:      { type: 'string', description: 'Adresse email du destinataire' },
+        subject: { type: 'string', description: 'Objet validé par l\'utilisateur' },
+        body:    { type: 'string', description: 'Corps validé par l\'utilisateur (texte simple)' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  },
+  {
+    name: 'read_emails',
+    description: 'Lit la boîte mail de l\'utilisateur via Composio : derniers emails reçus, ou recherche ciblée. Pour « lis mes mails », « des nouvelles de X ? », « j\'ai reçu quoi ? ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Recherche optionnelle (expéditeur, sujet, mot-clé) — vide pour les plus récents' },
+      },
     },
   },
   {
@@ -351,6 +374,38 @@ async function executeTool(userId: string, _chatId: string, name: string, args: 
       return `Échec d'envoi : ${result.replace(/^ECHEC:\s*/i, '')}\n\nBrouillon préparé :\nObjet : ${draft.subject}\n${draft.body.slice(0, 800)}`;
     }
 
+    case 'send_email': {
+      const to = String(args.to || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return 'ERREUR : adresse email invalide.';
+      const subject = String(args.subject || '').trim().slice(0, 200);
+      const body = String(args.body || '').trim();
+      if (!subject || !body) return 'ERREUR : rédige d\'abord l\'objet et le corps, fais-les valider, puis rappelle cet outil.';
+      if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Gmail depuis la vue Configuration.';
+      const result = await sendEmailViaComposio(to, subject, body);
+      if (result.trim().toUpperCase().startsWith('OK')) {
+        return `Email envoyé à ${to}.\nObjet : ${subject}`;
+      }
+      return `Échec d'envoi : ${result.replace(/^ECHEC:\s*/i, '')}`;
+    }
+
+    case 'read_emails': {
+      if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — connectez Gmail depuis la vue Configuration pour lire la boîte mail.';
+      const query = String(args.query || '').trim();
+      const result = await runMcpTask(
+        MAIL_KEYWORDS,
+        `Tu es l'assistant boîte mail de l'utilisateur. Tu disposes de ses outils Gmail/Outlook via Composio.
+Mission : récupère ${query ? `les emails correspondant à « ${query} »` : 'les 10 derniers emails reçus'} avec les outils de listing/recherche, puis présente-les en liste courte : expéditeur — objet — date — l'essentiel en une ligne.
+Ne fabrique JAMAIS d'emails : uniquement ce que les outils retournent réellement. Si la lecture échoue, réponds "ERREUR :" avec la raison.`,
+        query ? `Cherche et résume les emails : ${query}` : 'Liste et résume mes derniers emails reçus.',
+        ['list', 'fetch', 'search', 'get', 'thread'],
+      );
+      // Anti-hallucination : un résumé sans le moindre appel d'outil réussi est inventé
+      if (result.okCalls === 0) {
+        return `ERREUR : impossible d'interroger la boîte mail — ${result.reply.replace(/^ERREUR\s*:\s*/i, '').slice(0, 300) || 'vérifiez que Gmail est connecté (vue Configuration)'}`;
+      }
+      return result.reply;
+    }
+
     case 'set_reminder': {
       const due = new Date(String(args.dueAt || ''));
       if (Number.isNaN(due.getTime())) return 'ERREUR : date invalide (attendu ISO 8601).';
@@ -386,7 +441,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), envoi d'emails, rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
@@ -442,6 +497,8 @@ Tu peux me demander par exemple :
 • « Écris un post LinkedIn sur [sujet] »
 • « Cherche une actu de mon secteur et fais un post dessus »
 • « Envoie un mail à Marie pour proposer une démo »
+• « Envoie un mail à contact@exemple.com »
+• « Lis mes derniers mails »
 • « Rappelle-moi demain 9h de relancer les leads »
 
 /reset — repartir de zéro · /aide — ce message`;
