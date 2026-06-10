@@ -108,3 +108,45 @@ describe('Contacts', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('Scan des réactions de post', () => {
+  it('valide le post avant la config Composio', async () => {
+    // Post sans URL externe → 400 explicite
+    const post = await request(app)
+      .post('/api/posts')
+      .set(auth())
+      .send({ platform: 'linkedin', title: 'Post sans URL', status: 'published' });
+    const noUrl = await request(app)
+      .post('/api/contacts/scan-post')
+      .set(auth())
+      .send({ postId: post.body.data.id });
+    expect(noUrl.status).toBe(400);
+
+    // Post avec URL mais sans Composio → 503
+    await request(app)
+      .patch(`/api/posts/${post.body.data.id}`)
+      .set(auth())
+      .send({ externalUrl: 'https://linkedin.com/posts/xyz' });
+    const noComposio = await request(app)
+      .post('/api/contacts/scan-post')
+      .set(auth())
+      .send({ postId: post.body.data.id });
+    expect(noComposio.status).toBe(503);
+    expect(noComposio.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
+  });
+
+  it('refuse le post d\'un autre utilisateur', async () => {
+    const other = await request(app).post('/api/auth/register').send({
+      email: 'scanpost-other@launchforge.dev', password: 'password123', name: 'Other',
+    });
+    const post = await request(app)
+      .post('/api/posts')
+      .set(auth())
+      .send({ platform: 'twitter', title: 'privé', status: 'published', externalUrl: 'https://x.com/u/status/9' });
+    const res = await request(app)
+      .post('/api/contacts/scan-post')
+      .set({ Authorization: `Bearer ${other.body.data.token}` })
+      .send({ postId: post.body.data.id });
+    expect(res.status).toBe(404);
+  });
+});

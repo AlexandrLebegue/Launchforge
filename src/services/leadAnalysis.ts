@@ -5,7 +5,7 @@
  */
 
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
-import { runMcpTask, isComposioConfigured } from './composio';
+import { runMcpTask, platformKeywords, isComposioConfigured } from './composio';
 import { buildCompanyContext, buildKnowledgeContext } from './contentAssistant';
 import { Contact, ContactType, LeadCandidate } from '../types';
 
@@ -92,6 +92,32 @@ Ignore newsletters, notifications automatiques, spam et emails envoyés par l'ut
 
 ${CANDIDATE_JSON_SPEC}`,
     'Scanne ma boîte de réception et identifie les personnes les plus intéressées (prospects, clients, partenaires potentiels).',
+  );
+
+  return parseCandidates(reply);
+}
+
+/**
+ * Scanne les réactions d'un post publié (likes + commentaires) via les outils
+ * Composio de la plateforme et en extrait les personnes intéressées.
+ */
+export async function scanPostEngagement(
+  userId: string,
+  platform: string,
+  externalUrl: string,
+  title: string,
+): Promise<LeadCandidate[]> {
+  const company = buildCompanyContext(userId);
+
+  const reply = await runMcpTask(
+    platformKeywords(platform),
+    `Tu es un analyste commercial avec accès aux outils ${platform} de l'utilisateur via Composio.
+Mission : retrouve le post indiqué (via son URL/identifiant), récupère ses COMMENTAIRES et, si les outils le permettent, la liste des personnes qui ont liké/réagi ou repartagé. Évalue ensuite chaque personne.
+Pondération : un commentaire avec question ou besoin exprimé pèse bien plus qu'un like ; un like seul vaut au mieux 30-45 ; un repartage avec texte 50-70. Regroupe les signaux d'une même personne (like + commentaire = score renforcé).
+Ignore les bots, les comptes spam et les commentaires purement négatifs.${company ? `\n\n## L'entreprise de l'utilisateur\n${company}` : ''}
+
+${CANDIDATE_JSON_SPEC}`,
+    `Analyse les réactions de ce post ${platform} et identifie les personnes les plus intéressées :\nURL : ${externalUrl}\nTitre (indice) : ${title || '—'}`,
   );
 
   return parseCandidates(reply);

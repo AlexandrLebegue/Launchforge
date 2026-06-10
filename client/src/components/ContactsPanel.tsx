@@ -1,9 +1,10 @@
 import { useState, useEffect, FormEvent } from 'react';
 import {
   getContacts, createContact, updateContact, deleteContact,
-  analyzeLeads, scanInbox, draftContactEmail, sendContactEmail,
-  Contact, ContactType, LeadCandidate,
+  analyzeLeads, scanInbox, scanPost, getPosts, draftContactEmail, sendContactEmail,
+  Contact, ContactType, LeadCandidate, Post,
 } from '../api/client';
+import { platformIcon, platformLabel } from '../pages/ContentHubPage';
 
 const TYPE_META: Record<ContactType, { label: string; icon: string; cls: string }> = {
   prospect: { label: 'Prospect',   icon: '🎯', cls: 'contact-type-prospect' },
@@ -111,8 +112,16 @@ function ContactEditor({ contact, onClose, onSaved }: {
 // Modal — analyse IA (texte collé ou scan boîte mail)
 // ─────────────────────────────────────────────────────────────────────────────
 
+type AnalyzeMode = 'paste' | 'inbox' | 'post';
+
+const MODAL_TITLES: Record<AnalyzeMode, string> = {
+  paste: '🧠 Analyser des messages',
+  inbox: '📥 Scan de la boîte mail',
+  post:  '💬 Réactions d\'un post',
+};
+
 function AnalyzeModal({ mode, onClose, onImported }: {
-  mode: 'paste' | 'inbox';
+  mode: AnalyzeMode;
   onClose: () => void;
   onImported: (contacts: Contact[]) => void;
 }) {
@@ -123,22 +132,49 @@ function AnalyzeModal({ mode, onClose, onImported }: {
   const [candidates, setCandidates] = useState<LeadCandidate[] | null>(null);
   const [selected,   setSelected]   = useState<Set<number>>(new Set());
   const [importing,  setImporting]  = useState(false);
+  // mode 'post' : sélection du post publié à scanner
+  const [posts,        setPosts]        = useState<Post[] | null>(null);
+  const [scannedPost,  setScannedPost]  = useState<Post | null>(null);
+
+  const handleCandidates = (res: { success: boolean; data?: LeadCandidate[]; error?: string }, notConfiguredMsg: string) => {
+    setBusy(false);
+    if (res.success && res.data) {
+      setCandidates(res.data);
+      setSelected(new Set(res.data.map((_, i) => i)));
+    } else {
+      setError(res.error === 'COMPOSIO_NOT_CONFIGURED' ? notConfiguredMsg : res.error || 'Le scan a échoué.');
+    }
+  };
 
   useEffect(() => {
     if (mode === 'inbox') {
-      scanInbox().then((res) => {
-        setBusy(false);
+      scanInbox().then((res) => handleCandidates(
+        res,
+        'Boîte mail non connectée : configurez COMPOSIO_MCP_URL côté serveur et connectez Gmail/Outlook sur dashboard.composio.dev.',
+      ));
+    }
+    if (mode === 'post') {
+      getPosts().then((res) => {
         if (res.success && res.data) {
-          setCandidates(res.data);
-          setSelected(new Set(res.data.map((_, i) => i)));
+          setPosts(res.data.filter((p) => p.status === 'published' && p.externalUrl));
         } else {
-          setError(res.error === 'COMPOSIO_NOT_CONFIGURED'
-            ? 'Boîte mail non connectée : configurez COMPOSIO_MCP_URL côté serveur et connectez Gmail/Outlook sur dashboard.composio.dev.'
-            : res.error || 'Le scan a échoué.');
+          setPosts([]);
         }
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  const scanSelectedPost = async (post: Post) => {
+    setScannedPost(post);
+    setBusy(true);
+    setError('');
+    const res = await scanPost(post.id);
+    handleCandidates(
+      res,
+      `Plateforme non connectée : configurez COMPOSIO_MCP_URL et connectez ${platformLabel(post.platform)} sur dashboard.composio.dev.`,
+    );
+  };
 
   const analyze = async () => {
     if (!text.trim()) { setError('Collez des messages à analyser.'); return; }
@@ -174,7 +210,11 @@ function AnalyzeModal({ mode, onClose, onImported }: {
         email: c.email,
         company: c.company,
         type: c.suggestedType,
-        source: mode === 'inbox' ? 'boîte mail' : source,
+        source: mode === 'inbox'
+          ? 'boîte mail'
+          : mode === 'post'
+            ? `réactions ${scannedPost ? platformLabel(scannedPost.platform) : 'post'}`
+            : source,
         interestScore: c.score,
         interestSummary: c.summary,
         lastInteraction: c.excerpt || null,
@@ -189,12 +229,52 @@ function AnalyzeModal({ mode, onClose, onImported }: {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box modal-box-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{mode === 'inbox' ? '📥 Scan de la boîte mail' : '🧠 Analyser des messages'}</h2>
+          <h2>{MODAL_TITLES[mode]}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         {candidates === null ? (
-          mode === 'paste' ? (
+          mode === 'post' ? (
+            <div className="post-editor">
+              {busy ? (
+                <div className="loading">⏳ Lecture des likes et commentaires de « {scannedPost?.title || 'post'} » via Composio…</div>
+              ) : posts === null ? (
+                <div className="loading">⏳ Chargement de vos posts…</div>
+              ) : posts.length === 0 ? (
+                <>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                    Aucun post publié avec une URL renseignée. Ouvrez un post publié dans le
+                    Hub de contenu et ajoutez son URL (section métriques) pour pouvoir scanner ses réactions.
+                  </p>
+                  <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Fermer</button></div>
+                </>
+              ) : (
+                <>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                    Choisissez le post dont vous voulez analyser les likes et commentaires :
+                  </p>
+                  <div className="candidate-list">
+                    {posts.map((p) => (
+                      <button key={p.id} type="button" className="candidate-row post-pick" onClick={() => scanSelectedPost(p)}>
+                        <span style={{ fontSize: '1.1rem' }}>{platformIcon(p.platform)}</span>
+                        <span className="candidate-main">
+                          <span className="candidate-name">{p.title || '(sans titre)'}</span>
+                          <span className="candidate-summary">
+                            {platformLabel(p.platform)} · publié le {p.publishedAt ? new Date(p.publishedAt).toLocaleDateString('fr-FR') : '—'}
+                            {' · '}❤️ {p.likes} · 💬 {p.comments}
+                          </span>
+                        </span>
+                        <span style={{ marginLeft: 'auto', color: 'var(--color-text-muted)' }}>Scanner →</span>
+                      </button>
+                    ))}
+                  </div>
+                  {error && <div className="chat-error">{error}</div>}
+                  <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Fermer</button></div>
+                </>
+              )}
+              {busy && error && <div className="chat-error">{error}</div>}
+            </div>
+          ) : mode === 'paste' ? (
             <div className="post-editor">
               <label className="form-label-block">Source
                 <input className="form-input" value={source} onChange={(e) => setSource(e.target.value)} placeholder="ex. commentaires LinkedIn, DMs Instagram, emails…" />
@@ -378,7 +458,7 @@ export default function ContactsPanel() {
   const [typeFilter, setTypeFilter] = useState<'all' | ContactType>('all');
   const [search,   setSearch]   = useState('');
   const [editing,  setEditing]  = useState<Contact | null | 'new'>(null);
-  const [analyzing, setAnalyzing] = useState<'paste' | 'inbox' | null>(null);
+  const [analyzing, setAnalyzing] = useState<AnalyzeMode | null>(null);
   const [emailing, setEmailing] = useState<Contact | null>(null);
 
   useEffect(() => {
@@ -422,6 +502,9 @@ export default function ContactsPanel() {
         <button className="btn btn-ghost" onClick={() => setAnalyzing('paste')} title="Collez des commentaires/messages — l'IA détecte et score les leads">
           🧠 Analyser des messages
         </button>
+        <button className="btn btn-ghost" onClick={() => setAnalyzing('post')} title="Analyse les likes et commentaires d'un de vos posts publiés via Composio">
+          💬 Réactions d'un post
+        </button>
         <button className="btn btn-ghost" onClick={() => setAnalyzing('inbox')} title="Lit votre boîte de réception via Composio et détecte les leads">
           📥 Scanner ma boîte mail
         </button>
@@ -444,11 +527,12 @@ export default function ContactsPanel() {
           <span className="plan-empty-icon">🤝</span>
           <h2>{contacts.length === 0 ? 'Aucun contact pour l\'instant' : 'Aucun contact ne correspond'}</h2>
           <p>
-            Collez les commentaires de vos posts ou scannez votre boîte mail : l'IA détecte
-            les personnes les plus intéressées et les score de 0 à 100.
+            Collez des messages, scannez les likes et commentaires d'un post, ou votre boîte mail :
+            l'IA détecte les personnes les plus intéressées et les score de 0 à 100.
           </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-primary" onClick={() => setAnalyzing('paste')}>🧠 Analyser des messages</button>
+            <button className="btn btn-ghost" onClick={() => setAnalyzing('post')}>💬 Réactions d'un post</button>
             <button className="btn btn-ghost" onClick={() => setAnalyzing('inbox')}>📥 Scanner ma boîte mail</button>
           </div>
         </div>

@@ -15,7 +15,7 @@ import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import { isComposioConfigured } from '../services/composio';
 import {
-  analyzeMessages, scanInbox, draftEmailForContact, sendEmailViaComposio,
+  analyzeMessages, scanInbox, scanPostEngagement, draftEmailForContact, sendEmailViaComposio,
 } from '../services/leadAnalysis';
 import { Contact, ContactType } from '../types';
 
@@ -132,6 +132,38 @@ router.post('/scan-inbox', async (req: Request, res: Response) => {
 
   try {
     const candidates = await scanInbox(req.user!.userId);
+    res.json({ success: true, data: candidates });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Scan failed' });
+  }
+});
+
+// ── Scan des réactions d'un post (likes + commentaires) via Composio MCP ─────
+
+router.post('/scan-post', async (req: Request, res: Response) => {
+  const { postId } = req.body as { postId?: string };
+  if (!postId || typeof postId !== 'string') {
+    return res.status(400).json({ success: false, error: 'postId is required' });
+  }
+
+  const post = storage.getPostById(postId);
+  if (!post || post.userId !== req.user!.userId) {
+    return res.status(404).json({ success: false, error: 'Post not found' });
+  }
+  if (!post.externalUrl) {
+    return res.status(400).json({ success: false, error: 'Renseignez d\'abord l\'URL du post publié (fiche du post, section métriques)' });
+  }
+  if (!isComposioConfigured() || !isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+
+  try {
+    const candidates = await scanPostEngagement(
+      req.user!.userId,
+      post.platform,
+      post.externalUrl,
+      post.title,
+    );
     res.json({ success: true, data: candidates });
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Scan failed' });

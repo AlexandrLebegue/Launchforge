@@ -3467,3 +3467,11 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   .contact-card { flex-wrap: wrap; }
   .contact-actions { margin-left: auto; }
 }
+
+.candidate-row.post-pick {
+  font: inherit;
+  text-align: left;
+  align-items: center;
+  width: 100%;
+  color: var(--color-text);
+}

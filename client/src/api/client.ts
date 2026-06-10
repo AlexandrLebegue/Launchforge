@@ -607,6 +607,11 @@ export async function scanInbox(): Promise<ApiResponse<LeadCandidate[]>> {
   return request('/contacts/scan-inbox', { method: 'POST' });
 }
 
+/** Détection des leads dans les likes/commentaires d'un post publié (Composio MCP) */
+export async function scanPost(postId: string): Promise<ApiResponse<LeadCandidate[]>> {
+  return request('/contacts/scan-post', { method: 'POST', body: JSON.stringify({ postId }) });
+}
+
 export async function draftContactEmail(
   id: string,
   goal: string
