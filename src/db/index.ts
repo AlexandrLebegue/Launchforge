@@ -291,4 +291,15 @@ function runMigrations(database: Database.Database): void {
       ) WHERE planId IS NULL
     `);
   }
+
+  // Index pour les requêtes scopées par projet (idempotent)
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_plans_user        ON plans(userId, active);
+    CREATE INDEX IF NOT EXISTS idx_posts_user_plan   ON posts(userId, planId, status);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_user_plan ON knowledge(userId, planId);
+    CREATE INDEX IF NOT EXISTS idx_contacts_user_plan  ON contacts(userId, planId);
+    CREATE INDEX IF NOT EXISTS idx_agents_user_plan    ON agents(userId, planId);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_agent    ON agent_runs(agentId, status);
+    CREATE INDEX IF NOT EXISTS idx_agent_runs_plan     ON agent_runs(planId, status);
+  `);
 }

@@ -12,7 +12,7 @@
 
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact, TelegramLink, Reminder } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact, TelegramLink, Reminder, ProjectSummary, Overview } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -109,6 +109,89 @@ export class Storage {
   /** Id du projet actif — clé d'isolation de toutes les données projet */
   getActivePlanId(userId: string): string | null {
     return this.getActivePlan(userId)?.id ?? null;
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Vue d'ensemble (un seul aller-retour pour le shell de l'app)
+  // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Liste légère des projets pour la sidebar : extraction SQL des seuls
+   * champs utiles — pas de parse des gros blobs JSON (plan hebdo, kanban…).
+   */
+  getProjectSummaries(userId: string): ProjectSummary[] {
+    return getDb()
+      .prepare(
+        `SELECT id, active, createdAt,
+                json_extract(input, '$.productName')    AS productName,
+                json_extract(input, '$.niche')          AS niche,
+                json_extract(input, '$.targetAudience') AS targetAudience,
+                json_extract(input, '$.company.name')   AS companyName
+         FROM plans WHERE userId = ?
+         ORDER BY active DESC, createdAt DESC`
+      )
+      .all(userId) as ProjectSummary[];
+  }
+
+  /**
+   * Tout le contexte du projet actif en UNE réponse : projets (légers),
+   * stats Kanban, compteurs de posts + prochain post, validations en attente.
+   * Quelques statements SQLite indexés — pas d'aller-retours multiples.
+   */
+  getOverview(userId: string): Overview {
+    const db = getDb();
+    const projects = this.getProjectSummaries(userId);
+    const project  = projects.find((p) => p.active) ?? projects[0] ?? null;
+    const planId   = project?.id ?? null;
+
+    // Stats Kanban : seul le kanban_state du projet actif est parsé
+    const tasks = { total: 0, done: 0, inProgress: 0, progress: 0 };
+    if (planId) {
+      const row = db.prepare(`SELECT kanban_state FROM plans WHERE id = ?`).get(planId) as any;
+      try {
+        const cols = JSON.parse(row?.kanban_state || '{}')?.columns as Record<string, unknown[]> | undefined;
+        if (cols) {
+          tasks.total      = Object.values(cols).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0);
+          tasks.done       = Array.isArray(cols.done) ? cols.done.length : 0;
+          tasks.inProgress = Array.isArray(cols.in_progress) ? cols.in_progress.length : 0;
+          tasks.progress   = tasks.total === 0 ? 0 : Math.round((tasks.done / tasks.total) * 100);
+        }
+      } catch { /* kanban illisible : stats à zéro */ }
+    }
+
+    const postCounts = db
+      .prepare(
+        `SELECT COALESCE(SUM(status = 'scheduled'), 0)            AS scheduled,
+                COALESCE(SUM(status = 'published'), 0)            AS published,
+                COALESCE(SUM(status IN ('draft', 'idea')), 0)     AS drafts
+         FROM posts WHERE userId = ? AND planId IS ?`
+      )
+      .get(userId, planId) as { scheduled: number; published: number; drafts: number };
+
+    const nextPost = db
+      .prepare(
+        `SELECT id, title, platform, scheduledAt
+         FROM posts
+         WHERE userId = ? AND planId IS ? AND status = 'scheduled' AND scheduledAt IS NOT NULL
+         ORDER BY scheduledAt ASC LIMIT 1`
+      )
+      .get(userId, planId) as Overview['posts']['next'] | undefined;
+
+    const approvals = (db
+      .prepare(
+        `SELECT COUNT(*) AS c
+         FROM agent_runs r JOIN agents a ON a.id = r.agentId
+         WHERE a.userId = ? AND r.planId IS ? AND r.status = 'awaiting_approval'`
+      )
+      .get(userId, planId) as { c: number }).c;
+
+    return {
+      projects,
+      project,
+      tasks,
+      posts: { ...postCounts, next: nextPost ?? null },
+      approvals,
+    };
   }
 
   getPlansByUserId(userId: string): LaunchPlan[] {

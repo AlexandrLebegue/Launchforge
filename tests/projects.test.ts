@@ -101,6 +101,25 @@ describe('Isolation des données par projet', () => {
     expect(contacts.body.data.map((c: any) => c.name)).toContain('Alice Dupont');
   });
 
+  it('GET /api/overview agrège le contexte du projet actif en une requête', async () => {
+    // Projet A actif à ce stade (réactivé au test précédent)
+    const res = await request(app).get('/api/overview').set(auth());
+    expect(res.status).toBe(200);
+    const data = res.body.data;
+
+    expect(data.project.id).toBe(planA);
+    expect(data.project.productName).toBe('ProjetA');
+    expect(data.projects.map((p: any) => p.productName)).toContain('ProjetB');
+    // Les projets sont « légers » : pas de blobs JSON du plan
+    expect(data.projects[0].weekly_plan).toBeUndefined();
+    expect(data.projects[0].kanbanState).toBeUndefined();
+
+    // Compteurs de posts scopés au projet A (1 brouillon créé plus haut)
+    expect(data.posts.drafts).toBeGreaterThanOrEqual(1);
+    expect(typeof data.approvals).toBe('number');
+    expect(data.tasks).toHaveProperty('total');
+  });
+
   it('le mode de publication est un réglage par projet', async () => {
     // Projet A (actif) : crée un agent et passe le projet en auto
     await request(app).post('/api/agents').set(auth()).send({ platform: 'linkedin' });

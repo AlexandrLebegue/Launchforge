@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { User, setToken, getApprovals, getPlans, activatePlan, LaunchPlan } from '../api/client';
+import { User, setToken, getOverview, activatePlan, ProjectSummary } from '../api/client';
 
 const nicheEmojis: Record<string, string> = {
   saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
@@ -27,23 +27,32 @@ export default function Layout({ user, onLogout }: Props) {
   const navigate  = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [projects, setProjects] = useState<LaunchPlan[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const loadProjects = useCallback(() => {
-    getPlans().then((res) => {
-      if (res.success && res.data) setProjects(res.data);
+  // UNE requête légère pour tout le shell (projets + badge validations),
+  // partagée avec le tableau de bord via le cache du client API.
+  const loadOverview = useCallback(() => {
+    getOverview().then((res) => {
+      if (res.success && res.data) {
+        setProjects(res.data.projects);
+        setPendingApprovals(res.data.approvals);
+      }
     });
   }, []);
 
-  // Rafraîchi à chaque navigation : un nouveau plan apparaît immédiatement
-  useEffect(() => { loadProjects(); }, [loadProjects, location.pathname]);
+  // Rafraîchie à chaque navigation (servie par le cache si < 5 s) + toutes les 30 s
+  useEffect(() => {
+    loadOverview();
+    const timer = setInterval(loadOverview, 30000);
+    return () => clearInterval(timer);
+  }, [loadOverview, location.pathname]);
 
   const activeProject = projects.find((p) => p.active) ?? projects[0];
 
-  const handleSelectProject = async (plan: LaunchPlan) => {
+  const handleSelectProject = async (plan: ProjectSummary) => {
     setPickerOpen(false);
     closeSidebar();
     if (plan.active) {
@@ -58,17 +67,6 @@ export default function Layout({ user, onLogout }: Props) {
     // pour repartir sur des données fraîches.
     window.location.href = '/';
   };
-
-  // Badge "validations en attente" — rafraîchi à chaque navigation + toutes les 30 s
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = () => getApprovals().then((res) => {
-      if (!cancelled && res.success && res.data) setPendingApprovals(res.data.length);
-    });
-    refresh();
-    const timer = setInterval(refresh, 30000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [location.pathname]);
 
   const handleLogout = () => {
     setToken(null);
@@ -145,8 +143,8 @@ export default function Layout({ user, onLogout }: Props) {
                 onClick={() => setPickerOpen((o) => !o)}
                 title="Projet de travail courant — cliquer pour changer de projet"
               >
-                <span className="layout-nav-icon">{nicheEmojis[activeProject.input.niche] ?? '🚀'}</span>
-                <span className="layout-project-name">{activeProject.input.productName}</span>
+                <span className="layout-nav-icon">{nicheEmojis[activeProject.niche] ?? '🚀'}</span>
+                <span className="layout-project-name">{activeProject.productName}</span>
                 <span className="layout-project-dot" title="Projet actif" />
                 <span className="layout-project-chevron">{pickerOpen ? '▴' : '▾'}</span>
               </button>
@@ -160,8 +158,8 @@ export default function Layout({ user, onLogout }: Props) {
                       onClick={() => handleSelectProject(plan)}
                       title={plan.active ? 'Projet actif — voir le plan' : 'Basculer sur ce projet'}
                     >
-                      <span className="layout-nav-icon">{nicheEmojis[plan.input.niche] ?? '🚀'}</span>
-                      <span className="layout-project-name">{plan.input.productName}</span>
+                      <span className="layout-nav-icon">{nicheEmojis[plan.niche] ?? '🚀'}</span>
+                      <span className="layout-project-name">{plan.productName}</span>
                       {switching === plan.id
                         ? <span className="layout-project-dot loading">⏳</span>
                         : Boolean(plan.active) && <span className="layout-project-dot" title="Projet actif" />}

@@ -647,6 +647,55 @@ export async function sendContactEmail(
   return request(`/contacts/${id}/send-email`, { method: 'POST', body: JSON.stringify({ subject, body }) });
 }
 
+// ── Vue d'ensemble (shell de l'app) ──────────────────────────────────────────
+
+/** Projet « léger » pour la sidebar et le tableau de bord */
+export interface ProjectSummary {
+  id: string;
+  active: number;
+  createdAt: string;
+  productName: string;
+  niche: string;
+  targetAudience: string;
+  companyName: string | null;
+}
+
+export interface Overview {
+  projects: ProjectSummary[];
+  project: ProjectSummary | null;
+  tasks: { total: number; done: number; inProgress: number; progress: number };
+  posts: {
+    scheduled: number;
+    published: number;
+    drafts: number;
+    next: { id: string; title: string; platform: string; scheduledAt: string } | null;
+  };
+  approvals: number;
+}
+
+// Cache court + déduplication des requêtes en vol : la sidebar et le tableau
+// de bord partagent la même réponse au lieu de tirer chacun leurs requêtes.
+let overviewCache: { at: number; data: Overview } | null = null;
+let overviewInflight: Promise<ApiResponse<Overview>> | null = null;
+
+export async function getOverview(maxAgeMs = 5000): Promise<ApiResponse<Overview>> {
+  if (overviewCache && Date.now() - overviewCache.at < maxAgeMs) {
+    return { success: true, data: overviewCache.data };
+  }
+  if (overviewInflight) return overviewInflight;
+  overviewInflight = request<Overview>('/overview').then((res) => {
+    if (res.success && res.data) overviewCache = { at: Date.now(), data: res.data };
+    overviewInflight = null;
+    return res;
+  });
+  return overviewInflight;
+}
+
+/** À appeler après une action qui change le contexte (création de projet…) */
+export function invalidateOverview(): void {
+  overviewCache = null;
+}
+
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 export interface ConfigToolkit {

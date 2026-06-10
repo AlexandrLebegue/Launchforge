@@ -5,6 +5,7 @@ import {
   getOnboardingSession,
   streamOnboardingMessage,
   createPlan,
+  invalidateOverview,
   OnboardingSession,
   OnboardingAttachment,
   OnboardingProfile,
@@ -229,6 +230,8 @@ export default function CreatePlanPage() {
     });
     setGenerating(false);
     if (res.success && res.data) {
+      // Nouveau projet actif : la vue d'ensemble en cache est obsolète
+      invalidateOverview();
       // Direction le Hub : les brouillons générés par l'IA y attendent
       navigate(`/content?drafts=${res.bootstrappedPosts ?? 0}&plan=${res.data.id}`);
     } else {
@@ -436,7 +439,10 @@ function ManualFallbackForm() {
       mode:           'template',
     });
     setBusy(false);
-    if (res.success && res.data) navigate(`/plan/${res.data.id}`);
+    if (res.success && res.data) {
+      invalidateOverview();
+      navigate(`/plan/${res.data.id}`);
+    }
     else setError(res.error || 'Erreur lors de la création du plan');
   };
 

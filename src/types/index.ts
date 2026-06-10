@@ -118,6 +118,34 @@ export interface LaunchPlan {
   kanbanState?: KanbanState;
 }
 
+// ── Vue d'ensemble (shell de l'app en un seul aller-retour) ──────────────────
+
+/** Projet « léger » pour la sidebar et le tableau de bord (pas de blobs JSON) */
+export interface ProjectSummary {
+  id: string;
+  active: number;
+  createdAt: string;
+  productName: string;
+  niche: string;
+  targetAudience: string;
+  companyName: string | null;
+}
+
+export interface Overview {
+  projects: ProjectSummary[];
+  /** Projet actif (ou le plus récent) — null si aucun projet */
+  project: ProjectSummary | null;
+  tasks: { total: number; done: number; inProgress: number; progress: number };
+  posts: {
+    scheduled: number;
+    published: number;
+    drafts: number;
+    next: { id: string; title: string; platform: string; scheduledAt: string } | null;
+  };
+  /** Validations en attente du projet actif */
+  approvals: number;
+}
+
 export interface FeedbackInput {
   planId: string;
   rating: number;

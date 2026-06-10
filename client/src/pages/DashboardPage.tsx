@@ -1,27 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getPlans, getApprovals, getPosts, LaunchPlan, Post } from '../api/client';
-
-interface PlanTaskStats {
-  total: number;
-  done: number;
-  inProgress: number;
-  progress: number;
-}
-
-function getTaskStats(plan: LaunchPlan | undefined): PlanTaskStats {
-  const cols = (plan?.kanbanState as any)?.columns as Record<string, any[]> | undefined;
-  if (!cols) return { total: 0, done: 0, inProgress: 0, progress: 0 };
-  const total      = Object.values(cols).reduce((sum, arr) => sum + (arr?.length ?? 0), 0);
-  const done       = (cols.done ?? []).length;
-  const inProgress = (cols.in_progress ?? []).length;
-  return {
-    total,
-    done,
-    inProgress,
-    progress: total === 0 ? 0 : Math.round((done / total) * 100),
-  };
-}
+import { getOverview, Overview } from '../api/client';
 
 const nicheEmojis: Record<string, string> = {
   saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
@@ -31,43 +10,24 @@ const nicheEmojis: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const [plans,     setPlans]     = useState<LaunchPlan[]>([]);
-  const [posts,     setPosts]     = useState<Post[]>([]);
-  const [approvals, setApprovals] = useState(0);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState('');
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
-    (async () => {
-      // Tout est scopé au projet actif côté serveur (validations, posts)
-      const [plansRes, approvalsRes, postsRes] = await Promise.all([
-        getPlans(), getApprovals(), getPosts(),
-      ]);
-      if (plansRes.success && plansRes.data) {
-        setPlans(plansRes.data);
-      } else {
-        setError(plansRes.error || 'Impossible de charger vos projets');
-      }
-      if (approvalsRes.success && approvalsRes.data) setApprovals(approvalsRes.data.length);
-      if (postsRes.success && postsRes.data) setPosts(postsRes.data);
+    // UNE requête : tout le contexte du projet actif (souvent déjà en cache
+    // car la sidebar vient de la faire — réponse instantanée).
+    getOverview().then((res) => {
+      if (res.success && res.data) setOverview(res.data);
+      else setError(res.error || 'Impossible de charger votre projet');
       setLoading(false);
-    })();
+    });
   }, []);
 
   if (loading) return <div className="loading">⏳ Chargement de votre projet…</div>;
 
-  // Le tableau de bord est celui du PROJET ACTIF (changer de projet : sidebar)
-  const project = plans.find((p) => Boolean(p.active)) ?? plans[0];
-  const stats   = getTaskStats(project);
-  const emoji   = project ? (nicheEmojis[project.input.niche] ?? '🚀') : '🚀';
-
-  const scheduledPosts = posts.filter((p) => p.status === 'scheduled').length;
-  const publishedPosts = posts.filter((p) => p.status === 'published').length;
-  const draftPosts     = posts.filter((p) => p.status === 'draft' || p.status === 'idea').length;
-  const nextPost = posts
-    .filter((p) => p.status === 'scheduled' && p.scheduledAt)
-    .sort((a, b) => a.scheduledAt!.localeCompare(b.scheduledAt!))[0];
+  const project = overview?.project ?? null;
 
   if (!project) {
     return (
@@ -89,15 +49,18 @@ export default function DashboardPage() {
     );
   }
 
+  const { tasks, posts, approvals } = overview!;
+  const emoji = nicheEmojis[project.niche] ?? '🚀';
+
   return (
     <div className="animate-fadeIn">
       {/* En-tête : le projet actif */}
       <div className="dashboard-header">
         <div>
-          <h1>{emoji} {project.input.productName}</h1>
+          <h1>{emoji} {project.productName}</h1>
           <p>
-            {project.input.targetAudience}
-            {project.input.company?.name ? ` · ${project.input.company.name}` : ''}
+            {project.targetAudience}
+            {project.companyName ? ` · ${project.companyName}` : ''}
           </p>
         </div>
         <Link to={`/plan/${project.id}`} className="btn btn-primary">📋 Plan & Kanban</Link>
@@ -126,12 +89,12 @@ export default function DashboardPage() {
           onKeyDown={(e) => e.key === 'Enter' && navigate(`/plan/${project.id}`)}
         >
           <span className="stat-card-icon">⚡</span>
-          <div className="stat-card-value">{stats.inProgress}</div>
+          <div className="stat-card-value">{tasks.inProgress}</div>
           <div className="stat-card-label">Tâches en cours</div>
         </div>
         <div className="stat-card animate-fadeInUp stagger-2">
           <span className="stat-card-icon">✅</span>
-          <div className="stat-card-value">{stats.done}<span className="stat-card-sub">/{stats.total}</span></div>
+          <div className="stat-card-value">{tasks.done}<span className="stat-card-sub">/{tasks.total}</span></div>
           <div className="stat-card-label">Tâches terminées</div>
         </div>
         <div
@@ -141,7 +104,7 @@ export default function DashboardPage() {
           onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
         >
           <span className="stat-card-icon">🗓️</span>
-          <div className="stat-card-value">{scheduledPosts}</div>
+          <div className="stat-card-value">{posts.scheduled}</div>
           <div className="stat-card-label">Posts programmés</div>
         </div>
         <div
@@ -169,7 +132,7 @@ export default function DashboardPage() {
             <span className="chip chip-project">🎯 Projet actif</span>
           </div>
           <div className="plan-card-meta">
-            <span className="niche-badge">{project.input.niche}</span>
+            <span className="niche-badge">{project.niche}</span>
             <span className="plan-card-date">
               créé le {new Date(project.createdAt).toLocaleDateString('fr-FR', {
                 day: 'numeric', month: 'short', year: 'numeric',
@@ -177,11 +140,11 @@ export default function DashboardPage() {
             </span>
           </div>
           <div className="plan-progress-bar">
-            <div className="plan-progress-fill" style={{ width: `${stats.progress}%` }} />
+            <div className="plan-progress-fill" style={{ width: `${tasks.progress}%` }} />
           </div>
           <div className="plan-progress-label">
-            {stats.total > 0
-              ? `${stats.done}/${stats.total} tâches · ${stats.progress} %`
+            {tasks.total > 0
+              ? `${tasks.done}/${tasks.total} tâches · ${tasks.progress} %`
               : 'Kanban non initialisé — ouvrez le plan pour démarrer'}
           </div>
         </div>
@@ -196,12 +159,12 @@ export default function DashboardPage() {
             <h3 className="plan-card-title">📣 Hub de contenu</h3>
           </div>
           <p className="plan-card-audience">
-            {draftPosts > 0 && `${draftPosts} brouillon${draftPosts > 1 ? 's' : ''} à valider · `}
-            {publishedPosts} publié{publishedPosts > 1 ? 's' : ''}
+            {posts.drafts > 0 && `${posts.drafts} brouillon${posts.drafts > 1 ? 's' : ''} à valider · `}
+            {posts.published} publié{posts.published > 1 ? 's' : ''}
           </p>
           <div className="plan-progress-label">
-            {nextPost
-              ? `Prochain post : « ${nextPost.title || nextPost.platform} » le ${new Date(nextPost.scheduledAt!).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+            {posts.next
+              ? `Prochain post : « ${posts.next.title || posts.next.platform} » le ${new Date(posts.next.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
               : 'Aucun post programmé — générez un calendrier éditorial'}
           </div>
         </div>

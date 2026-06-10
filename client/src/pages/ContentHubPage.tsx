@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  generateCalendar, syncAllToCalendar, getPlans,
+  generateCalendar, syncAllToCalendar, getOverview,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
@@ -545,23 +545,18 @@ export default function ContentHubPage() {
   const [search,   setSearch]   = useState('');
 
   const load = useCallback(async () => {
-    const [postsRes, plansRes] = await Promise.all([getPosts(), getPlans()]);
+    // Posts déjà scopés au projet actif côté serveur ; l'overview (léger,
+    // souvent en cache) ne sert qu'au nom du projet affiché en en-tête.
+    const [postsRes, overviewRes] = await Promise.all([getPosts(), getOverview()]);
     if (postsRes.success && postsRes.data) setAllPosts(postsRes.data);
-    if (plansRes.success && plansRes.data) {
-      const active = plansRes.data.find((p) => p.active) ?? plansRes.data[0];
-      setActiveProject(active ? { id: active.id, name: active.input.productName } : null);
+    if (overviewRes.success && overviewRes.data?.project) {
+      const p = overviewRes.data.project;
+      setActiveProject({ id: p.id, name: p.productName });
     }
     setLoading(false);
   }, []);
 
-  // Le Hub travaille dans le contexte du projet actif ; les posts créés
-  // avant la notion de projet (planId null) restent visibles.
-  const posts = useMemo(
-    () => activeProject
-      ? allPosts.filter((p) => p.planId === activeProject.id || p.planId === null)
-      : allPosts,
-    [allPosts, activeProject],
-  );
+  const posts = allPosts;
 
   useEffect(() => { load(); }, [load]);
 
