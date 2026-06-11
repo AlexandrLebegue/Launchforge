@@ -26,7 +26,7 @@ import { analyzePost, generateCampaignReport } from './analytics';
 import { renderDeckGif, renderDeckMp4 } from './deckMedia';
 import { saveMediaFile } from './mediaStore';
 import { uploadPublicImage } from './imageGen';
-import { AgentRun, Post, Recurrence, Reminder } from '../types';
+import { AgentRun, KnowledgeCategory, KnowledgeEntry, Post, Recurrence, Reminder } from '../types';
 
 const API = 'https://api.telegram.org';
 const POLL_TIMEOUT_S = 30;
@@ -354,6 +354,28 @@ export const TOOLS: ToolDef[] = [
       required: ['postId'],
     },
   },
+  {
+    name: 'add_knowledge',
+    description: 'AJOUTE une fiche à la BASE DE CONNAISSANCES du projet actif — elle sera injectée dans TOUTES les générations de contenu futures. Pour « retiens que… », « ajoute à la base de connaissances… », « note que notre cible est… ». Reformule l\'information proprement et de façon autonome (compréhensible sans le contexte du chat) avant d\'enregistrer. Si une fiche du même titre existe déjà, le contenu y est ajouté à la suite.',
+    parameters: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'news', 'other'],
+          description: 'company=entreprise · product=produit/service · audience=cibles · tone=ton & style · offers=offres & tarifs · learnings=enseignements · news=veille/actus · other=divers',
+        },
+        title:   { type: 'string', description: 'Titre court et descriptif de la fiche' },
+        content: { type: 'string', description: 'L\'information à retenir, rédigée proprement' },
+      },
+      required: ['category', 'title', 'content'],
+    },
+  },
+  {
+    name: 'list_knowledge',
+    description: 'LISTE les fiches de la base de connaissances du projet actif (catégorie, titre, extrait) — pour vérifier ce que l\'IA sait déjà, éviter les doublons avant add_knowledge, ou répondre à « qu\'est-ce que tu sais sur nous ? ».',
+    parameters: { type: 'object', properties: {} },
+  },
 ];
 
 const fmtDate = (iso: string | null) =>
@@ -522,6 +544,37 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const gen = await generateOccurrenceContent({ ...post, recurrenceUpdateKb: 0 });
       const tags = gen.hashtags.length > 0 ? `\n\n${gen.hashtags.map((h) => `#${h}`).join(' ')}` : '';
       return `🧪 SIMULATION (rien n'a été enregistré ni publié) — voici ce que donnerait la prochaine occurrence :\n\nTitre : ${gen.title}\n\n${gen.content}${tags}`;
+    }
+
+    case 'add_knowledge': {
+      const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'news', 'other'];
+      const category = (CATEGORIES.includes(args.category) ? args.category : 'other') as KnowledgeCategory;
+      const title = String(args.title || '').trim().slice(0, 120);
+      const content = String(args.content || '').trim().slice(0, 4000);
+      if (!title || !content) return 'ERREUR : titre et contenu requis.';
+
+      // Même titre dans la même catégorie → on enrichit la fiche au lieu de dupliquer
+      const existing = storage.getKnowledgeByPlan(userId, planId)
+        .find((e) => e.category === category && e.title.toLowerCase() === title.toLowerCase());
+      if (existing) {
+        storage.updateKnowledge(existing.id, { content: `${existing.content}\n\n${content}`.slice(0, 8000) });
+        return `Fiche existante enrichie : « ${existing.title} » (${category}). L'information sera utilisée dans les prochaines générations.`;
+      }
+
+      const now = new Date().toISOString();
+      const entry: KnowledgeEntry = {
+        id: uuid(), userId, planId, category, title, content, createdAt: now, updatedAt: now,
+      };
+      storage.saveKnowledge(entry);
+      return `Fiche ajoutée à la base de connaissances : « ${title} » (${category}). Elle sera injectée dans toutes les générations de contenu du projet.`;
+    }
+
+    case 'list_knowledge': {
+      const entries = storage.getKnowledgeByPlan(userId, planId);
+      if (entries.length === 0) return 'Base de connaissances vide pour ce projet — propose à l\'utilisateur d\'y ajouter l\'essentiel (cible, ton, offres) avec add_knowledge.';
+      return entries.map((e) =>
+        `[${e.category}] « ${e.title} » — ${e.content.slice(0, 140).replace(/\n+/g, ' ')}${e.content.length > 140 ? '…' : ''}`
+      ).join('\n');
     }
 
     case 'web_search': {

@@ -3,7 +3,7 @@ import request from 'supertest';
 import { v4 as uuid } from 'uuid';
 import { initEngine } from '../src/db';
 import { storage } from '../src/services/storage';
-import { createLinkCode, consumeLinkCode, dispatchDueReminders } from '../src/services/telegramBot';
+import { createLinkCode, consumeLinkCode, dispatchDueReminders, executeTool } from '../src/services/telegramBot';
 import app from '../src/app';
 
 let token: string;
@@ -47,6 +47,42 @@ describe('Liaison Telegram', () => {
     storage.saveTelegramLink({ chatId: '12345', userId, createdAt: new Date().toISOString() });
     expect(storage.getTelegramLinkByChatId('12345')?.userId).toBe(userId);
     expect(storage.getTelegramLinksByUserId(userId)).toHaveLength(1);
+  });
+});
+
+describe('Outil base de connaissances (chatbot)', () => {
+  it('ajoute une fiche, enrichit la fiche au lieu de dupliquer, et la liste', async () => {
+    const added = await executeTool(userId, 'chat-kb', 'add_knowledge', {
+      category: 'audience', title: 'Cible principale',
+      content: 'Solopreneurs francophones qui lancent un SaaS, budget marketing < 100 €/mois.',
+    });
+    expect(added).toContain('Fiche ajoutée');
+
+    // Même titre + même catégorie → enrichissement, pas de doublon
+    const enriched = await executeTool(userId, 'chat-kb', 'add_knowledge', {
+      category: 'audience', title: 'cible principale',
+      content: 'Secondaire : agences qui gèrent plusieurs clients.',
+    });
+    expect(enriched).toContain('enrichie');
+
+    const entries = storage.getKnowledgeByPlan(userId, storage.getActivePlanId(userId))
+      .filter((e) => e.category === 'audience');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].content).toContain('Solopreneurs');
+    expect(entries[0].content).toContain('agences');
+
+    const list = await executeTool(userId, 'chat-kb', 'list_knowledge', {});
+    expect(list).toContain('Cible principale');
+
+    // Catégorie inconnue → repli sur « other », jamais d'erreur
+    const fallback = await executeTool(userId, 'chat-kb', 'add_knowledge', {
+      category: 'pas-une-categorie', title: 'Divers', content: 'Information quelconque à retenir.',
+    });
+    expect(fallback).toContain('(other)');
+
+    // Garde-fou : contenu manquant
+    expect(await executeTool(userId, 'chat-kb', 'add_knowledge', { category: 'tone', title: 'Vide', content: '' }))
+      .toContain('ERREUR');
   });
 });
 
