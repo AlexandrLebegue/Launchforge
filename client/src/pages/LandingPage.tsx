@@ -4,6 +4,7 @@ import {
   PenLine, Send, TrendingUp,
 } from 'lucide-react';
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
+import LogoEmbers from '../components/LogoEmbers';
 
 const features = [
   {
@@ -133,6 +134,7 @@ export default function LandingPage() {
           <span className="landing-logo">
             <span className="landing-logo-icon"><Flame size={20} /></span>
             <span>Launch<span className="logo-forge">Forge</span></span>
+            <LogoEmbers />
           </span>
           <div className="landing-nav-links">
             <a href="#features">Fonctionnalités</a>

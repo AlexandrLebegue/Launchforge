@@ -5,6 +5,7 @@ import {
   TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut,
 } from 'lucide-react';
 import { User, setToken, getOverview, activatePlan, ProjectSummary } from '../api/client';
+import LogoEmbers from './LogoEmbers';
 
 const nicheEmojis: Record<string, string> = {
   saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
@@ -111,6 +112,7 @@ export default function Layout({ user, onLogout }: Props) {
         <Link to="/" className="layout-sidebar-logo" onClick={closeSidebar}>
           <span className="layout-sidebar-logo-icon"><Flame size={21} /></span>
           <span>Launch<span className="logo-forge">Forge</span></span>
+          <LogoEmbers />
         </Link>
 
         {/* Nav items */}
