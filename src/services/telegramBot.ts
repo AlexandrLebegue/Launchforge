@@ -17,7 +17,7 @@ import { chatComplete, ChatMessage, ToolDef, isAIConfigured } from './aiClient';
 import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
-import { markPublished } from './postPublisher';
+import { markPublished, generateOccurrenceContent } from './postPublisher';
 import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
@@ -26,7 +26,7 @@ import { analyzePost, generateCampaignReport } from './analytics';
 import { renderDeckGif, renderDeckMp4 } from './deckMedia';
 import { saveMediaFile } from './mediaStore';
 import { uploadPublicImage } from './imageGen';
-import { AgentRun, Post, Reminder } from '../types';
+import { AgentRun, Post, Recurrence, Reminder } from '../types';
 
 const API = 'https://api.telegram.org';
 const POLL_TIMEOUT_S = 30;
@@ -324,6 +324,36 @@ export const TOOLS: ToolDef[] = [
     description: 'Liste les rappels à venir de l\'utilisateur.',
     parameters: { type: 'object', properties: {} },
   },
+  {
+    name: 'list_recurring_posts',
+    description: 'Liste les SÉRIES RÉCURRENTES du projet : cadence, prochaine occurrence, réglages IA (instruction, base de connaissances, actus, archivage veille, auto-publication) et nombre d\'occurrences déjà publiées. Pour « quels sont mes posts récurrents ? », « où en sont mes séries ? ».',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'configure_recurrence',
+    description: 'Configure (ou arrête avec recurrence=none) la RÉCURRENCE d\'un post du Hub : cadence, instruction de régénération IA (le sujet/angle que l\'IA doit traiter à chaque occurrence), accès à la base de connaissances, recherche d\'actualités web, archivage des actus en fiche Veille. Pour « rends ce post hebdomadaire », « change le sujet de ma série », « active les actus sur ma série ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        postId:        { type: 'string', description: 'Id court du post (draft_post ou list_upcoming_posts)' },
+        recurrence:    { type: 'string', enum: ['none', 'daily', 'weekly', 'biweekly', 'monthly'], description: 'Cadence (none = arrêter la série)' },
+        brief:         { type: 'string', description: 'Instruction de régénération IA (sujet, angle, ce que l\'IA doit chercher) — vide = même contenu repris' },
+        useNews:       { type: 'boolean', description: 'S\'appuyer sur une recherche d\'actualités web' },
+        useKnowledge:  { type: 'boolean', description: 'S\'appuyer sur la base de connaissances (défaut : oui)' },
+        archiveNews:   { type: 'boolean', description: 'Archiver les actus utilisées dans la fiche 📰 Veille de la base de connaissances' },
+      },
+      required: ['postId', 'recurrence'],
+    },
+  },
+  {
+    name: 'simulate_recurrence',
+    description: 'MODE SIMULÉ : génère la prochaine occurrence d\'une série récurrente avec ses réglages actuels SANS rien enregistrer ni publier — montre le résultat à l\'utilisateur pour valider les réglages. Pour « simule ma série », « montre-moi ce que donnerait la prochaine occurrence ».',
+    parameters: {
+      type: 'object',
+      properties: { postId: { type: 'string', description: 'Id court du post récurrent' } },
+      required: ['postId'],
+    },
+  },
 ];
 
 const fmtDate = (iso: string | null) =>
@@ -437,6 +467,61 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       if (!post) return 'ERREUR : post introuvable.';
       storage.updatePost(post.id, { imageUrl: url });
       return `Image attachée au post [${shortId(post.id)}] — prêt à publier (y compris sur Instagram).`;
+    }
+
+    case 'list_recurring_posts': {
+      const posts = storage.getPostsByPlan(userId, planId);
+      const heads = posts.filter((p) => p.recurrence !== 'none' && (p.status === 'scheduled' || p.status === 'draft'));
+      if (heads.length === 0) return 'Aucune série récurrente sur ce projet. Transforme un post en série avec configure_recurrence.';
+      return heads.map((p) => {
+        const sid = p.seriesId ?? p.id;
+        const publishedCount = posts.filter((x) => (x.seriesId ?? x.id) === sid && x.status === 'published').length;
+        const flags = [
+          p.recurrenceBrief ? `🪄 IA : « ${p.recurrenceBrief} »` : 'contenu repris tel quel (pas d\'instruction IA)',
+          p.recurrenceUseKnowledge ? '📚 connaissances ON' : '📚 connaissances OFF',
+          p.recurrenceUseNews ? '📰 actus ON' : '📰 actus OFF',
+          p.recurrenceUpdateKb ? '📥 archivage veille ON' : null,
+          p.autoPublish ? '⚡ auto-publication' : null,
+        ].filter(Boolean).join(' · ');
+        return `[${shortId(p.id)}] « ${p.title || '(sans titre)'} » — ${p.platform}, ${p.recurrence}, prochaine : ${fmtDate(p.scheduledAt)} · ${publishedCount} occurrence(s) publiée(s)\n${flags}`;
+      }).join('\n\n');
+    }
+
+    case 'configure_recurrence': {
+      const posts = storage.getPostsByPlan(userId, planId);
+      const post = findByShortId(posts, String(args.postId || ''));
+      if (!post) return 'ERREUR : post introuvable.';
+      const rec = String(args.recurrence || '');
+      if (!['none', 'daily', 'weekly', 'biweekly', 'monthly'].includes(rec)) {
+        return 'ERREUR : cadence invalide (none, daily, weekly, biweekly, monthly).';
+      }
+      const patch: Partial<Post> = { recurrence: rec as Recurrence };
+      if (args.brief !== undefined)        patch.recurrenceBrief = String(args.brief).trim().slice(0, 600) || null;
+      if (args.useNews !== undefined)      patch.recurrenceUseNews = args.useNews ? 1 : 0;
+      if (args.useKnowledge !== undefined) patch.recurrenceUseKnowledge = args.useKnowledge ? 1 : 0;
+      if (args.archiveNews !== undefined)  patch.recurrenceUpdateKb = args.archiveNews ? 1 : 0;
+      storage.updatePost(post.id, patch);
+      const fresh = storage.getPostById(post.id)!;
+      if (rec === 'none') return `Série arrêtée : « ${fresh.title || shortId(fresh.id)} » redevient un post ponctuel.`;
+      return [
+        `Série configurée : [${shortId(fresh.id)}] « ${fresh.title || '(sans titre)'} » (${fresh.platform}) — ${rec}.`,
+        fresh.recurrenceBrief
+          ? `🪄 À chaque occurrence l'IA régénère : « ${fresh.recurrenceBrief} » (📚 connaissances ${fresh.recurrenceUseKnowledge ? 'ON' : 'OFF'} · 📰 actus ${fresh.recurrenceUseNews ? 'ON' : 'OFF'}${fresh.recurrenceUpdateKb ? ' · 📥 archivage veille ON' : ''}).`
+          : '⚠️ Pas d\'instruction IA : le même contenu sera republié tel quel — propose à l\'utilisateur d\'en définir une.',
+        'Tu peux vérifier le résultat avec simulate_recurrence avant la première occurrence.',
+      ].join('\n');
+    }
+
+    case 'simulate_recurrence': {
+      const posts = storage.getPostsByPlan(userId, planId);
+      const post = findByShortId(posts, String(args.postId || ''));
+      if (!post) return 'ERREUR : post introuvable.';
+      if (post.recurrence === 'none') return 'ERREUR : ce post n\'est pas récurrent — configure d\'abord la série avec configure_recurrence.';
+      if (!post.recurrenceBrief) return 'ERREUR : cette série n\'a pas d\'instruction de régénération — sans elle le même contenu est repris tel quel. Définis-en une avec configure_recurrence.';
+      // Simulation : jamais d'écriture en base de connaissances
+      const gen = await generateOccurrenceContent({ ...post, recurrenceUpdateKb: 0 });
+      const tags = gen.hashtags.length > 0 ? `\n\n${gen.hashtags.map((h) => `#${h}`).join(' ')}` : '';
+      return `🧪 SIMULATION (rien n'a été enregistré ni publié) — voici ce que donnerait la prochaine occurrence :\n\nTitre : ${gen.title}\n\n${gen.content}${tags}`;
     }
 
     case 'web_search': {

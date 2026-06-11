@@ -10,6 +10,7 @@ import { initEngine } from '../src/db';
 import { storage } from '../src/services/storage';
 import { markPublished } from '../src/services/postPublisher';
 import { upsertNewsArchive } from '../src/services/analytics';
+import { executeTool } from '../src/services/telegramBot';
 import app from '../src/app';
 
 let token: string;
@@ -102,6 +103,47 @@ describe('Mode simulé (preview)', () => {
     const r404 = await request(app).post(`/api/posts/${withBrief.body.data.id}/recurrence/preview`)
       .set({ Authorization: `Bearer ${other.body.data.token}` }).send({});
     expect(r404.status).toBe(404);
+  });
+});
+
+describe('Outils chatbot / Telegram', () => {
+  it('configure_recurrence transforme un post en série et la liste l\'expose', async () => {
+    const created = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'linkedin', title: 'Post piloté par chat',
+    });
+    const id = created.body.data.id as string;
+
+    const confirm = await executeTool(userId, 'chat-test', 'configure_recurrence', {
+      postId: id.slice(0, 8), recurrence: 'weekly',
+      brief: 'Un retour d\'expérience client chaque semaine', useNews: true, archiveNews: true,
+    });
+    expect(confirm).toContain('Série configurée');
+    const post = storage.getPostById(id)!;
+    expect(post.recurrence).toBe('weekly');
+    expect(post.recurrenceUseNews).toBe(1);
+    expect(post.recurrenceUpdateKb).toBe(1);
+
+    const list = await executeTool(userId, 'chat-test', 'list_recurring_posts', {});
+    expect(list).toContain('Post piloté par chat');
+    expect(list).toContain('📰 actus ON');
+
+    // Arrêt de la série
+    const stop = await executeTool(userId, 'chat-test', 'configure_recurrence', {
+      postId: id.slice(0, 8), recurrence: 'none',
+    });
+    expect(stop).toContain('Série arrêtée');
+    expect(storage.getPostById(id)!.recurrence).toBe('none');
+  });
+
+  it('simulate_recurrence refuse un post non récurrent ou sans instruction', async () => {
+    const created = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'twitter', title: 'Ponctuel',
+    });
+    const id = (created.body.data.id as string).slice(0, 8);
+    expect(await executeTool(userId, 'chat-test', 'simulate_recurrence', { postId: id })).toContain('pas récurrent');
+
+    await executeTool(userId, 'chat-test', 'configure_recurrence', { postId: id, recurrence: 'daily' });
+    expect(await executeTool(userId, 'chat-test', 'simulate_recurrence', { postId: id })).toContain('instruction');
   });
 });
 
