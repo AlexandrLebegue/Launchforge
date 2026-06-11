@@ -6,7 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { generateImage, uploadPublicImage, isImageGenConfigured } from '../services/imageGen';
 import { storage } from '../services/storage';
-import { generateCampaignReport } from '../services/analytics';
+import { generateCampaignReport, computePerformanceSeries } from '../services/analytics';
 import { requireAuth } from '../middleware/auth';
 import { generateContent, isContentAssistantConfigured } from '../services/contentAssistant';
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
@@ -136,6 +136,12 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
   } finally {
     res.end();
   }
+});
+
+// ── GET /api/content/performance — séries pour les graphiques (sans IA) ─────
+router.get('/performance', (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  res.json({ success: true, data: computePerformanceSeries(userId, storage.getActivePlanId(userId)) });
 });
 
 // ── GET /api/content/report — rapport de campagne narratif (IA) ─────────────

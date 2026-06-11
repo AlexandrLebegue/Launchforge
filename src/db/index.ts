@@ -325,6 +325,25 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE users ADD COLUMN lastWeeklyReportAt TEXT`);
   }
 
+  // Historique des métriques : un instantané par synchro — alimente les
+  // courbes temporelles de la vue Performances
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS metric_history (
+      id          TEXT PRIMARY KEY,
+      postId      TEXT NOT NULL,
+      userId      TEXT NOT NULL,
+      planId      TEXT,
+      at          TEXT NOT NULL,
+      impressions INTEGER NOT NULL DEFAULT 0,
+      likes       INTEGER NOT NULL DEFAULT 0,
+      comments    INTEGER NOT NULL DEFAULT 0,
+      shares      INTEGER NOT NULL DEFAULT 0,
+      clicks      INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_metric_history_plan ON metric_history(userId, planId, at);
+    CREATE INDEX IF NOT EXISTS idx_metric_history_post ON metric_history(postId, at);
+  `);
+
   // Présentations Marp générées par l'IA
   database.exec(`
     CREATE TABLE IF NOT EXISTS decks (

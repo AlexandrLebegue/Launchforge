@@ -4,7 +4,7 @@ import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   generateCalendar, syncAllToCalendar, getOverview,
   generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
-  analyzePostPerf, getCampaignReport,
+  analyzePostPerf,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
@@ -59,6 +59,8 @@ const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0'
 
 interface EditorProps {
   post: Post | null;            // null = création
+  /** Date pré-remplie pour une création depuis le calendrier */
+  initialScheduledAt?: string | null;
   onClose: () => void;
   onSaved: (post: Post) => void;
 }
@@ -70,13 +72,13 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function PostEditor({ post, onClose, onSaved }: EditorProps) {
+function PostEditor({ post, initialScheduledAt, onClose, onSaved }: EditorProps) {
   const [form, setForm] = useState({
     platform:    post?.platform ?? 'linkedin',
     title:       post?.title ?? '',
     content:     post?.content ?? '',
-    status:      (post?.status ?? 'draft') as PostStatus,
-    scheduledAt: toLocalInput(post?.scheduledAt ?? null),
+    status:      (post?.status ?? (initialScheduledAt ? 'scheduled' : 'draft')) as PostStatus,
+    scheduledAt: toLocalInput(post?.scheduledAt ?? initialScheduledAt ?? null),
     externalUrl: post?.externalUrl ?? '',
     imageUrl:    post?.imageUrl ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
@@ -643,7 +645,7 @@ function CalendarModal({ onClose, onGenerated }: {
 // Page principale
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'posts' | 'timeline' | 'analytics' | 'decks';
+type Tab = 'posts' | 'timeline' | 'decks';
 
 export default function ContentHubPage() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
@@ -651,6 +653,7 @@ export default function ContentHubPage() {
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
+  const [createDate, setCreateDate] = useState<string | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [feedback,     setFeedback]     = useState('');
@@ -703,6 +706,20 @@ export default function ContentHubPage() {
   const posts = allPosts;
 
   useEffect(() => { load(); }, [load]);
+
+  // ?edit=<postId> (vue Performances) → ouvre directement l'éditeur du post
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId && allPosts.length > 0) {
+      const target = allPosts.find((p) => p.id === editId);
+      if (target) {
+        setEditing(target);
+        searchParams.delete('edit');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPosts]);
 
   const handleSaved = (saved: Post) => {
     setEditing(null);
@@ -760,25 +777,6 @@ export default function ContentHubPage() {
     }
     return true;
   });
-
-  // ── Analyse ──
-  const byPlatform = useMemo(() => {
-    const map = new Map<string, { posts: number; impressions: number; interactions: number }>();
-    for (const p of published) {
-      const cur = map.get(p.platform) ?? { posts: 0, impressions: 0, interactions: 0 };
-      cur.posts += 1;
-      cur.impressions += p.impressions;
-      cur.interactions += p.likes + p.comments + p.shares;
-      map.set(p.platform, cur);
-    }
-    return [...map.entries()].sort((a, b) => b[1].impressions - a[1].impressions);
-  }, [published]);
-
-  const bestPost = useMemo(() => {
-    const rated = published.filter((p) => engagementRate(p) !== null);
-    if (rated.length === 0) return null;
-    return rated.reduce((best, p) => (engagementRate(p)! > engagementRate(best)! ? p : best));
-  }, [published]);
 
   if (loading) return <div className="loading">⏳ Chargement du hub de contenu…</div>;
 
@@ -842,17 +840,17 @@ export default function ContentHubPage() {
       {/* Tabs */}
       <div className="hub-tabs">
         <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>📝 Posts</button>
-        <button className={`hub-tab${tab === 'timeline' ? ' active' : ''}`} onClick={() => setTab('timeline')}>🕒 Frise</button>
-        <button className={`hub-tab${tab === 'analytics' ? ' active' : ''}`} onClick={() => setTab('analytics')}>📊 Analyse</button>
+        <button className={`hub-tab${tab === 'timeline' ? ' active' : ''}`} onClick={() => setTab('timeline')}>🗓️ Calendrier</button>
         <button className={`hub-tab${tab === 'decks' ? ' active' : ''}`} onClick={() => setTab('decks')}>🎞️ Slides</button>
       </div>
 
       {tab === 'decks' ? (
         <DecksPanel />
       ) : tab === 'timeline' ? (
-        <TimelineView
+        <CalendarView
           posts={posts}
           onOpen={(p) => setEditing(p)}
+          onCreate={(dateIso) => { setCreateDate(dateIso); setEditing('new'); }}
           onSync={handleSyncCalendar}
           syncing={syncingCal}
         />
@@ -925,84 +923,14 @@ export default function ContentHubPage() {
             </div>
           )}
         </>
-      ) : (
-        /* ── Analyse ── */
-        published.length === 0 ? (
-          <div className="plan-empty">
-            <span className="plan-empty-icon">📊</span>
-            <h2>Pas encore de données</h2>
-            <p>Publiez des posts puis renseignez leurs métriques (impressions, likes…) pour voir l'analyse ici.</p>
-          </div>
-        ) : (
-          <div className="analytics-wrap">
-            <CampaignReportCard />
-            {bestPost && (
-              <div className="best-post-card" onClick={() => setEditing(bestPost)}>
-                <span className="best-post-label">🏆 Meilleur post</span>
-                <span className="best-post-title">{platformIcon(bestPost.platform)} {bestPost.title || '(sans titre)'}</span>
-                <span className="best-post-rate">📈 {engagementRate(bestPost)!.toFixed(1)} % d'engagement</span>
-              </div>
-            )}
-
-            {/* Par plateforme */}
-            <div className="card">
-              <div className="card-header">Performance par plateforme</div>
-              {byPlatform.map(([platform, s]) => {
-                const rate = s.impressions > 0 ? (s.interactions / s.impressions) * 100 : 0;
-                const maxImpressions = byPlatform[0][1].impressions || 1;
-                return (
-                  <div key={platform} className="platform-row">
-                    <span className="platform-row-name">{platformIcon(platform)} {platformLabel(platform)}</span>
-                    <div className="platform-row-bar">
-                      <div className="platform-row-fill" style={{ width: `${Math.max(4, (s.impressions / maxImpressions) * 100)}%` }} />
-                    </div>
-                    <span className="platform-row-stats">
-                      {s.posts} post{s.posts > 1 ? 's' : ''} · 👁️ {fmtNum(s.impressions)} · 📈 {rate.toFixed(1)} %
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Tableau détaillé */}
-            <div className="card">
-              <div className="card-header">Détail des posts publiés</div>
-              <div className="analytics-table">
-                <div className="analytics-row analytics-head">
-                  <span>Post</span><span>👁️</span><span>❤️</span><span>💬</span><span>🔁</span><span>🔗</span><span>📈</span>
-                </div>
-                {[...published]
-                  .sort((a, b) => (engagementRate(b) ?? -1) - (engagementRate(a) ?? -1))
-                  .map((p) => {
-                    const rate = engagementRate(p);
-                    return (
-                      <div key={p.id} className="analytics-row" onClick={() => setEditing(p)}>
-                        <span className="analytics-post">{platformIcon(p.platform)} {p.title || '(sans titre)'}</span>
-                        <span>{fmtNum(p.impressions)}</span>
-                        <span>{fmtNum(p.likes)}</span>
-                        <span>{fmtNum(p.comments)}</span>
-                        <span>{fmtNum(p.shares)}</span>
-                        <span>{fmtNum(p.clicks)}</span>
-                        <span className={rate !== null && rate >= 3 ? 'rate-good' : undefined}>
-                          {rate !== null ? `${rate.toFixed(1)} %` : '—'}
-                        </span>
-                      </div>
-                    );
-                  })}
-              </div>
-              <p className="form-hint" style={{ marginTop: 10 }}>
-                💡 Renseignez les métriques en ouvrant un post publié. Un taux d'engagement ≥ 3 % est considéré comme bon sur la plupart des plateformes.
-              </p>
-            </div>
-          </div>
-        )
-      )}
+      ) : null}
 
       {editing !== null && (
         <PostEditor
           post={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={handleSaved}
+          initialScheduledAt={editing === 'new' ? createDate : null}
+          onClose={() => { setEditing(null); setCreateDate(null); }}
+          onSaved={(p) => { handleSaved(p); setCreateDate(null); }}
         />
       )}
       {!showAssistant && (
@@ -1037,92 +965,128 @@ export default function ContentHubPage() {
 // Vue Frise chronologique — les posts dans le temps, avec la date courante
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TimelineView({ posts, onOpen, onSync, syncing }: {
+function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
   posts: Post[];
   onOpen: (p: Post) => void;
+  onCreate: (dateIso: string) => void;
   onSync: () => void;
   syncing: boolean;
 }) {
-  const now = new Date();
-  const todayKey = now.toDateString();
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [expandedDay, setExpandedDay] = useState<string | null>(null);
 
-  // Posts datés : programmés + brouillons datés (à valider), passés récents inclus
-  const dated = posts
-    .filter((p) => p.scheduledAt && (p.status === 'scheduled' || p.status === 'draft'))
-    .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime());
-
-  if (dated.length === 0) {
-    return (
-      <div className="plan-empty">
-        <span className="plan-empty-icon">🕒</span>
-        <h2>Aucun post daté</h2>
-        <p>Programmez des posts (ou générez votre calendrier) pour les voir apparaître sur la frise.</p>
-      </div>
-    );
-  }
-
-  // Groupement par jour
-  const groups: { key: string; date: Date; items: Post[] }[] = [];
+  // Posts datés : programmés, brouillons datés, et publiés (historique visible)
+  const dated = posts.filter((p) => p.scheduledAt || p.publishedAt);
+  const byDay = new Map<string, Post[]>();
   for (const p of dated) {
-    const d = new Date(p.scheduledAt!);
-    const key = d.toDateString();
-    const existing = groups.find((g) => g.key === key);
-    if (existing) existing.items.push(p);
-    else groups.push({ key, date: d, items: [p] });
+    const key = new Date((p.status === 'published' ? p.publishedAt : p.scheduledAt) ?? p.scheduledAt!).toDateString();
+    byDay.set(key, [...(byDay.get(key) ?? []), p]);
+  }
+  for (const list of byDay.values()) {
+    list.sort((a, b) => new Date(a.scheduledAt ?? a.publishedAt!).getTime() - new Date(b.scheduledAt ?? b.publishedAt!).getTime());
   }
 
-  // Position du marqueur « Aujourd'hui »
-  const todayIndex = groups.findIndex((g) => g.date.getTime() >= new Date(todayKey).getTime());
+  // Grille : semaines complètes (lundi → dimanche) couvrant le mois
+  const firstDay = new Date(month);
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - ((firstDay.getDay() + 6) % 7));
+  const cells: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    cells.push(new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
+  }
+  // 5 ou 6 semaines selon le mois
+  const weeks = cells[35].getMonth() === month.getMonth() ? cells : cells.slice(0, 35);
+
+  const todayKey = new Date().toDateString();
+  const monthLabel = month.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const shift = (delta: number) => {
+    setExpandedDay(null);
+    setMonth((m2) => new Date(m2.getFullYear(), m2.getMonth() + delta, 1));
+  };
+
+  const statusClass = (p: Post) =>
+    p.status === 'published' ? 'published' : p.status === 'draft' ? 'draft' : 'scheduled';
 
   return (
-    <div className="timeline-wrap">
-      <div className="timeline-toolbar">
-        <span className="form-hint-inline">
-          {dated.filter((p) => new Date(p.scheduledAt!) >= now).length} publication(s) à venir
-          {' · '}les brouillons datés apparaissent en pointillés (à valider)
-        </span>
-        <button className="btn btn-ghost" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
+    <div className="cal-wrap">
+      <div className="cal-toolbar">
+        <div className="cal-nav">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => shift(-1)}>‹</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1)); setExpandedDay(null); }}>
+            Aujourd'hui
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => shift(1)}>›</button>
+          <span className="cal-month">{monthLabel}</span>
+        </div>
+        <div className="cal-legend">
+          <span><i className="cal-dot scheduled" /> programmé</span>
+          <span><i className="cal-dot draft" /> brouillon</span>
+          <span><i className="cal-dot published" /> publié</span>
+        </div>
+        <button type="button" className="btn btn-ghost" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
           {syncing ? '⏳ Synchronisation…' : '🗓️ Synchroniser Google Calendar'}
         </button>
       </div>
 
-      <div className="timeline">
-        {groups.map((g, gi) => {
-          const isPast = g.date < new Date(todayKey);
-          const isToday = g.key === todayKey;
+      <div className="cal-grid cal-head">
+        {['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map((d) => <div key={d} className="cal-dayname">{d}</div>)}
+      </div>
+      <div className="cal-grid">
+        {weeks.map((day) => {
+          const key = day.toDateString();
+          const inMonth = day.getMonth() === month.getMonth();
+          const items = byDay.get(key) ?? [];
+          const expanded = expandedDay === key;
+          const visible = expanded ? items : items.slice(0, 3);
           return (
-            <div key={g.key}>
-              {gi === (todayIndex === -1 ? groups.length : todayIndex) && !isToday && (
-                <div className="timeline-today"><span>Aujourd\'hui — {now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
+            <div
+              key={key}
+              className={`cal-cell${inMonth ? '' : ' out'}${key === todayKey ? ' today' : ''}`}
+              onClick={(e) => {
+                // Clic sur le fond de la case (pas sur un chip) → nouveau post pré-daté à 9 h
+                if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('cal-daynum')) {
+                  const d = new Date(day);
+                  d.setHours(9, 0, 0, 0);
+                  onCreate(d.toISOString());
+                }
+              }}
+              title="Cliquer pour créer un post ce jour-là"
+            >
+              <span className="cal-daynum">{day.getDate()}</span>
+              {visible.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`cal-chip ${statusClass(p)}`}
+                  onClick={(e) => { e.stopPropagation(); onOpen(p); }}
+                  title={`${p.title || platformLabel(p.platform)} — ${STATUS_META[p.status].label}`}
+                >
+                  <span className="cal-chip-time">
+                    {new Date(p.scheduledAt ?? p.publishedAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {platformIcon(p.platform)} {p.title || platformLabel(p.platform)}
+                </button>
+              ))}
+              {items.length > 3 && !expanded && (
+                <button type="button" className="cal-more" onClick={(e) => { e.stopPropagation(); setExpandedDay(key); }}>
+                  +{items.length - 3} autres
+                </button>
               )}
-              <div className={`timeline-day${isPast ? ' past' : ''}${isToday ? ' today' : ''}`}>
-                <div className="timeline-date">
-                  <span className="timeline-dot" />
-                  {isToday ? '📍 Aujourd\'hui — ' : ''}
-                  {g.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-                </div>
-                <div className="timeline-items">
-                  {g.items.map((p) => (
-                    <button key={p.id} className={`timeline-item${p.status === 'draft' ? ' draft' : ''}`} onClick={() => onOpen(p)}>
-                      <span className="timeline-time">
-                        {new Date(p.scheduledAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span className="timeline-platform">{platformIcon(p.platform)}</span>
-                      <span className="timeline-title">{p.title || '(sans titre)'}</span>
-                      {p.status === 'draft' && <span className="post-status post-status-draft">✏️ à valider</span>}
-                      {Boolean(p.autoPublish) && p.status === 'scheduled' && <span className="chip chip-auto">⚡ auto</span>}
-                      {Boolean(p.calendarSynced) && <span title="Dans votre agenda">🗓️</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {expanded && items.length > 3 && (
+                <button type="button" className="cal-more" onClick={(e) => { e.stopPropagation(); setExpandedDay(null); }}>
+                  réduire
+                </button>
+              )}
             </div>
           );
         })}
-        {todayIndex === -1 && (
-          <div className="timeline-today"><span>Aujourd\'hui — tout est passé, programmez la suite !</span></div>
-        )}
       </div>
+      <p className="form-hint" style={{ marginTop: 8 }}>
+        💡 Cliquez sur un jour vide pour créer un post pré-daté, sur un chip pour l'ouvrir.
+      </p>
     </div>
   );
 }
@@ -1294,42 +1258,3 @@ function DecksPanel() {
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Rapport de campagne IA — l'analyse narrative en tête de l'onglet Analyse
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CampaignReportCard() {
-  const [report,  setReport]  = useState('');
-  const [busy,    setBusy]    = useState(false);
-  const [err,     setErr]     = useState('');
-
-  const generate = async () => {
-    setBusy(true);
-    setErr('');
-    const res = await getCampaignReport();
-    setBusy(false);
-    if (res.success && res.data) setReport(res.data.report);
-    else setErr(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Rapport échoué.');
-  };
-
-  return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="config-card-head">
-        <span className="config-card-title">🗞️ Rapport de campagne</span>
-        <button type="button" className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={generate} disabled={busy}>
-          {busy ? '⏳ Analyse…' : report ? '↺ Actualiser' : '✨ Générer le rapport'}
-        </button>
-      </div>
-      {!report && !busy && (
-        <p className="form-hint">
-          L'IA analyse vos posts publiés (plateformes, jours, médias, leads générés) et vous dit
-          ce qui marche, ce qui ne marche pas, et quoi faire cette semaine. Les enseignements
-          alimentent la base de connaissances : chaque génération suivante en profite.
-          Aussi envoyé automatiquement chaque lundi sur Telegram.
-        </p>
-      )}
-      {err && <div className="chat-error">{err}</div>}
-      {report && <div style={{ fontSize: '0.875rem' }}><Markdown text={report} /></div>}
-    </div>
-  );
-}

@@ -154,6 +154,74 @@ function statsForPrompt(stats: ProjectStats): string {
   ].join('\n');
 }
 
+export interface PerformanceSeries {
+  /** Performance des publications, agrégée par semaine (12 dernières) */
+  weekly: { week: string; posts: number; impressions: number; likes: number; relImpressions: number | null; relLikes: number | null }[];
+  /** Courbe temporelle réelle (instantanés de synchro, cumulés tous posts) */
+  daily: { date: string; impressions: number; likes: number }[];
+  hasHistory: boolean;
+}
+
+/** Séries pour les graphiques de la vue Performances (pur calcul local) */
+export function computePerformanceSeries(userId: string, planId: string | null): PerformanceSeries {
+  const posts = storage.getPostsByPlan(userId, planId)
+    .filter((p) => p.status === 'published' && p.publishedAt);
+
+  // ── Hebdomadaire : 12 dernières semaines, lundi comme borne ──
+  const monday = (d: Date) => {
+    const out = new Date(d);
+    out.setHours(0, 0, 0, 0);
+    out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
+    return out;
+  };
+  const thisMonday = monday(new Date());
+  const weekly: PerformanceSeries['weekly'] = [];
+  for (let i = 11; i >= 0; i--) {
+    const start = new Date(thisMonday.getTime() - i * 7 * 86400e3);
+    const end = new Date(start.getTime() + 7 * 86400e3);
+    const sub = posts.filter((p) => {
+      const t = new Date(p.publishedAt!).getTime();
+      return t >= start.getTime() && t < end.getTime();
+    });
+    weekly.push({
+      week: start.toISOString().slice(0, 10),
+      posts: sub.length,
+      impressions: sub.reduce((s2, p) => s2 + p.impressions, 0),
+      likes: sub.reduce((s2, p) => s2 + p.likes, 0),
+      relImpressions: null,
+      relLikes: null,
+    });
+  }
+  // Progression relative (%) vs semaine précédente non nulle
+  for (let i = 1; i < weekly.length; i++) {
+    const prev = weekly[i - 1];
+    if (prev.impressions > 0) weekly[i].relImpressions = Math.round(((weekly[i].impressions - prev.impressions) / prev.impressions) * 100);
+    if (prev.likes > 0)       weekly[i].relLikes       = Math.round(((weekly[i].likes - prev.likes) / prev.likes) * 100);
+  }
+  // On coupe les semaines vides en tête pour ne pas écraser le graphique
+  const firstActive = weekly.findIndex((w) => w.posts > 0);
+  const trimmedWeekly = firstActive > 0 ? weekly.slice(Math.max(0, firstActive - 1)) : weekly;
+
+  // ── Quotidien : instantanés de synchro, report de la dernière valeur ──
+  const snaps = storage.getMetricSnapshots(userId, planId);
+  const days = [...new Set(snaps.map((s2) => s2.at.slice(0, 10)))].sort();
+  const latestPerPost = new Map<string, { impressions: number; likes: number }>();
+  const daily: PerformanceSeries['daily'] = [];
+  let cursor = 0;
+  for (const date of days) {
+    while (cursor < snaps.length && snaps[cursor].at.slice(0, 10) <= date) {
+      latestPerPost.set(snaps[cursor].postId, { impressions: snaps[cursor].impressions, likes: snaps[cursor].likes });
+      cursor += 1;
+    }
+    let impressions = 0;
+    let likes = 0;
+    for (const v of latestPerPost.values()) { impressions += v.impressions; likes += v.likes; }
+    daily.push({ date, impressions, likes });
+  }
+
+  return { weekly: trimmedWeekly, daily, hasHistory: daily.length >= 2 };
+}
+
 const LEARNINGS_TITLE = '📈 Enseignements de performance (auto)';
 const MAX_LEARNING_LINES = 25;
 

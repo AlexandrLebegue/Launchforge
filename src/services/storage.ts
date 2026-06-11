@@ -10,6 +10,7 @@
  * No saveDb() — every .run() is immediately durable on disk.
  */
 
+import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
 import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact, TelegramLink, Reminder, ProjectSummary, Overview } from '../types';
@@ -172,6 +173,31 @@ export class Storage {
   /** Horodate la tentative de synchro (avant l'appel : pas de boucle de retry) */
   markMetricsSynced(postId: string, atIso: string): void {
     getDb().prepare(`UPDATE posts SET metricsSyncedAt = ? WHERE id = ?`).run(atIso, postId);
+  }
+
+  /** Instantané des métriques d'un post (courbes temporelles de Performances) */
+  recordMetricSnapshot(post: Post, atIso = new Date().toISOString()): void {
+    getDb()
+      .prepare(
+        `INSERT INTO metric_history (id, postId, userId, planId, at, impressions, likes, comments, shares, clicks)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        randomUUID(),
+        post.id, post.userId, post.planId, atIso,
+        post.impressions, post.likes, post.comments, post.shares, post.clicks,
+      );
+  }
+
+  /** Snapshots du projet, ordonnés (90 derniers jours) */
+  getMetricSnapshots(userId: string, planId: string | null): { postId: string; at: string; impressions: number; likes: number }[] {
+    return getDb()
+      .prepare(
+        `SELECT postId, at, impressions, likes FROM metric_history
+         WHERE userId = ? AND planId IS ? AND julianday(at) >= julianday('now') - 90
+         ORDER BY at ASC`
+      )
+      .all(userId, planId) as any[];
   }
 
   // ──────────────────────────────────────────────────────────────

@@ -124,6 +124,12 @@ router.patch('/:id', (req: Request, res: Response) => {
   storage.updatePost(post.id, patch);
   const updated = storage.getPostById(post.id)!;
 
+  // Saisie manuelle de métriques → instantané pour les courbes temporelles
+  if (updated.status === 'published' &&
+      (['impressions', 'likes', 'comments', 'shares', 'clicks'] as const).some((m) => patch[m] !== undefined)) {
+    storage.recordMetricSnapshot(updated);
+  }
+
   // Synchro automatique vers le calendrier personnel (best-effort, non bloquant)
   if (updated.status === 'scheduled' && updated.scheduledAt && !updated.calendarSynced) {
     syncPostsToCalendarInBackground([updated]);
@@ -187,6 +193,7 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
       shares:      metrics.shares,
       clicks:      metrics.clicks,
     });
+    storage.recordMetricSnapshot(storage.getPostById(post.id)!);
     res.json({ success: true, data: { post: storage.getPostById(post.id), note: metrics.note } });
   } catch (err) {
     res.status(502).json({

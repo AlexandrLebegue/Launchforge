@@ -575,6 +575,7 @@ Pour en faire un média de post : render_deck_media avec deckId="${shortId(deck.
         comments: metrics.comments, shares: metrics.shares, clicks: metrics.clicks,
       });
       storage.markMetricsSynced(post.id, new Date().toISOString());
+      storage.recordMetricSnapshot(storage.getPostById(post.id)!);
       return `Métriques de « ${post.title} » synchronisées : ${metrics.impressions ?? 0} vues · ${metrics.likes ?? 0} likes · ${metrics.comments ?? 0} commentaires · ${metrics.shares ?? 0} partages${metrics.note ? ` (${metrics.note})` : ''}`;
     }
 

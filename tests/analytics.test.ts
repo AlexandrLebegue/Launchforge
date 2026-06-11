@@ -8,7 +8,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
 import { storage } from '../src/services/storage';
-import { computeProjectStats, upsertLearnings, dispatchWeeklyReports } from '../src/services/analytics';
+import { computeProjectStats, computePerformanceSeries, upsertLearnings, dispatchWeeklyReports } from '../src/services/analytics';
 import app from '../src/app';
 
 let token: string;
@@ -70,6 +70,48 @@ describe('Stats projet (calcul local)', () => {
     expect(stats.leads.hot).toBe(1);
     expect(stats.leads.byPost[0]).toMatchObject({ postId: topPostId, leads: 1 });
     expect(stats.topPosts[0].leads).toBe(1);
+  });
+});
+
+describe('Séries de performance (graphiques)', () => {
+  it('agrège par semaine avec progression relative', () => {
+    const series = computePerformanceSeries(userId, planId);
+    const active = series.weekly.filter((w) => w.posts > 0);
+    expect(active.length).toBeGreaterThan(0);
+    const lastActive = active[active.length - 1];
+    expect(lastActive.impressions).toBe(1700);
+    expect(lastActive.likes).toBe(94);
+    expect(series.weekly.length).toBeLessThanOrEqual(12);
+  });
+
+  it('construit la courbe quotidienne depuis les snapshots (report de la dernière valeur)', () => {
+    const post = storage.getPostById(topPostId)!;
+    // J1 : 100 vues — J2 : 1000 vues (le post star) + un 2e post apparaît
+    storage.recordMetricSnapshot({ ...post, impressions: 100, likes: 10 }, '2026-06-01T10:00:00.000Z');
+    storage.recordMetricSnapshot(post, '2026-06-02T10:00:00.000Z');
+    const other = storage.getPostsByPlan(userId, planId).find((p) => p.title === 'Post moyen')!;
+    storage.recordMetricSnapshot(other, '2026-06-02T11:00:00.000Z');
+
+    const series = computePerformanceSeries(userId, planId);
+    expect(series.hasHistory).toBe(true);
+    const d1 = series.daily.find((d) => d.date === '2026-06-01')!;
+    const d2 = series.daily.find((d) => d.date === '2026-06-02')!;
+    expect(d1.impressions).toBe(100);
+    // J2 = dernière valeur du post star (1000) + post moyen (500)
+    expect(d2.impressions).toBe(1500);
+  });
+
+  it('la route /api/content/performance répond avec les séries', async () => {
+    const res = await request(app).get('/api/content/performance').set(auth());
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data.weekly)).toBe(true);
+    expect(res.body.data.hasHistory).toBe(true);
+  });
+
+  it('la saisie manuelle de métriques enregistre un snapshot', async () => {
+    const before = storage.getMetricSnapshots(userId, planId).length;
+    await request(app).patch(`/api/posts/${topPostId}`).set(auth()).send({ likes: 99 });
+    expect(storage.getMetricSnapshots(userId, planId).length).toBe(before + 1);
   });
 });
 

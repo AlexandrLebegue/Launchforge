@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import AssistantPage from './pages/AssistantPage';
+import PerformancePage from './pages/PerformancePage';
 import CreatePlanPage from './pages/CreatePlanPage';
 import ApprovalsPage from './pages/ApprovalsPage';
 import ConfigPage from './pages/ConfigPage';
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="config" element={<ConfigPage />} />
             <Route path="content" element={<ContentHubPage />} />
             <Route path="assistant" element={<AssistantPage />} />
+            <Route path="performance" element={<PerformancePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
           </>
         )}

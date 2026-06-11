@@ -48,6 +48,8 @@ export async function processDueMetricsSync(
           shares:      metrics.shares,
           clicks:      metrics.clicks,
         });
+        // Instantané pour les courbes temporelles de la vue Performances
+        storage.recordMetricSnapshot(storage.getPostById(post.id)!, now.toISOString());
         synced += 1;
         console.log(`📈 Métriques synchronisées : "${post.title}" (${post.platform})`);
       }

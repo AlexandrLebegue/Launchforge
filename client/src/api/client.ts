@@ -816,6 +816,17 @@ export async function analyzePostPerf(id: string): Promise<ApiResponse<{ analysi
   return request(`/posts/${id}/analyze`, { method: 'POST' });
 }
 
+export interface PerformanceSeries {
+  weekly: { week: string; posts: number; impressions: number; likes: number; relImpressions: number | null; relLikes: number | null }[];
+  daily: { date: string; impressions: number; likes: number }[];
+  hasHistory: boolean;
+}
+
+/** Séries pour les graphiques de la vue Performances (sans IA, instantané) */
+export async function getPerformance(): Promise<ApiResponse<PerformanceSeries>> {
+  return request('/content/performance');
+}
+
 /** Rapport de campagne narratif du projet actif */
 export async function getCampaignReport(): Promise<ApiResponse<{ report: string; stats: unknown }>> {
   return request('/content/report');

@@ -4061,3 +4061,69 @@ video.md-media { background: #000; }
   display: block;
 }
 .deck-render-links { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+
+/* ── Calendrier mensuel du Hub (façon Outlook) ── */
+.cal-wrap { display: flex; flex-direction: column; }
+.cal-toolbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.cal-nav { display: flex; align-items: center; gap: 6px; }
+.cal-month { font-weight: 600; text-transform: capitalize; margin-left: 8px; }
+.cal-legend { display: flex; gap: 12px; font-size: 0.75rem; color: var(--color-text-muted); }
+.cal-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.cal-dot { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+.cal-dot.scheduled { background: #7c5cfc; }
+.cal-dot.draft     { background: transparent; border: 1.5px dashed #b8b3cc; }
+.cal-dot.published { background: #34d399; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.cal-grid.cal-head { margin-bottom: 4px; }
+.cal-dayname {
+  text-align: center; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-text-muted); padding: 4px 0;
+}
+.cal-cell {
+  min-height: 104px;
+  border: 1px solid var(--color-border, rgba(255,255,255,0.07));
+  border-radius: 10px;
+  background: var(--color-surface, rgba(255,255,255,0.02));
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.cal-cell:hover { border-color: rgba(124,92,252,0.45); }
+.cal-cell.out { opacity: 0.38; }
+.cal-cell.today {
+  border-color: #7c5cfc;
+  box-shadow: 0 0 0 1px rgba(124,92,252,0.35), 0 0 18px rgba(124,92,252,0.12) inset;
+}
+.cal-daynum { font-size: 0.75rem; color: var(--color-text-muted); font-weight: 600; }
+.cal-cell.today .cal-daynum { color: #a78bfa; }
+.cal-chip {
+  display: flex; align-items: center; gap: 4px;
+  font: inherit; font-size: 0.7rem; text-align: left;
+  padding: 3px 6px; border-radius: 6px; border: none; cursor: pointer;
+  color: var(--color-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  width: 100%;
+}
+.cal-chip .cal-chip-time { font-size: 0.64rem; color: var(--color-text-muted); flex-shrink: 0; }
+.cal-chip.scheduled { background: rgba(124,92,252,0.18); border-left: 3px solid #7c5cfc; }
+.cal-chip.draft     { background: rgba(255,255,255,0.04); border-left: 3px dashed #b8b3cc; opacity: 0.85; }
+.cal-chip.published { background: rgba(52,211,153,0.12); border-left: 3px solid #34d399; }
+.cal-chip:hover { filter: brightness(1.25); }
+.cal-more {
+  font: inherit; font-size: 0.66rem; color: var(--color-primary);
+  background: none; border: none; cursor: pointer; text-align: left; padding: 0 6px;
+}
+.cal-cell:has(.cal-more) { overflow: visible; }
+@media (max-width: 860px) {
+  .cal-cell { min-height: 76px; }
+  .cal-chip { font-size: 0.62rem; }
+}
