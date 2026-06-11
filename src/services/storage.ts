@@ -77,6 +77,43 @@ export class Storage {
     return rows.map((r) => ({ userId: r.id, token: decryptSecret(r.telegramBotToken) }));
   }
 
+  // ── Thème Marp (présentations) ───────────────────────────────────────────
+
+  setMarpTheme(userId: string, theme: string, customCss?: string | null): void {
+    if (customCss !== undefined) {
+      getDb().prepare(`UPDATE users SET marpTheme = ?, marpCustomCss = ? WHERE id = ?`).run(theme, customCss, userId);
+    } else {
+      getDb().prepare(`UPDATE users SET marpTheme = ? WHERE id = ?`).run(theme, userId);
+    }
+  }
+
+  getMarpTheme(userId: string): { theme: string; customCss: string | null } {
+    const row = getDb().prepare(`SELECT marpTheme, marpCustomCss FROM users WHERE id = ?`).get(userId) as any;
+    return { theme: row?.marpTheme ?? 'launchforge', customCss: row?.marpCustomCss ?? null };
+  }
+
+  // ── Présentations (decks Marp) ───────────────────────────────────────────
+
+  saveDeck(deck: { id: string; userId: string; planId: string | null; title: string; markdown: string; createdAt: string }): void {
+    getDb()
+      .prepare(`INSERT INTO decks (id, userId, planId, title, markdown, createdAt) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(deck.id, deck.userId, deck.planId, deck.title, deck.markdown, deck.createdAt);
+  }
+
+  getDeckById(id: string): { id: string; userId: string; planId: string | null; title: string; markdown: string; createdAt: string } | undefined {
+    return getDb().prepare(`SELECT * FROM decks WHERE id = ?`).get(id) as any;
+  }
+
+  getDecksByPlan(userId: string, planId: string | null): { id: string; title: string; createdAt: string }[] {
+    return getDb()
+      .prepare(`SELECT id, title, createdAt FROM decks WHERE userId = ? AND planId IS ? ORDER BY createdAt DESC`)
+      .all(userId, planId) as any[];
+  }
+
+  deleteDeck(id: string): void {
+    getDb().prepare(`DELETE FROM decks WHERE id = ?`).run(id);
+  }
+
   // ── Synchro automatique des métriques ────────────────────────────────────
 
   /** Intervalle de synchro des métriques (minutes, 0 = désactivée) */

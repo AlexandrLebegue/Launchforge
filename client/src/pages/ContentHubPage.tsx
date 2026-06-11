@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback, FormEvent } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   generateCalendar, syncAllToCalendar, getOverview,
+  generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, DeckSummary,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
@@ -86,6 +87,41 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
     clicks:      post?.clicks ?? 0,
   });
   const [brief,      setBrief]      = useState('');
+  const [imgPrompt,  setImgPrompt]  = useState('');
+  const [imgBusy,    setImgBusy]    = useState(false);
+  const [imgError,   setImgError]   = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleGenerateImage = async () => {
+    setImgBusy(true);
+    setImgError('');
+    const res = await generatePostImage(imgPrompt.trim(), post?.id);
+    setImgBusy(false);
+    if (res.success && res.data) {
+      set('imageUrl', res.data.url);
+      setImgPrompt('');
+    } else {
+      setImgError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Génération échouée.');
+    }
+  };
+
+  const handleUploadImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { setImgError('Image trop lourde (8 Mo max).'); return; }
+    setImgBusy(true);
+    setImgError('');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const res = await uploadPostImage(String(reader.result), post?.id);
+      setImgBusy(false);
+      if (res.success && res.data) set('imageUrl', res.data.url);
+      else setImgError(res.error || 'Téléversement échoué.');
+    };
+    reader.onerror = () => { setImgBusy(false); setImgError('Lecture du fichier impossible.'); };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
   const [useNews,    setUseNews]    = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saving,     setSaving]     = useState(false);
@@ -248,13 +284,40 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
           </label>
 
           <label className="form-label-block">
-            🖼️ Image du post <span className="form-hint-inline">(URL d'un visuel hébergé — jointe à la publication)</span>
-            <input
-              className="form-input"
-              value={form.imageUrl}
-              onChange={(e) => set('imageUrl', e.target.value)}
-              placeholder="https://…/visuel.png"
-            />
+            🖼️ Image du post <span className="form-hint-inline">(jointe à la publication — obligatoire pour Instagram)</span>
+            <div className="ai-assist-row">
+              <input
+                className="form-input"
+                value={form.imageUrl}
+                onChange={(e) => set('imageUrl', e.target.value)}
+                placeholder="https://…/visuel.png — ou générez/téléversez ci-dessous"
+              />
+              <button
+                type="button" className="btn btn-ghost"
+                onClick={() => fileRef.current?.click()}
+                disabled={imgBusy}
+                title="Téléverser une image depuis votre machine (hébergée publiquement)"
+              >
+                📤 Upload
+              </button>
+              <input
+                ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={handleUploadImage}
+              />
+            </div>
+            <div className="ai-assist-row" style={{ marginTop: 6 }}>
+              <input
+                className="form-input"
+                value={imgPrompt}
+                onChange={(e) => setImgPrompt(e.target.value)}
+                placeholder="🎨 Ou décrivez le visuel à générer par l'IA (~0,04 $)…"
+                disabled={imgBusy}
+              />
+              <button type="button" className="btn btn-primary" onClick={handleGenerateImage} disabled={imgBusy || !imgPrompt.trim()}>
+                {imgBusy ? '⏳…' : '🎨 Générer'}
+              </button>
+            </div>
+            {imgError && <div className="chat-error" style={{ marginTop: 6 }}>{imgError}</div>}
             {form.imageUrl.trim() && (
               <img src={form.imageUrl.trim()} alt="aperçu" className="post-image-preview"
                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -499,7 +562,7 @@ function CalendarModal({ onClose, onGenerated }: {
 // Page principale
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'posts' | 'timeline' | 'analytics';
+type Tab = 'posts' | 'timeline' | 'analytics' | 'decks';
 
 export default function ContentHubPage() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
@@ -700,9 +763,12 @@ export default function ContentHubPage() {
         <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>📝 Posts</button>
         <button className={`hub-tab${tab === 'timeline' ? ' active' : ''}`} onClick={() => setTab('timeline')}>🕒 Frise</button>
         <button className={`hub-tab${tab === 'analytics' ? ' active' : ''}`} onClick={() => setTab('analytics')}>📊 Analyse</button>
+        <button className={`hub-tab${tab === 'decks' ? ' active' : ''}`} onClick={() => setTab('decks')}>🎞️ Slides</button>
       </div>
 
-      {tab === 'timeline' ? (
+      {tab === 'decks' ? (
+        <DecksPanel />
+      ) : tab === 'timeline' ? (
         <TimelineView
           posts={posts}
           onOpen={(p) => setEditing(p)}
@@ -975,6 +1041,110 @@ function TimelineView({ posts, onOpen, onSync, syncing }: {
           <div className="timeline-today"><span>Aujourd\'hui — tout est passé, programmez la suite !</span></div>
         )}
       </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Onglet Slides — présentations Marp générées par l'IA (thème : Configuration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DecksPanel() {
+  const [decks,   setDecks]   = useState<DeckSummary[]>([]);
+  const [brief,   setBrief]   = useState('');
+  const [slides,  setSlides]  = useState(8);
+  const [busy,    setBusy]    = useState(false);
+  const [error,   setError]   = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getDecks().then((res) => {
+      if (res.success && res.data) setDecks(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleCreate = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!brief.trim() || busy) return;
+    setBusy(true);
+    setError('');
+    const res = await createDeck(brief.trim(), slides);
+    setBusy(false);
+    if (res.success && res.data) {
+      setDecks((prev) => [res.data!, ...prev]);
+      setBrief('');
+    } else {
+      setError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Génération échouée.');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const res = await deleteDeck(id);
+    if (res.success) setDecks((prev) => prev.filter((d) => d.id !== id));
+  };
+
+  return (
+    <div className="animate-fadeIn">
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header">🎞️ Nouvelle présentation</div>
+        <p className="form-hint" style={{ marginBottom: 10 }}>
+          Pitch deck, carrousel LinkedIn, slides produit — rédigée par l'IA avec votre
+          thème (réglable dans <Link to="/config">Configuration</Link>). Mode Présenter
+          plein écran avec transitions ; export PDF via Ctrl+P depuis la présentation.
+        </p>
+        <form onSubmit={handleCreate} className="ai-assist-row">
+          <input
+            className="form-input"
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            placeholder="ex. « Pitch deck investisseurs : problème, solution, marché, traction »"
+            disabled={busy}
+          />
+          <select className="form-input" style={{ maxWidth: 130 }} value={slides} onChange={(e) => setSlides(Number(e.target.value))} disabled={busy}>
+            {[5, 8, 10, 12, 15].map((n) => <option key={n} value={n}>{n} slides</option>)}
+          </select>
+          <button type="submit" className="btn btn-primary" disabled={busy || !brief.trim()}>
+            {busy ? '⏳ Génération…' : '✨ Générer'}
+          </button>
+        </form>
+        {error && <div className="chat-error" style={{ marginTop: 8 }}>{error}</div>}
+      </div>
+
+      {loading ? (
+        <div className="loading">⏳ Chargement…</div>
+      ) : decks.length === 0 ? (
+        <div className="posts-empty">
+          <span style={{ fontSize: '2rem' }}>🎞️</span>
+          <p>Aucune présentation pour ce projet — décrivez la première ci-dessus,
+          ou demandez à l'assistant : « fais-moi un pitch deck de 8 slides ».</p>
+        </div>
+      ) : (
+        <div className="posts-list">
+          {decks.map((d) => (
+            <div key={d.id} className="post-card">
+              <div className="post-card-main">
+                <div className="post-card-title">🎞️ {d.title}</div>
+                <div className="post-card-footer">
+                  <span className="form-hint-inline">
+                    créé le {new Date(d.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+              <div className="post-card-actions">
+                <a className="btn btn-primary btn-sm" href={deckHtmlUrl(d.id)} target="_blank" rel="noopener noreferrer">
+                  ▶️ Présenter
+                </a>
+                <a className="btn btn-ghost btn-sm" href={deckMarkdownUrl(d.id)} title="Source Marp (réutilisable avec Marp CLI pour un export PPTX)">
+                  ⬇️ .md
+                </a>
+                <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(d.id)} title="Supprimer">🗑️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

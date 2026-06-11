@@ -17,6 +17,7 @@ import telegramRoutes from './routes/telegram';
 import configRoutes from './routes/config';
 import overviewRoutes from './routes/overview';
 import assistantRoutes from './routes/assistant';
+import deckRoutes from './routes/decks';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api/telegram', telegramRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/decks', deckRoutes);
 
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));

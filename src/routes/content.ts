@@ -4,6 +4,8 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { generateImage, uploadPublicImage, isImageGenConfigured } from '../services/imageGen';
+import { storage } from '../services/storage';
 import { requireAuth } from '../middleware/auth';
 import { generateContent, isContentAssistantConfigured } from '../services/contentAssistant';
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
@@ -132,6 +134,51 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });
   } finally {
     res.end();
+  }
+});
+
+// ── POST /api/content/image — génère un visuel (IA) et l'héberge ─────────────
+// Retourne une URL publique ; si postId est fourni, l'image est attachée au post.
+router.post('/image', async (req: Request, res: Response) => {
+  if (!isImageGenConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  const { brief, postId } = req.body as { brief?: string; postId?: string };
+  if (!brief || typeof brief !== 'string' || !brief.trim()) {
+    return res.status(400).json({ success: false, error: 'brief is required' });
+  }
+  try {
+    const { url } = await generateImage(req.user!.userId, brief.trim().slice(0, 600));
+    if (postId) {
+      const post = storage.getPostById(postId);
+      if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: url });
+    }
+    res.json({ success: true, data: { url } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération échouée' });
+  }
+});
+
+// ── POST /api/content/image/upload — héberge une image fournie (base64) ─────
+router.post('/image/upload', async (req: Request, res: Response) => {
+  const { imageBase64, postId } = req.body as { imageBase64?: string; postId?: string };
+  if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.length < 100) {
+    return res.status(400).json({ success: false, error: 'imageBase64 is required' });
+  }
+  if (imageBase64.length > 12_000_000) {
+    return res.status(400).json({ success: false, error: 'Image trop lourde (8 Mo max)' });
+  }
+  try {
+    // Accepte un data-URL ou du base64 brut
+    const b64 = imageBase64.startsWith('data:') ? imageBase64.slice(imageBase64.indexOf(',') + 1) : imageBase64;
+    const url = await uploadPublicImage(b64);
+    if (postId) {
+      const post = storage.getPostById(postId);
+      if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: url });
+    }
+    res.json({ success: true, data: { url } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Hébergement échoué' });
   }
 });
 

@@ -11,6 +11,7 @@ import { isAIConfigured, getModel } from '../services/aiClient';
 import { isComposioConfigured } from '../services/mcpClient';
 import { composioUserIdFor, createConnectLink } from '../services/composioConnect';
 import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/telegramBot';
+import { availableThemes, generateCustomTheme, CUSTOM_THEMES, BUILTIN_THEMES } from '../services/decks';
 
 const router = Router();
 router.use(requireAuth);
@@ -89,6 +90,11 @@ router.get('/status', async (req: Request, res: Response) => {
           connected: connected.has(t.slug),
         })),
       },
+      marp: {
+        theme: storage.getMarpTheme(req.user!.userId).theme,
+        hasCustomCss: Boolean(storage.getMarpTheme(req.user!.userId).customCss),
+        themes: availableThemes(),
+      },
       metricsSync: {
         // Intervalle de synchro automatique des métriques (minutes, 0 = off)
         intervalMinutes: storage.getMetricsSyncMinutes(req.user!.userId),
@@ -150,6 +156,38 @@ router.patch('/telegram-bot', async (req: Request, res: Response) => {
 router.delete('/telegram-bot', (req: Request, res: Response) => {
   removeUserBot(req.user!.userId);
   res.json({ success: true, data: { ownBot: false } });
+});
+
+// ── Thème Marp des présentations ─────────────────────────────────────────────
+router.patch('/marp-theme', (req: Request, res: Response) => {
+  const { theme } = req.body as { theme?: string };
+  const valid = theme && (CUSTOM_THEMES[theme] || (BUILTIN_THEMES as readonly string[]).includes(theme) || theme === 'custom');
+  if (!valid) {
+    return res.status(400).json({ success: false, error: 'Unknown theme' });
+  }
+  if (theme === 'custom' && !storage.getMarpTheme(req.user!.userId).customCss) {
+    return res.status(400).json({ success: false, error: 'Générez d\'abord votre thème IA (champ ci-dessous)' });
+  }
+  storage.setMarpTheme(req.user!.userId, theme!);
+  res.json({ success: true, data: { theme } });
+});
+
+// L'IA fabrique un thème Marp sur mesure (CSS validé puis stocké)
+router.post('/marp-theme/customize', async (req: Request, res: Response) => {
+  if (!isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  const { instructions } = req.body as { instructions?: string };
+  if (!instructions || typeof instructions !== 'string' || !instructions.trim()) {
+    return res.status(400).json({ success: false, error: 'instructions is required' });
+  }
+  try {
+    const css = await generateCustomTheme(req.user!.userId, instructions.trim().slice(0, 600));
+    storage.setMarpTheme(req.user!.userId, 'custom', css);
+    res.json({ success: true, data: { theme: 'custom' } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération du thème échouée' });
+  }
 });
 
 // ── PATCH /api/config/metrics-sync ───────────────────────────────────────────

@@ -708,6 +708,7 @@ export interface ConfigToolkit {
 export interface ConfigStatus {
   ai: { configured: boolean; model: string | null };
   composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[] };
+  marp: { theme: string; hasCustomCss: boolean; themes: { value: string; label: string }[] };
   metricsSync: { intervalMinutes: number };
   telegram: { configured: boolean; linked: boolean; ownBot: boolean; botUsername: string | null };
   publishMode: 'auto' | 'manual';
@@ -730,6 +731,53 @@ export async function setTelegramBot(token: string): Promise<ApiResponse<{ ownBo
 /** Supprime le bot Telegram personnel */
 export async function removeTelegramBot(): Promise<ApiResponse<{ ownBot: boolean }>> {
   return request('/config/telegram-bot', { method: 'DELETE' });
+}
+
+/** Génère un visuel IA hébergé publiquement (attaché au post si postId) */
+export async function generatePostImage(brief: string, postId?: string): Promise<ApiResponse<{ url: string }>> {
+  return request('/content/image', { method: 'POST', body: JSON.stringify({ brief, postId }) });
+}
+
+/** Héberge une image fournie par l'utilisateur (base64/data-URL) → URL publique */
+export async function uploadPostImage(imageBase64: string, postId?: string): Promise<ApiResponse<{ url: string }>> {
+  return request('/content/image/upload', { method: 'POST', body: JSON.stringify({ imageBase64, postId }) });
+}
+
+// ── Présentations (decks Marp) ────────────────────────────────────────────────
+
+export interface DeckSummary { id: string; title: string; createdAt: string }
+
+export async function getDecks(): Promise<ApiResponse<DeckSummary[]>> {
+  return request('/decks');
+}
+
+export async function createDeck(brief: string, slides: number): Promise<ApiResponse<DeckSummary>> {
+  return request('/decks', { method: 'POST', body: JSON.stringify({ brief, slides }) });
+}
+
+export async function deleteDeck(id: string): Promise<ApiResponse<null>> {
+  return request(`/decks/${id}`, { method: 'DELETE' });
+}
+
+/** URL de présentation plein écran (ouverte en nouvel onglet → token en query) */
+export function deckHtmlUrl(id: string): string {
+  return `${API_BASE}/decks/${id}/html?token=${encodeURIComponent(getToken() ?? '')}`;
+}
+
+export function deckMarkdownUrl(id: string): string {
+  return `${API_BASE}/decks/${id}/markdown?token=${encodeURIComponent(getToken() ?? '')}`;
+}
+
+export function themePreviewUrl(): string {
+  return `${API_BASE}/decks/theme-preview?token=${encodeURIComponent(getToken() ?? '')}`;
+}
+
+export async function setMarpTheme(theme: string): Promise<ApiResponse<{ theme: string }>> {
+  return request('/config/marp-theme', { method: 'PATCH', body: JSON.stringify({ theme }) });
+}
+
+export async function customizeMarpTheme(instructions: string): Promise<ApiResponse<{ theme: string }>> {
+  return request('/config/marp-theme/customize', { method: 'POST', body: JSON.stringify({ instructions }) });
 }
 
 /** Intervalle de synchro automatique des métriques (minutes, 0 = désactivée) */

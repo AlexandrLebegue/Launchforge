@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit,
   setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
+  setMarpTheme, customizeMarpTheme, themePreviewUrl,
   ConfigStatus,
 } from '../api/client';
 
@@ -26,6 +27,10 @@ export default function ConfigPage() {
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
   const [savingSync, setSavingSync] = useState(false);
+  // Thème des présentations
+  const [themeBusy,    setThemeBusy]    = useState(false);
+  const [themePrompt,  setThemePrompt]  = useState('');
+  const [themeError,   setThemeError]   = useState('');
   // Bot Telegram personnel
   const [botToken,  setBotToken]  = useState('');
   const [botSaving, setBotSaving] = useState(false);
@@ -98,6 +103,31 @@ export default function ConfigPage() {
     setSavingSync(false);
     if (res.success && res.data) {
       setStatus({ ...status, metricsSync: { intervalMinutes: res.data.intervalMinutes } });
+    }
+  };
+
+  const handleTheme = async (theme: string) => {
+    if (!status) return;
+    setThemeBusy(true);
+    setThemeError('');
+    const res = await setMarpTheme(theme);
+    setThemeBusy(false);
+    if (res.success) setStatus({ ...status, marp: { ...status.marp, theme } });
+    else setThemeError(res.error || 'Changement de thème impossible.');
+  };
+
+  const handleCustomizeTheme = async () => {
+    if (!status || !themePrompt.trim()) return;
+    setThemeBusy(true);
+    setThemeError('');
+    const res = await customizeMarpTheme(themePrompt.trim());
+    setThemeBusy(false);
+    if (res.success) {
+      setStatus({ ...status, marp: { ...status.marp, theme: 'custom', hasCustomCss: true } });
+      setThemePrompt('');
+      window.open(themePreviewUrl(), '_blank', 'noopener');
+    } else {
+      setThemeError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Génération du thème échouée.');
     }
   };
 
@@ -236,6 +266,55 @@ export default function ConfigPage() {
               à l'assistant : « combien de likes sur mon dernier post ? ».
             </span>
           </label>
+        </div>
+
+        {/* ── Thème des présentations (Marp) ── */}
+        <div className="card config-card">
+          <div className="config-card-head">
+            <span className="config-card-title">🎞️ Thème des présentations</span>
+            <a
+              className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
+              href={themePreviewUrl()} target="_blank" rel="noopener noreferrer"
+            >
+              👁️ Aperçu
+            </a>
+          </div>
+          <p className="config-desc">
+            Habille les decks générés par l'IA (onglet Slides du Hub) : pitch decks,
+            carrousels LinkedIn, slides produit.
+          </p>
+          <label className="form-label-block">
+            Thème
+            <select
+              className="form-input"
+              value={status.marp.theme}
+              onChange={(e) => handleTheme(e.target.value)}
+              disabled={themeBusy}
+            >
+              {status.marp.themes
+                .filter((t) => t.value !== 'custom' || status.marp.hasCustomCss)
+                .map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </label>
+          <label className="form-label-block" style={{ marginTop: 8 }}>
+            ✨ Créer mon thème avec l'IA
+            <div className="ai-assist-row">
+              <input
+                className="form-input"
+                value={themePrompt}
+                onChange={(e) => setThemePrompt(e.target.value)}
+                placeholder="ex. « fond crème, accents vert forêt, typo élégante, très épuré »"
+                disabled={themeBusy}
+              />
+              <button type="button" className="btn btn-primary" onClick={handleCustomizeTheme} disabled={themeBusy || !themePrompt.trim()}>
+                {themeBusy ? '⏳…' : '✨ Générer'}
+              </button>
+            </div>
+            <span className="form-hint-inline">
+              L'IA fabrique la feuille de style (validée puis appliquée) et ouvre l'aperçu. Recommencez jusqu'à satisfaction.
+            </span>
+          </label>
+          {themeError && <div className="chat-error">{themeError}</div>}
         </div>
 
         {/* ── Composio ── */}

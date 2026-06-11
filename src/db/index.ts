@@ -313,6 +313,27 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'metricsSyncedAt')) {
     database.exec(`ALTER TABLE posts ADD COLUMN metricsSyncedAt TEXT`);
   }
+  // Thème Marp des présentations (choix + CSS custom généré par l'IA)
+  if (!userCols.some((c) => c.name === 'marpTheme')) {
+    database.exec(`ALTER TABLE users ADD COLUMN marpTheme TEXT`);
+  }
+  if (!userCols.some((c) => c.name === 'marpCustomCss')) {
+    database.exec(`ALTER TABLE users ADD COLUMN marpCustomCss TEXT`);
+  }
+
+  // Présentations Marp générées par l'IA
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS decks (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      planId    TEXT,
+      title     TEXT NOT NULL,
+      markdown  TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_decks_user_plan ON decks(userId, planId);
+  `);
 
   // Index pour les requêtes scopées par projet (idempotent)
   database.exec(`

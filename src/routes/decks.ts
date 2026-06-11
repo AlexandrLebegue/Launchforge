@@ -1,0 +1,106 @@
+/**
+ * /api/decks — présentations Marp générées par l'IA (onglet Slides du Hub).
+ *
+ * Les routes /:id/html et /theme-preview s'ouvrent dans un nouvel onglet du
+ * navigateur (pas de header Authorization possible) : elles acceptent le JWT
+ * en query string (?token=…).
+ */
+
+import { Router, Request, Response, NextFunction } from 'express';
+import { v4 as uuid } from 'uuid';
+import { requireAuth, verifyToken } from '../middleware/auth';
+import { storage } from '../services/storage';
+import {
+  generateDeckMarkdown, renderDeckHtml, themeForUser, isAIConfigured, SAMPLE_DECK,
+} from '../services/decks';
+
+const router = Router();
+
+/** Auth par header OU par ?token= (ouverture en nouvel onglet) */
+function authHeaderOrQuery(req: Request, res: Response, next: NextFunction): void {
+  const fromQuery = typeof req.query.token === 'string' ? req.query.token : null;
+  const fromHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '') ?? null;
+  const token = fromHeader || fromQuery;
+  if (!token) {
+    res.status(401).json({ success: false, error: 'Authentication required' });
+    return;
+  }
+  try {
+    req.user = verifyToken(token);
+    next();
+  } catch {
+    res.status(401).json({ success: false, error: 'Invalid token' });
+  }
+}
+
+// ── GET /api/decks ───────────────────────────────────────────────────────────
+router.get('/', requireAuth, (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  res.json({ success: true, data: storage.getDecksByPlan(userId, storage.getActivePlanId(userId)) });
+});
+
+// ── POST /api/decks — génération IA d'un deck ────────────────────────────────
+router.post('/', requireAuth, async (req: Request, res: Response) => {
+  if (!isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  const { brief, slides } = req.body as { brief?: string; slides?: number };
+  if (!brief || typeof brief !== 'string' || !brief.trim()) {
+    return res.status(400).json({ success: false, error: 'brief is required' });
+  }
+
+  try {
+    const userId = req.user!.userId;
+    const { title, markdown } = await generateDeckMarkdown(userId, brief.trim().slice(0, 1000), Number(slides) || 8);
+    const deck = {
+      id: uuid(),
+      userId,
+      planId: storage.getActivePlanId(userId),
+      title,
+      markdown,
+      createdAt: new Date().toISOString(),
+    };
+    storage.saveDeck(deck);
+    res.status(201).json({ success: true, data: { id: deck.id, title: deck.title, createdAt: deck.createdAt } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération échouée' });
+  }
+});
+
+// ── GET /api/decks/theme-preview — aperçu du thème courant ──────────────────
+router.get('/theme-preview', authHeaderOrQuery, (req: Request, res: Response) => {
+  const { theme, css } = themeForUser(req.user!.userId);
+  res.type('html').send(renderDeckHtml(SAMPLE_DECK, theme, css));
+});
+
+// ── GET /api/decks/:id/html — présentation plein écran ──────────────────────
+router.get('/:id/html', authHeaderOrQuery, (req: Request, res: Response) => {
+  const deck = storage.getDeckById(req.params.id);
+  if (!deck || deck.userId !== req.user!.userId) {
+    return res.status(404).json({ success: false, error: 'Deck not found' });
+  }
+  const { theme, css } = themeForUser(req.user!.userId);
+  res.type('html').send(renderDeckHtml(deck.markdown, theme, css));
+});
+
+// ── GET /api/decks/:id/markdown — source Marp (réutilisable dans Marp CLI) ──
+router.get('/:id/markdown', authHeaderOrQuery, (req: Request, res: Response) => {
+  const deck = storage.getDeckById(req.params.id);
+  if (!deck || deck.userId !== req.user!.userId) {
+    return res.status(404).json({ success: false, error: 'Deck not found' });
+  }
+  res.setHeader('Content-Disposition', `attachment; filename="deck-${deck.id.slice(0, 8)}.md"`);
+  res.type('text/markdown').send(deck.markdown);
+});
+
+// ── DELETE /api/decks/:id ────────────────────────────────────────────────────
+router.delete('/:id', requireAuth, (req: Request, res: Response) => {
+  const deck = storage.getDeckById(req.params.id);
+  if (!deck || deck.userId !== req.user!.userId) {
+    return res.status(404).json({ success: false, error: 'Deck not found' });
+  }
+  storage.deleteDeck(deck.id);
+  res.json({ success: true, data: null });
+});
+
+export default router;

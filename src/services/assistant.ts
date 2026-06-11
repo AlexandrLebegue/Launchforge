@@ -42,6 +42,8 @@ function actionLabel(name: string, args: any): string {
     case 'draft_post':            return `✍️ Rédaction ${args.platform ?? ''}`;
     case 'set_post_image':        return '🖼️ Image attachée au post';
     case 'sync_post_metrics':     return '📈 Synchro des métriques';
+    case 'generate_image':        return '🎨 Génération du visuel';
+    case 'generate_deck':         return '🎞️ Création de la présentation';
     case 'publish_post':          return '📣 Publication du post';
     case 'send_email':            return `✉️ Envoi à ${args.to ?? ''}`;
     case 'send_email_to_contact': return `✉️ Email à ${args.contactName ?? 'un contact'}`;

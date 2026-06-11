@@ -20,6 +20,8 @@ import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './lea
 import { markPublished } from './postPublisher';
 import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
+import { generateImage, isImageGenConfigured } from './imageGen';
+import { generateDeckMarkdown } from './decks';
 import { AgentRun, Post, Reminder } from '../types';
 
 const API = 'https://api.telegram.org';
@@ -178,6 +180,30 @@ export const TOOLS: ToolDef[] = [
         imageUrl: { type: 'string', description: 'URL https de l\'image' },
       },
       required: ['postId', 'imageUrl'],
+    },
+  },
+  {
+    name: 'generate_image',
+    description: 'GÉNÈRE un visuel par IA (~0,04 $) et retourne son URL publique hébergée. Si postId est fourni, l\'image est directement attachée au post (indispensable pour Instagram). Pour « génère une image pour ce post », « crée un visuel sur… ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: { type: 'string', description: 'Description du visuel souhaité (sujet, ambiance, style)' },
+        postId: { type: 'string', description: 'Id court du post auquel attacher le visuel (optionnel)' },
+      },
+      required: ['prompt'],
+    },
+  },
+  {
+    name: 'generate_deck',
+    description: 'Crée une PRÉSENTATION (slides Marp stylées avec le thème de l\'utilisateur) : pitch deck, carrousel LinkedIn, slides produit. Le deck apparaît dans l\'onglet Slides du Hub (mode Présenter plein écran + export PDF). Pour « fais-moi un pitch deck sur… », « un carrousel de 8 slides ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        brief: { type: 'string', description: 'Sujet, objectif et audience de la présentation' },
+        slides: { type: 'number', description: 'Nombre de slides (3-15, défaut 8)' },
+      },
+      required: ['brief'],
     },
   },
   {
@@ -432,6 +458,35 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       return `Échec de publication : ${result.replace(/^ECHEC:\s*/i, '')}`;
     }
 
+    case 'generate_image': {
+      if (!isImageGenConfigured()) return 'ERREUR : génération d\'images non configurée (OPENROUTER_API_KEY).';
+      const prompt = String(args.prompt || '').trim();
+      if (!prompt) return 'ERREUR : décris le visuel souhaité.';
+      const { url } = await generateImage(userId, prompt);
+      if (args.postId) {
+        const posts = storage.getPostsByPlan(userId, planId);
+        const post = findByShortId(posts, String(args.postId));
+        if (post) {
+          storage.updatePost(post.id, { imageUrl: url });
+          return `Visuel généré et attaché au post [${shortId(post.id)}] : ${url}`;
+        }
+      }
+      return `Visuel généré : ${url}\n(Utilise set_post_image pour l'attacher à un post.)`;
+    }
+
+    case 'generate_deck': {
+      const brief = String(args.brief || '').trim();
+      if (!brief) return 'ERREUR : décris le sujet de la présentation.';
+      const { title, markdown } = await generateDeckMarkdown(userId, brief, Number(args.slides) || 8);
+      const deck = {
+        id: uuid(), userId, planId,
+        title, markdown, createdAt: new Date().toISOString(),
+      };
+      storage.saveDeck(deck);
+      const slideCount = (markdown.match(/^---$/gm) || []).length;
+      return `Présentation « ${title} » créée (${slideCount} slides) — disponible dans l'onglet Slides du Hub de contenu (mode Présenter + export PDF via Ctrl+P).`;
+    }
+
     case 'sync_post_metrics': {
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — synchro impossible.';
       const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status === 'published');
@@ -579,7 +634,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck), rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
@@ -639,6 +694,8 @@ Tu peux me demander par exemple :
 • « Envoie un mail à contact@exemple.com »
 • « Lis mes derniers mails »
 • « Combien de likes sur mon dernier post ? »
+• « Génère une image pour ce post »
+• « Fais-moi un pitch deck de 8 slides »
 • « J'ai quoi dans mon agenda demain ? »
 • « Ajoute un rdv client vendredi 14h »
 • « Rappelle-moi demain 9h de relancer les leads »
