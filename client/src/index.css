@@ -274,10 +274,45 @@ input, textarea, select {
 
 /* « Forge » chauffé à la braise — le wordmark porte l'identité */
 .logo-forge {
-  background: linear-gradient(120deg, #ffb347 0%, #ff6b35 55%, #e8590c 100%);
+  /* Dégradé bouclable (1re et dernière couleur identiques) pour l'animation de chauffe */
+  background: linear-gradient(100deg, #ffb347 0%, #ff6b35 40%, #e8590c 70%, #ffb347 100%);
+  background-size: 250% 100%;
+  background-position: 0% 50%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* ── Survol du wordmark : la forge s'allume ── */
+@keyframes forgeHeat {
+  from { background-position: 0% 50%; }
+  to   { background-position: -250% 50%; }
+}
+@keyframes flameFlicker {
+  0%, 100% { transform: scale(1) rotate(0deg);      filter: drop-shadow(0 0 3px rgba(255, 107, 53, 0.55)); }
+  25%      { transform: scale(1.1) rotate(-4deg);   filter: drop-shadow(0 0 7px rgba(255, 107, 53, 0.85)); }
+  50%      { transform: scale(0.95) rotate(3deg);   filter: drop-shadow(0 0 5px rgba(255, 179, 71, 0.75)); }
+  75%      { transform: scale(1.07) rotate(-2deg);  filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.9)); }
+}
+.layout-sidebar-logo:hover .logo-forge,
+.landing-logo:hover .logo-forge {
+  animation: forgeHeat 1.4s linear infinite;
+}
+.layout-sidebar-logo:hover .layout-sidebar-logo-icon,
+.landing-logo:hover .landing-logo-icon {
+  animation: flameFlicker 0.85s ease-in-out infinite;
+}
+/* « Launch » chauffe aussi, en douceur */
+.layout-sidebar-logo:hover,
+.landing-logo:hover {
+  color: #fff;
+  text-shadow: 0 0 14px rgba(255, 107, 53, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .layout-sidebar-logo:hover .logo-forge,
+  .landing-logo:hover .logo-forge,
+  .layout-sidebar-logo:hover .layout-sidebar-logo-icon,
+  .landing-logo:hover .landing-logo-icon { animation: none; }
 }
 
 .layout-sidebar-logo-icon {
