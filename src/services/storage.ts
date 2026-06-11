@@ -43,6 +43,25 @@ export class Storage {
       .get(id) as any;
   }
 
+  // ── Réinitialisation de mot de passe ─────────────────────────────────────
+
+  /** Pose (ou efface avec null) le jeton de réinitialisation, stocké haché */
+  setResetToken(userId: string, tokenHash: string | null, expiresAt: string | null): void {
+    getDb()
+      .prepare(`UPDATE users SET resetTokenHash = ?, resetTokenExpiresAt = ? WHERE id = ?`)
+      .run(tokenHash, expiresAt, userId);
+  }
+
+  getUserByResetTokenHash(tokenHash: string): { id: string; email: string; resetTokenExpiresAt: string | null } | undefined {
+    return getDb()
+      .prepare(`SELECT id, email, resetTokenExpiresAt FROM users WHERE resetTokenHash = ?`)
+      .get(tokenHash) as any;
+  }
+
+  updateUserPassword(userId: string, hashedPassword: string): void {
+    getDb().prepare(`UPDATE users SET password = ? WHERE id = ?`).run(hashedPassword, userId);
+  }
+
   // ── Réglages multi-utilisateur (identité Composio, bot Telegram) ─────────
 
   setComposioUserId(userId: string, composioUserId: string): void {

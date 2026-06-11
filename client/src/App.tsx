@@ -5,6 +5,9 @@ import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import { LegalNoticePage, PrivacyPage } from './pages/LegalPages';
 import DashboardPage from './pages/DashboardPage';
 import AssistantPage from './pages/AssistantPage';
 import PerformancePage from './pages/PerformancePage';
@@ -75,6 +78,10 @@ export default function App() {
         path="/register"
         element={user ? <Navigate to="/" replace /> : <RegisterPage onRegister={(u) => setUser(u)} />}
       />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage onLogin={(u) => setUser(u)} />} />
+      <Route path="/legal" element={<LegalNoticePage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

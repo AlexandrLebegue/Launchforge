@@ -327,6 +327,13 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'recurrenceUpdateKb')) {
     database.exec(`ALTER TABLE posts ADD COLUMN recurrenceUpdateKb INTEGER NOT NULL DEFAULT 0`);
   }
+  // Réinitialisation de mot de passe (jeton haché + expiration)
+  if (!userCols.some((c) => c.name === 'resetTokenHash')) {
+    database.exec(`ALTER TABLE users ADD COLUMN resetTokenHash TEXT`);
+  }
+  if (!userCols.some((c) => c.name === 'resetTokenExpiresAt')) {
+    database.exec(`ALTER TABLE users ADD COLUMN resetTokenExpiresAt TEXT`);
+  }
   // Thème Marp des présentations (choix + CSS custom généré par l'IA)
   if (!userCols.some((c) => c.name === 'marpTheme')) {
     database.exec(`ALTER TABLE users ADD COLUMN marpTheme TEXT`);

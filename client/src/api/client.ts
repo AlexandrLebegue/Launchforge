@@ -149,6 +149,19 @@ export async function getMe(): Promise<ApiResponse<User>> {
   return request('/auth/me');
 }
 
+/** Demande de réinitialisation — réponse toujours générique côté serveur */
+export async function forgotPassword(email: string): Promise<ApiResponse<{ message: string }>> {
+  return request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+/** Nouveau mot de passe via le jeton reçu par email — connecte directement */
+export async function resetPassword(
+  token: string,
+  password: string
+): Promise<ApiResponse<{ user: User; token: string }>> {
+  return request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) });
+}
+
 export async function getTemplates(): Promise<ApiResponse<any[]>> {
   return request('/templates');
 }

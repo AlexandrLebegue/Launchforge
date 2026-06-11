@@ -74,6 +74,9 @@ export default function LoginPage({ onLogin }: Props) {
         </form>
 
         <div className="footer-link">
+          <Link to="/forgot-password">Mot de passe oublié ?</Link>
+        </div>
+        <div className="footer-link">
           Pas encore de compte ?{' '}
           <Link to="/register">Créez-en un gratuitement</Link>
         </div>

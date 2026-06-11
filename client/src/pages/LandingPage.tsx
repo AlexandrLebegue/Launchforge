@@ -273,6 +273,10 @@ export default function LandingPage() {
           <a href="#how">Comment ça marche</a>
           {' · '}
           <Link to="/register">Commencer</Link>
+          {' · '}
+          <Link to="/legal">Mentions légales</Link>
+          {' · '}
+          <Link to="/privacy">Confidentialité</Link>
         </p>
       </footer>
     </div>
