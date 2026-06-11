@@ -17,6 +17,7 @@ interface Props {
 const navItems = [
   { to: '/',          icon: '📊', label: 'Tableau de bord' },
   { to: '/content',   icon: '📣', label: 'Hub de contenu'  },
+  { to: '/calendar',  icon: '🗓️', label: 'Calendrier'      },
   { to: '/assistant', icon: '💬', label: 'Assistant'       },
   { to: '/performance', icon: '📈', label: 'Performances'  },
   { to: '/knowledge', icon: '📚', label: 'Connaissances'   },

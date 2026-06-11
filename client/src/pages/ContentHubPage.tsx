@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 're
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  generateCalendar, syncAllToCalendar, getOverview,
+  generateCalendar, getOverview,
   generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   analyzePostPerf,
   Post, PostStatus, Recurrence,
@@ -28,7 +28,7 @@ export const PLATFORMS: { value: string; label: string; icon: string }[] = [
 export const platformIcon  = (p: string) => PLATFORMS.find((x) => x.value === p)?.icon ?? '📣';
 export const platformLabel = (p: string) => PLATFORMS.find((x) => x.value === p)?.label ?? p;
 
-const STATUS_META: Record<PostStatus, { label: string; cls: string }> = {
+export const STATUS_META: Record<PostStatus, { label: string; cls: string }> = {
   idea:      { label: '💡 Idée',       cls: 'post-status-idea' },
   draft:     { label: '✏️ Brouillon',  cls: 'post-status-draft' },
   scheduled: { label: '🗓️ Programmé', cls: 'post-status-scheduled' },
@@ -72,7 +72,7 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function PostEditor({ post, initialScheduledAt, onClose, onSaved }: EditorProps) {
+export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: EditorProps) {
   const [form, setForm] = useState({
     platform:    post?.platform ?? 'linkedin',
     title:       post?.title ?? '',
@@ -645,7 +645,7 @@ function CalendarModal({ onClose, onGenerated }: {
 // Page principale
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'posts' | 'timeline' | 'decks';
+type Tab = 'posts' | 'decks';
 
 export default function ContentHubPage() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
@@ -653,11 +653,9 @@ export default function ContentHubPage() {
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
-  const [createDate, setCreateDate] = useState<string | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [feedback,     setFeedback]     = useState('');
-  const [syncingCal,   setSyncingCal]   = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Arrivée depuis la génération du plan : accueil + brouillons à valider
@@ -672,21 +670,6 @@ export default function ContentHubPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSyncCalendar = async () => {
-    setSyncingCal(true);
-    const res = await syncAllToCalendar();
-    setSyncingCal(false);
-    if (res.success && res.data) {
-      setFeedback(res.data.synced > 0
-        ? `🗓️ ${res.data.synced} post(s) ajoutés à votre calendrier personnel.`
-        : `🗓️ ${res.data.message || 'Tout est déjà synchronisé.'}`);
-      load();
-    } else {
-      setFeedback(res.error === 'COMPOSIO_NOT_CONFIGURED'
-        ? '⚠️ Connectez Google Calendar sur Composio (vue Configuration) pour synchroniser votre agenda.'
-        : `⚠️ ${res.error || 'La synchronisation a échoué.'}`);
-    }
-  };
   const [statusFilter,   setStatusFilter]   = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [search,   setSearch]   = useState('');
@@ -840,20 +823,11 @@ export default function ContentHubPage() {
       {/* Tabs */}
       <div className="hub-tabs">
         <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>📝 Posts</button>
-        <button className={`hub-tab${tab === 'timeline' ? ' active' : ''}`} onClick={() => setTab('timeline')}>🗓️ Calendrier</button>
         <button className={`hub-tab${tab === 'decks' ? ' active' : ''}`} onClick={() => setTab('decks')}>🎞️ Slides</button>
       </div>
 
       {tab === 'decks' ? (
         <DecksPanel />
-      ) : tab === 'timeline' ? (
-        <CalendarView
-          posts={posts}
-          onOpen={(p) => setEditing(p)}
-          onCreate={(dateIso) => { setCreateDate(dateIso); setEditing('new'); }}
-          onSync={handleSyncCalendar}
-          syncing={syncingCal}
-        />
       ) : tab === 'posts' ? (
         <>
           {/* Filtres */}
@@ -928,9 +902,8 @@ export default function ContentHubPage() {
       {editing !== null && (
         <PostEditor
           post={editing === 'new' ? null : editing}
-          initialScheduledAt={editing === 'new' ? createDate : null}
-          onClose={() => { setEditing(null); setCreateDate(null); }}
-          onSaved={(p) => { handleSaved(p); setCreateDate(null); }}
+          onClose={() => setEditing(null)}
+          onSaved={handleSaved}
         />
       )}
       {!showAssistant && (
@@ -956,137 +929,6 @@ export default function ContentHubPage() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Vue Frise chronologique — les posts dans le temps, avec la date courante
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
-  posts: Post[];
-  onOpen: (p: Post) => void;
-  onCreate: (dateIso: string) => void;
-  onSync: () => void;
-  syncing: boolean;
-}) {
-  const [month, setMonth] = useState(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
-  const [expandedDay, setExpandedDay] = useState<string | null>(null);
-
-  // Posts datés : programmés, brouillons datés, et publiés (historique visible)
-  const dated = posts.filter((p) => p.scheduledAt || p.publishedAt);
-  const byDay = new Map<string, Post[]>();
-  for (const p of dated) {
-    const key = new Date((p.status === 'published' ? p.publishedAt : p.scheduledAt) ?? p.scheduledAt!).toDateString();
-    byDay.set(key, [...(byDay.get(key) ?? []), p]);
-  }
-  for (const list of byDay.values()) {
-    list.sort((a, b) => new Date(a.scheduledAt ?? a.publishedAt!).getTime() - new Date(b.scheduledAt ?? b.publishedAt!).getTime());
-  }
-
-  // Grille : semaines complètes (lundi → dimanche) couvrant le mois
-  const firstDay = new Date(month);
-  const gridStart = new Date(firstDay);
-  gridStart.setDate(firstDay.getDate() - ((firstDay.getDay() + 6) % 7));
-  const cells: Date[] = [];
-  for (let i = 0; i < 42; i++) {
-    cells.push(new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
-  }
-  // 5 ou 6 semaines selon le mois
-  const weeks = cells[35].getMonth() === month.getMonth() ? cells : cells.slice(0, 35);
-
-  const todayKey = new Date().toDateString();
-  const monthLabel = month.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-  const shift = (delta: number) => {
-    setExpandedDay(null);
-    setMonth((m2) => new Date(m2.getFullYear(), m2.getMonth() + delta, 1));
-  };
-
-  const statusClass = (p: Post) =>
-    p.status === 'published' ? 'published' : p.status === 'draft' ? 'draft' : 'scheduled';
-
-  return (
-    <div className="cal-wrap">
-      <div className="cal-toolbar">
-        <div className="cal-nav">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => shift(-1)}>‹</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1)); setExpandedDay(null); }}>
-            Aujourd'hui
-          </button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => shift(1)}>›</button>
-          <span className="cal-month">{monthLabel}</span>
-        </div>
-        <div className="cal-legend">
-          <span><i className="cal-dot scheduled" /> programmé</span>
-          <span><i className="cal-dot draft" /> brouillon</span>
-          <span><i className="cal-dot published" /> publié</span>
-        </div>
-        <button type="button" className="btn btn-ghost" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
-          {syncing ? '⏳ Synchronisation…' : '🗓️ Synchroniser Google Calendar'}
-        </button>
-      </div>
-
-      <div className="cal-grid cal-head">
-        {['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map((d) => <div key={d} className="cal-dayname">{d}</div>)}
-      </div>
-      <div className="cal-grid">
-        {weeks.map((day) => {
-          const key = day.toDateString();
-          const inMonth = day.getMonth() === month.getMonth();
-          const items = byDay.get(key) ?? [];
-          const expanded = expandedDay === key;
-          const visible = expanded ? items : items.slice(0, 3);
-          return (
-            <div
-              key={key}
-              className={`cal-cell${inMonth ? '' : ' out'}${key === todayKey ? ' today' : ''}`}
-              onClick={(e) => {
-                // Clic sur le fond de la case (pas sur un chip) → nouveau post pré-daté à 9 h
-                if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('cal-daynum')) {
-                  const d = new Date(day);
-                  d.setHours(9, 0, 0, 0);
-                  onCreate(d.toISOString());
-                }
-              }}
-              title="Cliquer pour créer un post ce jour-là"
-            >
-              <span className="cal-daynum">{day.getDate()}</span>
-              {visible.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`cal-chip ${statusClass(p)}`}
-                  onClick={(e) => { e.stopPropagation(); onOpen(p); }}
-                  title={`${p.title || platformLabel(p.platform)} — ${STATUS_META[p.status].label}`}
-                >
-                  <span className="cal-chip-time">
-                    {new Date(p.scheduledAt ?? p.publishedAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  {platformIcon(p.platform)} {p.title || platformLabel(p.platform)}
-                </button>
-              ))}
-              {items.length > 3 && !expanded && (
-                <button type="button" className="cal-more" onClick={(e) => { e.stopPropagation(); setExpandedDay(key); }}>
-                  +{items.length - 3} autres
-                </button>
-              )}
-              {expanded && items.length > 3 && (
-                <button type="button" className="cal-more" onClick={(e) => { e.stopPropagation(); setExpandedDay(null); }}>
-                  réduire
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <p className="form-hint" style={{ marginTop: 8 }}>
-        💡 Cliquez sur un jour vide pour créer un post pré-daté, sur un chip pour l'ouvrir.
-      </p>
     </div>
   );
 }

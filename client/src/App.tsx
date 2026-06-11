@@ -12,6 +12,7 @@ import CreatePlanPage from './pages/CreatePlanPage';
 import ApprovalsPage from './pages/ApprovalsPage';
 import ConfigPage from './pages/ConfigPage';
 import ContentHubPage from './pages/ContentHubPage';
+import CalendarPage from './pages/CalendarPage';
 import KnowledgePage from './pages/KnowledgePage';
 
 export default function App() {
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="config" element={<ConfigPage />} />
             <Route path="content" element={<ContentHubPage />} />
+            <Route path="calendar" element={<CalendarPage />} />
             <Route path="assistant" element={<AssistantPage />} />
             <Route path="performance" element={<PerformancePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
