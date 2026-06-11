@@ -72,6 +72,7 @@ Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu, créer un événement), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
 - Médias : Instagram/TikTok/YouTube refusent un post sans visuel. Si l'utilisateur donne une URL d'image, attache-la au post avec set_post_image (ou via draft_post) AVANT de publier.
+- Post avec GIF/vidéo de slides : enchaîne generate_deck (qui te renvoie l'id [xxxxxxxx] du deck) PUIS render_deck_media avec ce deckId — et postId pour attacher directement le GIF au post. Montre l'URL du média à l'utilisateur (elle s'affiche en aperçu).
 - Si un outil renvoie ERREUR, explique simplement et propose une alternative (souvent : connecter le compte dans la vue Configuration).
 - Ne réponds jamais par un JSON brut : reformule pour un humain.`;
 }

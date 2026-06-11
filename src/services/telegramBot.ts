@@ -500,13 +500,16 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       };
       storage.saveDeck(deck);
       const slideCount = (markdown.match(/^---$/gm) || []).length;
-      return `Présentation « ${title} » créée (${slideCount} slides) — disponible dans l'onglet Slides du Hub de contenu (mode Présenter + export PDF via Ctrl+P).`;
+      return `Présentation « ${title} » créée (${slideCount} slides) — id [${shortId(deck.id)}], visible dans l'onglet Slides du Hub.
+Pour en faire un média de post : render_deck_media avec deckId="${shortId(deck.id)}" (format gif ou mp4).`;
     }
 
     case 'render_deck_media': {
-      const deckRef = String(args.deckId || '');
+      const deckRef = String(args.deckId || '').trim();
       const decks = storage.getDecksByPlan(userId, planId);
-      const summary = decks.find((d) => d.id === deckRef || d.id.startsWith(deckRef));
+      const summary = decks.find((d) => d.id === deckRef || d.id.startsWith(deckRef))
+        ?? decks.find((d) => deckRef.length > 3 && d.title.toLowerCase().includes(deckRef.toLowerCase()))
+        ?? (decks.length === 1 ? decks[0] : undefined);
       const deck = summary ? storage.getDeckById(summary.id) : undefined;
       if (!deck) return `ERREUR : deck introuvable. Decks du projet : ${decks.map((d) => `[${shortId(d.id)}] ${d.title}`).join(' · ') || 'aucun'}`;
       const { theme } = themeForUser(userId);
@@ -683,6 +686,7 @@ Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
 - Médias : Instagram/TikTok/YouTube refusent un post sans visuel. Si l'utilisateur donne une URL d'image, attache-la au post avec set_post_image (ou via draft_post) AVANT de publier.
+- Post avec GIF/vidéo de slides : enchaîne generate_deck (qui te renvoie l'id [xxxxxxxx] du deck) PUIS render_deck_media avec ce deckId — et postId pour attacher directement le GIF au post. Montre l'URL du média à l'utilisateur (elle s'affiche en aperçu).
 - Si un outil renvoie ERREUR, explique simplement et propose une alternative.
 - Ne réponds jamais par un JSON brut : reformule pour un humain.`;
 }

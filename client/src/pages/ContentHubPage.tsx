@@ -91,6 +91,33 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
   const [imgBusy,    setImgBusy]    = useState(false);
   const [imgError,   setImgError]   = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  // Présentations du projet : transformables en GIF animé attaché au post
+  const [decks,        setDecks]        = useState<DeckSummary[]>([]);
+  const [selectedDeck, setSelectedDeck] = useState('');
+
+  useEffect(() => {
+    getDecks().then((res) => {
+      if (res.success && res.data) setDecks(res.data);
+    });
+  }, []);
+
+  const handleDeckGif = async () => {
+    if (!selectedDeck) return;
+    setImgBusy(true);
+    setImgError('');
+    const res = await renderDeckMedia(selectedDeck, 'gif', post?.id);
+    setImgBusy(false);
+    if (res.success && res.data) {
+      if (res.data.publicUrl) {
+        set('imageUrl', res.data.publicUrl);
+      } else {
+        set('imageUrl', res.data.url);
+        setImgError('GIF généré mais hébergement public indisponible — l\'aperçu fonctionne, la publication sur les plateformes nécessitera une URL publique.');
+      }
+    } else {
+      setImgError(res.error || 'Rendu du GIF échoué.');
+    }
+  };
 
   const handleGenerateImage = async () => {
     setImgBusy(true);
@@ -317,6 +344,23 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
                 {imgBusy ? '⏳…' : '🎨 Générer'}
               </button>
             </div>
+            {decks.length > 0 && (
+              <div className="ai-assist-row" style={{ marginTop: 6 }}>
+                <select
+                  className="form-input"
+                  value={selectedDeck}
+                  onChange={(e) => setSelectedDeck(e.target.value)}
+                  disabled={imgBusy}
+                >
+                  <option value="">🎞️ Ou utilisez une présentation (onglet Slides)…</option>
+                  {decks.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+                </select>
+                <button type="button" className="btn btn-ghost" onClick={handleDeckGif} disabled={imgBusy || !selectedDeck}
+                        title="Transforme la présentation en GIF animé (fondus) et l'attache au post">
+                  {imgBusy ? '⏳…' : '🎬 GIF animé'}
+                </button>
+              </div>
+            )}
             {imgError && <div className="chat-error" style={{ marginTop: 6 }}>{imgError}</div>}
             {form.imageUrl.trim() && (
               <img src={form.imageUrl.trim()} alt="aperçu" className="post-image-preview"
@@ -1095,8 +1139,8 @@ function DecksPanel() {
     const res = await renderDeckMedia(id, format);
     setRendering(null);
     if (res.success && res.data) {
+      // Aperçu inline sous la carte (pas de nouvel onglet : souvent bloqué)
       setRenders((prev) => ({ ...prev, [`${id}:${format}`]: res.data! }));
-      window.open(res.data.url, '_blank', 'noopener');
     } else {
       setError(res.error || 'Rendu échoué.');
     }
@@ -1154,35 +1198,55 @@ function DecksPanel() {
                   ▶️ Présenter
                 </a>
                 <button
+                  type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={() => handleRender(d.id, 'gif')}
                   disabled={rendering !== null}
                   title="GIF animé avec fondus — hébergé publiquement, attachable à un post (Instagram inclus)"
                 >
-                  {rendering === `${d.id}:gif` ? '⏳' : '🎬 GIF'}
+                  {rendering === `${d.id}:gif` ? '⏳ Rendu…' : '🎬 GIF'}
                 </button>
                 <button
+                  type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={() => handleRender(d.id, 'mp4')}
                   disabled={rendering !== null}
                   title="Vidéo MP4 (meilleure qualité — nécessite ffmpeg sur le serveur)"
                 >
-                  {rendering === `${d.id}:mp4` ? '⏳' : '🎥 MP4'}
+                  {rendering === `${d.id}:mp4` ? '⏳ Rendu…' : '🎥 MP4'}
                 </button>
-                {renders[`${d.id}:gif`]?.publicUrl && (
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => navigator.clipboard.writeText(renders[`${d.id}:gif`].publicUrl!)}
-                    title="Copier l'URL publique du GIF (à coller dans le champ Image d'un post)"
-                  >
-                    📋 URL
-                  </button>
-                )}
                 <a className="btn btn-ghost btn-sm" href={deckMarkdownUrl(d.id)} title="Source Marp (réutilisable avec Marp CLI pour un export PPTX)">
                   ⬇️ .md
                 </a>
-                <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(d.id)} title="Supprimer">🗑️</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDelete(d.id)} title="Supprimer">🗑️</button>
               </div>
+              {(renders[`${d.id}:gif`] || renders[`${d.id}:mp4`]) && (
+                <div className="deck-render-preview">
+                  {renders[`${d.id}:gif`] && (
+                    <div className="deck-render-item">
+                      <img src={renders[`${d.id}:gif`].url} alt="GIF du deck" />
+                      <div className="deck-render-links">
+                        <a href={renders[`${d.id}:gif`].url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">⬇️ Télécharger</a>
+                        {renders[`${d.id}:gif`].publicUrl && (
+                          <button type="button" className="btn btn-ghost btn-sm"
+                            onClick={() => navigator.clipboard.writeText(renders[`${d.id}:gif`].publicUrl!)}
+                            title="URL publique — collable dans le champ Image d'un post">
+                            📋 Copier l'URL publique
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {renders[`${d.id}:mp4`] && (
+                    <div className="deck-render-item">
+                      <video src={renders[`${d.id}:mp4`].url} controls loop muted playsInline />
+                      <div className="deck-render-links">
+                        <a href={renders[`${d.id}:mp4`].url} download className="btn btn-ghost btn-sm">⬇️ Télécharger le MP4</a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
