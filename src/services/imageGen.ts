@@ -9,6 +9,7 @@
  */
 
 import { buildCompanyContext } from './contentAssistant';
+import { saveMediaFile } from './mediaStore';
 
 const DEFAULT_IMAGE_MODEL = 'bytedance-seed/seedream-4.5';
 
@@ -88,6 +89,11 @@ export async function generateImage(userId: string, brief: string): Promise<{ ur
   }
 
   const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  // Copie serveur (bibliothèque locale, purge à 90 jours) + URL publique
+  try {
+    const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg';
+    saveMediaFile(Buffer.from(base64, 'base64'), ext);
+  } catch { /* la copie locale est best-effort */ }
   const url = await uploadPublicImage(base64);
   return { url, model: imageModel() };
 }

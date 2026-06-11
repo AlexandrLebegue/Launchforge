@@ -4028,3 +4028,15 @@ h5.md-heading { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0
   vertical-align: top;
 }
 .md-table th { background: rgba(124, 92, 252, 0.1); font-weight: 600; }
+
+
+/* ── Aperçu média dans les bulles de chat ── */
+.md-media {
+  display: block;
+  max-width: min(420px, 100%);
+  max-height: 320px;
+  border-radius: 12px;
+  margin: 8px 0;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+}
+video.md-media { background: #000; }

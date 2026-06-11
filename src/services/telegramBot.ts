@@ -21,7 +21,10 @@ import { markPublished } from './postPublisher';
 import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
-import { generateDeckMarkdown } from './decks';
+import { generateDeckMarkdown, themeForUser } from './decks';
+import { renderDeckGif, renderDeckMp4 } from './deckMedia';
+import { saveMediaFile } from './mediaStore';
+import { uploadPublicImage } from './imageGen';
 import { AgentRun, Post, Reminder } from '../types';
 
 const API = 'https://api.telegram.org';
@@ -204,6 +207,19 @@ export const TOOLS: ToolDef[] = [
         slides: { type: 'number', description: 'Nombre de slides (3-15, défaut 8)' },
       },
       required: ['brief'],
+    },
+  },
+  {
+    name: 'render_deck_media',
+    description: 'Transforme une présentation (deck) en GIF ANIMÉ ou MP4 avec fondus entre les slides — média prêt pour un post. Le GIF reçoit une URL publique et peut être attaché à un post via postId. Pour « transforme ce deck en gif/vidéo », « fais-en un post animé ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        deckId: { type: 'string', description: 'Id du deck (liste : onglet Slides, ou celui que tu viens de créer)' },
+        format: { type: 'string', enum: ['gif', 'mp4'], description: 'gif = universel (URL publique) ; mp4 = meilleure qualité (serveur, nécessite ffmpeg)' },
+        postId: { type: 'string', description: 'Id court du post auquel attacher le GIF (optionnel)' },
+      },
+      required: ['deckId', 'format'],
     },
   },
   {
@@ -487,6 +503,34 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       return `Présentation « ${title} » créée (${slideCount} slides) — disponible dans l'onglet Slides du Hub de contenu (mode Présenter + export PDF via Ctrl+P).`;
     }
 
+    case 'render_deck_media': {
+      const deckRef = String(args.deckId || '');
+      const decks = storage.getDecksByPlan(userId, planId);
+      const summary = decks.find((d) => d.id === deckRef || d.id.startsWith(deckRef));
+      const deck = summary ? storage.getDeckById(summary.id) : undefined;
+      if (!deck) return `ERREUR : deck introuvable. Decks du projet : ${decks.map((d) => `[${shortId(d.id)}] ${d.title}`).join(' · ') || 'aucun'}`;
+      const { theme } = themeForUser(userId);
+      const format = String(args.format) === 'mp4' ? 'mp4' : 'gif';
+      if (format === 'mp4') {
+        const mp4 = await renderDeckMp4(deck.markdown, theme);
+        const { url } = saveMediaFile(mp4, 'mp4');
+        return `Vidéo MP4 générée : ${url} (stockée sur le serveur, purge à 90 jours).`;
+      }
+      const gif = await renderDeckGif(deck.markdown, theme);
+      const { url } = saveMediaFile(gif, 'gif');
+      let publicUrl: string | null = null;
+      try { publicUrl = await uploadPublicImage(gif.toString('base64')); } catch { /* copie locale dispo */ }
+      if (args.postId && publicUrl) {
+        const posts = storage.getPostsByPlan(userId, planId);
+        const post = findByShortId(posts, String(args.postId));
+        if (post) {
+          storage.updatePost(post.id, { imageUrl: publicUrl });
+          return `GIF animé généré et attaché au post [${shortId(post.id)}] : ${publicUrl}\n(copie serveur : ${url})`;
+        }
+      }
+      return `GIF animé généré : ${publicUrl ?? url}${publicUrl ? `\n(copie serveur : ${url})` : ''}\nUtilise set_post_image pour l'attacher à un post.`;
+    }
+
     case 'sync_post_metrics': {
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — synchro impossible.';
       const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status === 'published');
@@ -634,7 +678,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck), rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck, puis render_deck_media pour en faire un GIF/MP4 animé), rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.

@@ -49,6 +49,11 @@ app.use('/api/overview', overviewRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/api/decks', deckRoutes);
 
+// Médias générés (GIF/MP4 des decks, visuels) — purge automatique à 90 jours.
+// Le dossier est résolu à chaque requête : UPLOADS_DIR peut être posé après l'import.
+import { uploadsDir } from './services/mediaStore';
+app.use('/uploads', (req, res, next) => express.static(uploadsDir(), { maxAge: '7d' })(req, res, next));
+
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));
 app.get('*', (_req, res) => {

@@ -9,7 +9,22 @@ import { Fragment, ReactNode } from 'react';
  * Inline : gras, italique, code, liens, barré.
  */
 
-const INLINE_SPLIT = /(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\)|\*[^*\n]+\*|_[^_\n]+_|~~[^~]+~~)/g;
+const INLINE_SPLIT = /(`[^`]+`|!\[[^\]]*\]\([^)\s]+\)|\*\*[^*]+\*\*|\[[^\]]+\]\([^)\s]+\)|\*[^*\n]+\*|_[^_\n]+_|~~[^~]+~~|https?:\/\/[^\s<>"')\]]+)/g;
+
+const IMG_EXT = /\.(png|jpe?g|gif|webp|avif)(\?[^\s]*)?$/i;
+const VIDEO_EXT = /\.(mp4|webm)(\?[^\s]*)?$/i;
+
+/** Aperçu inline d'un média (utilisé pour les URLs nues et la syntaxe image) */
+function MediaPreview({ url, alt }: { url: string; alt?: string }) {
+  if (VIDEO_EXT.test(url) || url.startsWith('/uploads/') && VIDEO_EXT.test(url)) {
+    return <video className="md-media" src={url} controls loop muted playsInline />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer">
+      <img className="md-media" src={url} alt={alt || 'aperçu'} loading="lazy" />
+    </a>
+  );
+}
 
 function renderInline(text: string): ReactNode[] {
   return text.split(INLINE_SPLIT).map((part, i) => {
@@ -23,12 +38,30 @@ function renderInline(text: string): ReactNode[] {
     if (part.startsWith('~~') && part.endsWith('~~') && part.length > 4) {
       return <del key={i}>{part.slice(2, -2)}</del>;
     }
+    // Image markdown ![alt](url) → aperçu inline
+    const mdImg = part.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
+    if (mdImg) {
+      return <MediaPreview key={i} url={mdImg[2]} alt={mdImg[1]} />;
+    }
     const link = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
     if (link) {
+      // Lien vers un média → aperçu plutôt que lien nu
+      if (IMG_EXT.test(link[2]) || VIDEO_EXT.test(link[2])) {
+        return <MediaPreview key={i} url={link[2]} alt={link[1]} />;
+      }
       return (
         <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" className="md-link">
           {link[1]}
         </a>
+      );
+    }
+    // URL nue : média → aperçu ; sinon lien cliquable
+    if (/^https?:\/\//.test(part) || part.startsWith('/uploads/')) {
+      if (IMG_EXT.test(part) || VIDEO_EXT.test(part)) {
+        return <MediaPreview key={i} url={part} />;
+      }
+      return (
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="md-link">{part}</a>
       );
     }
     if (part.length > 2 && ((part.startsWith('*') && part.endsWith('*')) || (part.startsWith('_') && part.endsWith('_')))) {

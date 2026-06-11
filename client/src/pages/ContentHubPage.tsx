@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   generateCalendar, syncAllToCalendar, getOverview,
-  generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, DeckSummary,
+  generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
@@ -1085,6 +1085,23 @@ function DecksPanel() {
     if (res.success) setDecks((prev) => prev.filter((d) => d.id !== id));
   };
 
+  // Rendu GIF/MP4 : médias stockés sur le serveur (purge à 90 jours)
+  const [rendering, setRendering] = useState<string | null>(null);
+  const [renders, setRenders] = useState<Record<string, { url: string; publicUrl: string | null }>>({});
+
+  const handleRender = async (id: string, format: 'gif' | 'mp4') => {
+    setRendering(`${id}:${format}`);
+    setError('');
+    const res = await renderDeckMedia(id, format);
+    setRendering(null);
+    if (res.success && res.data) {
+      setRenders((prev) => ({ ...prev, [`${id}:${format}`]: res.data! }));
+      window.open(res.data.url, '_blank', 'noopener');
+    } else {
+      setError(res.error || 'Rendu échoué.');
+    }
+  };
+
   return (
     <div className="animate-fadeIn">
       <div className="card" style={{ marginBottom: 16 }}>
@@ -1136,6 +1153,31 @@ function DecksPanel() {
                 <a className="btn btn-primary btn-sm" href={deckHtmlUrl(d.id)} target="_blank" rel="noopener noreferrer">
                   ▶️ Présenter
                 </a>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => handleRender(d.id, 'gif')}
+                  disabled={rendering !== null}
+                  title="GIF animé avec fondus — hébergé publiquement, attachable à un post (Instagram inclus)"
+                >
+                  {rendering === `${d.id}:gif` ? '⏳' : '🎬 GIF'}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => handleRender(d.id, 'mp4')}
+                  disabled={rendering !== null}
+                  title="Vidéo MP4 (meilleure qualité — nécessite ffmpeg sur le serveur)"
+                >
+                  {rendering === `${d.id}:mp4` ? '⏳' : '🎥 MP4'}
+                </button>
+                {renders[`${d.id}:gif`]?.publicUrl && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => navigator.clipboard.writeText(renders[`${d.id}:gif`].publicUrl!)}
+                    title="Copier l'URL publique du GIF (à coller dans le champ Image d'un post)"
+                  >
+                    📋 URL
+                  </button>
+                )}
                 <a className="btn btn-ghost btn-sm" href={deckMarkdownUrl(d.id)} title="Source Marp (réutilisable avec Marp CLI pour un export PPTX)">
                   ⬇️ .md
                 </a>

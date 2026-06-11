@@ -13,6 +13,9 @@ import { storage } from '../services/storage';
 import {
   generateDeckMarkdown, renderDeckHtml, themeForUser, isAIConfigured, SAMPLE_DECK,
 } from '../services/decks';
+import { renderDeckGif, renderDeckMp4 } from '../services/deckMedia';
+import { saveMediaFile } from '../services/mediaStore';
+import { uploadPublicImage } from '../services/imageGen';
 
 const router = Router();
 
@@ -91,6 +94,43 @@ router.get('/:id/markdown', authHeaderOrQuery, (req: Request, res: Response) => 
   }
   res.setHeader('Content-Disposition', `attachment; filename="deck-${deck.id.slice(0, 8)}.md"`);
   res.type('text/markdown').send(deck.markdown);
+});
+
+// ── POST /api/decks/:id/render — deck → GIF animé ou MP4 (fondus) ───────────
+// Le média est stocké sur le serveur (/uploads, purge à 90 jours). Le GIF est
+// aussi hébergé publiquement pour pouvoir être attaché/publié sur un post.
+router.post('/:id/render', requireAuth, async (req: Request, res: Response) => {
+  const deck = storage.getDeckById(req.params.id);
+  if (!deck || deck.userId !== req.user!.userId) {
+    return res.status(404).json({ success: false, error: 'Deck not found' });
+  }
+  const { format, postId } = req.body as { format?: string; postId?: string };
+  if (format !== 'gif' && format !== 'mp4') {
+    return res.status(400).json({ success: false, error: 'format must be gif or mp4' });
+  }
+
+  try {
+    const { theme } = themeForUser(req.user!.userId);
+    let url: string;
+    let publicUrl: string | null = null;
+
+    if (format === 'gif') {
+      const gif = await renderDeckGif(deck.markdown, theme);
+      url = saveMediaFile(gif, 'gif').url;
+      try { publicUrl = await uploadPublicImage(gif.toString('base64')); } catch { /* le GIF local reste utilisable */ }
+    } else {
+      const mp4 = await renderDeckMp4(deck.markdown, theme);
+      url = saveMediaFile(mp4, 'mp4').url;
+    }
+
+    if (postId && publicUrl) {
+      const post = storage.getPostById(postId);
+      if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: publicUrl });
+    }
+    res.json({ success: true, data: { url, publicUrl } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Rendu échoué' });
+  }
 });
 
 // ── DELETE /api/decks/:id ────────────────────────────────────────────────────

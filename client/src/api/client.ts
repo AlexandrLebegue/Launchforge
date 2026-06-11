@@ -768,6 +768,15 @@ export function deckMarkdownUrl(id: string): string {
   return `${API_BASE}/decks/${id}/markdown?token=${encodeURIComponent(getToken() ?? '')}`;
 }
 
+/** Rend un deck en GIF animé ou MP4 (fondus entre slides) */
+export async function renderDeckMedia(
+  id: string,
+  format: 'gif' | 'mp4',
+  postId?: string
+): Promise<ApiResponse<{ url: string; publicUrl: string | null }>> {
+  return request(`/decks/${id}/render`, { method: 'POST', body: JSON.stringify({ format, postId }) });
+}
+
 export function themePreviewUrl(): string {
   return `${API_BASE}/decks/theme-preview?token=${encodeURIComponent(getToken() ?? '')}`;
 }

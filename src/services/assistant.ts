@@ -44,6 +44,7 @@ function actionLabel(name: string, args: any): string {
     case 'sync_post_metrics':     return '📈 Synchro des métriques';
     case 'generate_image':        return '🎨 Génération du visuel';
     case 'generate_deck':         return '🎞️ Création de la présentation';
+    case 'render_deck_media':     return `🎬 Rendu ${args.format === 'mp4' ? 'vidéo' : 'GIF'} du deck`;
     case 'publish_post':          return '📣 Publication du post';
     case 'send_email':            return `✉️ Envoi à ${args.to ?? ''}`;
     case 'send_email_to_contact': return `✉️ Email à ${args.contactName ?? 'un contact'}`;
