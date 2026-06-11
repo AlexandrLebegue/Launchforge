@@ -40,6 +40,7 @@ function actionLabel(name: string, args: any): string {
     case 'list_agents':           return '🤖 Agents du projet';
     case 'run_agent':             return `🤖 Tâche IA : ${args.taskTitle ?? ''}`;
     case 'draft_post':            return `✍️ Rédaction ${args.platform ?? ''}`;
+    case 'set_post_image':        return '🖼️ Image attachée au post';
     case 'publish_post':          return '📣 Publication du post';
     case 'send_email':            return `✉️ Envoi à ${args.to ?? ''}`;
     case 'send_email_to_contact': return `✉️ Email à ${args.contactName ?? 'un contact'}`;
@@ -66,6 +67,7 @@ Tu agis via tes outils : état des activités, posts programmés/récurrents, va
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu, créer un événement), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
+- Médias : Instagram/TikTok/YouTube refusent un post sans visuel. Si l'utilisateur donne une URL d'image, attache-la au post avec set_post_image (ou via draft_post) AVANT de publier.
 - Si un outil renvoie ERREUR, explique simplement et propose une alternative (souvent : connecter le compte dans la vue Configuration).
 - Ne réponds jamais par un JSON brut : reformule pour un humain.`;
 }

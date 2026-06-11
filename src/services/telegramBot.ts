@@ -158,14 +158,27 @@ export const TOOLS: ToolDef[] = [
       properties: {
         platform: { type: 'string' },
         brief: { type: 'string', description: 'Sujet, angle, objectif du post' },
+        imageUrl: { type: 'string', description: 'URL du visuel à joindre si l\'utilisateur en a fourni un (obligatoire pour Instagram)' },
       },
       required: ['platform', 'brief'],
     },
   },
   {
     name: 'publish_post',
-    description: 'Publie immédiatement un post du Hub via Composio (donne l\'id court renvoyé par draft_post ou list_upcoming_posts). Demande TOUJOURS confirmation avant.',
+    description: 'Publie immédiatement un post du Hub via Composio (donne l\'id court renvoyé par draft_post ou list_upcoming_posts). L\'image attachée au post est transmise à la plateforme. Instagram/TikTok/YouTube REFUSENT un post sans média : attache d\'abord un visuel avec set_post_image. Demande TOUJOURS confirmation avant.',
     parameters: { type: 'object', properties: { postId: { type: 'string' } }, required: ['postId'] },
+  },
+  {
+    name: 'set_post_image',
+    description: 'Attache (ou remplace) le visuel d\'un post du Hub à partir d\'une URL d\'image. À utiliser quand l\'utilisateur fournit une URL d\'image pour un post — indispensable avant de publier sur Instagram.',
+    parameters: {
+      type: 'object',
+      properties: {
+        postId:   { type: 'string', description: 'Id court du post' },
+        imageUrl: { type: 'string', description: 'URL https de l\'image' },
+      },
+      required: ['postId', 'imageUrl'],
+    },
   },
   {
     name: 'send_email_to_contact',
@@ -348,6 +361,16 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       return `Agent ${agent.name} lancé sur « ${run.cardTitle} ». ${agent.approvalMode === 'manual' ? 'Le contenu arrivera dans les validations (je peux te les lister dans une minute).' : 'Publication automatique après rédaction.'}`;
     }
 
+    case 'set_post_image': {
+      const url = String(args.imageUrl || '').trim();
+      if (!/^https?:\/\/\S+$/i.test(url)) return 'ERREUR : URL d\'image invalide (http/https attendu).';
+      const posts = storage.getPostsByPlan(userId, planId);
+      const post = findByShortId(posts, String(args.postId || ''));
+      if (!post) return 'ERREUR : post introuvable.';
+      storage.updatePost(post.id, { imageUrl: url });
+      return `Image attachée au post [${shortId(post.id)}] — prêt à publier (y compris sur Instagram).`;
+    }
+
     case 'web_search': {
       const results = await webSearch(String(args.query || ''));
       return results.length > 0
@@ -373,7 +396,8 @@ export async function executeTool(userId: string, _chatId: string, name: string,
         platform: String(args.platform || 'linkedin'),
         title: generated.title, content: generated.content,
         status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,
-        imageUrl: null, recurrence: 'none', recurrenceBrief: null, autoPublish: 0, publishError: null, calendarSynced: 0,
+        imageUrl: typeof args.imageUrl === 'string' && /^https?:\/\//i.test(args.imageUrl.trim()) ? args.imageUrl.trim() : null,
+        recurrence: 'none', recurrenceBrief: null, autoPublish: 0, publishError: null, calendarSynced: 0,
         impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
         createdAt: now, updatedAt: now,
       };
@@ -386,7 +410,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const post = findByShortId(posts, String(args.postId || ''));
       if (!post) return 'ERREUR : post introuvable (ou déjà publié).';
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — publication impossible depuis le chat, utilisez le copier-coller depuis l\'app.';
-      const result = await publishViaComposio(userId, post.platform, post.content);
+      const result = await publishViaComposio(userId, post.platform, post.content, post.imageUrl);
       if (result.trim().toUpperCase().startsWith('OK')) {
         markPublished(post);
         return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}`;
@@ -529,6 +553,7 @@ Tu agis via tes outils : état des activités, posts programmés/récurrents, va
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
+- Médias : Instagram/TikTok/YouTube refusent un post sans visuel. Si l'utilisateur donne une URL d'image, attache-la au post avec set_post_image (ou via draft_post) AVANT de publier.
 - Si un outil renvoie ERREUR, explique simplement et propose une alternative.
 - Ne réponds jamais par un JSON brut : reformule pour un humain.`;
 }

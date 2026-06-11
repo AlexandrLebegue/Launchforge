@@ -175,17 +175,38 @@ export function guardedReply(result: McpTaskResult): string {
 
 // ── Publication ───────────────────────────────────────────────────────────────
 
-export async function publishViaComposio(userId: string, platform: string, content: string): Promise<string> {
+/** Plateformes qui refusent toute publication sans média */
+const MEDIA_REQUIRED: Record<string, string> = {
+  instagram: 'Instagram exige une image — attachez un visuel au post (champ Image du Hub, ou donnez une URL d\'image à l\'assistant)',
+  tiktok:    'TikTok exige une vidéo — attachez l\'URL du média au post avant de publier',
+  youtube:   'YouTube exige une vidéo — attachez l\'URL du média au post avant de publier',
+};
+
+export async function publishViaComposio(
+  userId: string,
+  platform: string,
+  content: string,
+  imageUrl?: string | null,
+): Promise<string> {
+  // Garde-fou AVANT tout appel modèle : inutile de lancer une mission vouée
+  // à l'échec (observé en usage réel sur Instagram sans image)
+  if (!imageUrl && MEDIA_REQUIRED[platform]) {
+    return `ECHEC: ${MEDIA_REQUIRED[platform]}`;
+  }
+
+  const mediaInstruction = imageUrl
+    ? `\nUne image est jointe au post : passe son URL dans le paramètre média approprié de l'outil de publication (image_url, media_url, photo…). Si l'outil de publication choisi n'accepte aucun média, publie le texte et signale-le dans ta réponse.`
+    : '';
   const result = await runMcpTask(
     userId,
     platformKeywords(platform),
     `Tu es un opérateur de publication. Tu disposes des outils Composio de l'utilisateur pour la plateforme ${platform}.
-Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.
+Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.${mediaInstruction}
 Si la publication réussit, réponds en une phrase avec le résultat (et l'URL/id du post si disponible), préfixée par "OK:".
 Si aucun outil ne permet de publier sur ${platform} ou si la publication échoue, réponds préfixé par "ECHEC:" avec la raison.
 IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, pas de markdown.`,
-    `Publie ce contenu sur ${platform} :\n\n${content}`,
-    ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit'],
+    `Publie ce contenu sur ${platform} :\n\n${content}${imageUrl ? `\n\n--- Image à joindre (paramètre média de l'outil) ---\n${imageUrl}` : ''}`,
+    ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit', 'media', 'photo'],
   );
   return guardedReply(result);
 }

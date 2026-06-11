@@ -120,6 +120,21 @@ describe('Identité Composio par utilisateur', () => {
   });
 });
 
+describe('Publication avec média', () => {
+  it('Instagram sans image → refus immédiat explicite, sans appel modèle', async () => {
+    const { publishViaComposio } = await import('../src/services/composio');
+    const result = await publishViaComposio(userAId, 'instagram', 'Un super post texte');
+    expect(result).toMatch(/^ECHEC:/);
+    expect(result).toContain('image');
+  });
+
+  it('TikTok et YouTube sans média → même garde-fou', async () => {
+    const { publishViaComposio } = await import('../src/services/composio');
+    expect(await publishViaComposio(userAId, 'tiktok', 'texte')).toMatch(/^ECHEC:.*vidéo/);
+    expect(await publishViaComposio(userAId, 'youtube', 'texte')).toMatch(/^ECHEC:.*vidéo/);
+  });
+});
+
 describe('Bot Telegram personnel', () => {
   it('rejette un token au format invalide', async () => {
     const res = await request(app)

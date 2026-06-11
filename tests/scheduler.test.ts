@@ -39,6 +39,19 @@ async function createDuePost(extra: Record<string, unknown> = {}) {
 }
 
 describe('Worker de publication automatique', () => {
+  it('transmet l\'image du post au publieur (paramètre média, plus de hack texte)', async () => {
+    const post = await createDuePost({ imageUrl: 'https://exemple.dev/visuel.png', title: 'Post avec image' });
+    const calls: { content: string; imageUrl?: string | null }[] = [];
+    await processDuePosts(new Date(), async (_u, _p, content, imageUrl) => {
+      calls.push({ content, imageUrl });
+      return 'OK: publié';
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].imageUrl).toBe('https://exemple.dev/visuel.png');
+    expect(calls[0].content).not.toContain('[Image à joindre');
+    storage.deletePost(post.id);
+  });
+
   it('publie les posts dus quand le publieur répond OK', async () => {
     const post = await createDuePost();
     const published = await processDuePosts(new Date(), async () => 'OK: publié (id 123)');
