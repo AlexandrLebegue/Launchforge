@@ -226,6 +226,19 @@ export function extractPublishedRef(reply: string): string | null {
 
 // ── Synchronisation des métriques ─────────────────────────────────────────────
 
+/**
+ * Spécificités API par plateforme — évite les abandons sur des 403 attendus
+ * (observé en réel : stats LinkedIn refusées pour un post personnel alors que
+ * les réactions restent lisibles par un autre endpoint).
+ */
+const METRICS_HINTS: Record<string, string> = {
+  linkedin: `Spécifique LinkedIn :
+- LINKEDIN_GET_SHARE_STATS ne fonctionne QUE pour les pages ORGANISATION — un 403 sur un post personnel est NORMAL et attendu : n'abandonne pas, continue avec les autres outils.
+- Post personnel : appelle LINKEDIN_LIST_REACTIONS avec l'URN du post (urn:li:share:<id> ou urn:li:activity:<id>, extrais-le de l'URL si besoin) et COMPTE les réactions retournées → c'est la valeur "likes". LINKEDIN_GET_POST_CONTENT permet de vérifier le post.
+- L'API LinkedIn n'expose PAS les impressions ni le détail des commentaires d'un post personnel : mets 0 pour ces champs et explique-le dans "note". found=true dès que les réactions ont pu être lues.`,
+  twitter: `Spécifique X/Twitter : l'id du tweet est le nombre final de l'URL /status/<id>. Les métriques publiques (public_metrics) couvrent vues, likes, réponses, reposts.`,
+};
+
 export interface SyncedMetrics {
   found: boolean;
   impressions?: number;
@@ -251,12 +264,12 @@ IMPORTANT :
 - N'accède JAMAIS à l'URL par une requête web directe (fetch/scraping) : les plateformes renvoient 403 aux accès non authentifiés. Utilise UNIQUEMENT les outils Composio (API authentifiée).
 - Si un outil attend un identifiant plutôt qu'une URL, extrais-le de l'URL (X/Twitter : le nombre final de /status/<id> ; LinkedIn : l'identifiant d'activité urn:li:activity:<id> ; etc.).
 - Si la recherche directe échoue, liste tes propres posts récents avec les outils disponibles et retrouve celui qui correspond au titre indiqué.
-Mapping attendu : impressions = vues/impressions ; likes = likes/réactions/favoris ; comments = commentaires/réponses ; shares = partages/retweets/reposts ; clicks = clics sur lien si disponible.
+${METRICS_HINTS[platform] ? `${METRICS_HINTS[platform]}\n` : ''}Mapping attendu : impressions = vues/impressions ; likes = likes/réactions/favoris ; comments = commentaires/réponses ; shares = partages/retweets/reposts ; clicks = clics sur lien si disponible.
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour :
 {"found": boolean, "impressions": number, "likes": number, "comments": number, "shares": number, "clicks": number, "note": "explication courte"}
 Mets 0 pour une métrique indisponible. found=false si le post est introuvable ou si aucun outil ne permet la lecture.`,
     `Récupère les métriques de ce post ${platform} :\nURL : ${externalUrl}\nTitre (indice) : ${title || '—'}`,
-    ['lookup', 'get', 'search', 'fetch', 'retrieve', 'analytics', 'metrics'],
+    ['lookup', 'get', 'search', 'fetch', 'retrieve', 'analytics', 'metrics', 'reactions', 'stats'],
   );
 
   try {
