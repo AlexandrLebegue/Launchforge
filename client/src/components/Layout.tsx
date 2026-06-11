@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Flame, LayoutDashboard, Megaphone, CalendarDays, MessageSquare,
+  TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut,
+} from 'lucide-react';
 import { User, setToken, getOverview, activatePlan, ProjectSummary } from '../api/client';
 
 const nicheEmojis: Record<string, string> = {
@@ -15,14 +19,14 @@ interface Props {
 }
 
 const navItems = [
-  { to: '/',          icon: '📊', label: 'Tableau de bord' },
-  { to: '/content',   icon: '📣', label: 'Hub de contenu'  },
-  { to: '/calendar',  icon: '🗓️', label: 'Calendrier'      },
-  { to: '/assistant', icon: '💬', label: 'Assistant'       },
-  { to: '/performance', icon: '📈', label: 'Performances'  },
-  { to: '/knowledge', icon: '📚', label: 'Connaissances'   },
-  { to: '/approvals', icon: '✋', label: 'Validations'     },
-  { to: '/config',    icon: '⚙️', label: 'Configuration'   },
+  { to: '/',            icon: <LayoutDashboard size={17} />, label: 'Tableau de bord' },
+  { to: '/content',     icon: <Megaphone size={17} />,       label: 'Hub de contenu'  },
+  { to: '/calendar',    icon: <CalendarDays size={17} />,    label: 'Calendrier'      },
+  { to: '/assistant',   icon: <MessageSquare size={17} />,   label: 'Assistant'       },
+  { to: '/performance', icon: <TrendingUp size={17} />,      label: 'Performances'    },
+  { to: '/knowledge',   icon: <BookOpen size={17} />,        label: 'Connaissances'   },
+  { to: '/approvals',   icon: <ClipboardCheck size={17} />,  label: 'Validations'     },
+  { to: '/config',      icon: <Settings size={17} />,        label: 'Configuration'   },
 ];
 
 export default function Layout({ user, onLogout }: Props) {
@@ -105,7 +109,7 @@ export default function Layout({ user, onLogout }: Props) {
       <aside className={`layout-sidebar${sidebarOpen ? ' open' : ''}`}>
         {/* Logo */}
         <Link to="/" className="layout-sidebar-logo" onClick={closeSidebar}>
-          <span className="layout-sidebar-logo-icon">🚀</span>
+          <span className="layout-sidebar-logo-icon"><Flame size={21} /></span>
           LaunchForge
         </Link>
 
@@ -197,7 +201,7 @@ export default function Layout({ user, onLogout }: Props) {
             className="layout-nav-item"
             onClick={handleLogout}
           >
-            <span className="layout-nav-icon">🚪</span>
+            <span className="layout-nav-icon"><LogOut size={17} /></span>
             Déconnexion
           </button>
         </div>

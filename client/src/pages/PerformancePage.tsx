@@ -12,13 +12,13 @@ const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0'
 const fmtWeek = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 
-/** Couleurs alignées sur le thème sombre violet de l'app */
+/** Couleurs alignées sur le thème Forge de l'app */
 const C = {
-  impressions: '#7c5cfc',
+  impressions: '#ff6b35',
   likes: '#34d399',
   rel: '#fbbf24',
-  grid: 'rgba(255,255,255,0.07)',
-  text: '#b8b3cc',
+  grid: 'rgba(255,248,240,0.07)',
+  text: '#a39c93',
 };
 
 const tooltipStyle = {
