@@ -3,13 +3,14 @@
  * hébergement public gratuit : les plateformes (Instagram, LinkedIn…)
  * exigent une URL d'image publique, pas du base64.
  *
- * Modèle configurable via IMAGE_MODEL (défaut : gemini-2.5-flash-image,
- * ~0,04 $ l'image — le moins cher d'OpenRouter en sortie image).
+ * Modèle configurable via IMAGE_MODEL. Défaut : seedream-4.5 (~0,04 $
+ * l'image en 2048×2048 — même prix que gemini-flash-image mais 4× plus
+ * de pixels, mesuré en réel).
  */
 
 import { buildCompanyContext } from './contentAssistant';
 
-const DEFAULT_IMAGE_MODEL = 'google/gemini-2.5-flash-image';
+const DEFAULT_IMAGE_MODEL = 'bytedance-seed/seedream-4.5';
 
 export function isImageGenConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY);
@@ -55,21 +56,29 @@ export async function generateImage(userId: string, brief: string): Promise<{ ur
     company ? `Contexte de marque (pour l'ambiance, ne pas écrire ces informations dans l'image) : ${company.slice(0, 500)}` : '',
   ].filter(Boolean).join('\n');
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: imageModel(),
-      modalities: ['image', 'text'],
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(120000),
-  });
+  // Certains modèles sont image-only (seedream : ['image']), d'autres
+  // multi-modaux (gemini : ['image','text']) — on tente puis on replie.
+  const callModel = async (modalities: string[]) => {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: imageModel(),
+        modalities,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+    return { res, data: await res.json().catch(() => null) as any };
+  };
 
-  const data: any = await res.json().catch(() => null);
+  let { res, data } = await callModel(['image']);
+  if (!res.ok && String(data?.error?.message || '').includes('modalities')) {
+    ({ res, data } = await callModel(['image', 'text']));
+  }
   if (!res.ok) {
     throw new Error(data?.error?.message || `Génération d'image refusée (${res.status})`);
   }
