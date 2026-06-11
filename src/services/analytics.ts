@@ -16,7 +16,7 @@
 import { v4 as uuid } from 'uuid';
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import { storage } from './storage';
-import { Post, KnowledgeEntry } from '../types';
+import { Post, KnowledgeEntry, KnowledgeCategory } from '../types';
 
 export { isAIConfigured };
 
@@ -223,29 +223,33 @@ export function computePerformanceSeries(userId: string, planId: string | null):
 }
 
 const LEARNINGS_TITLE = '📈 Enseignements de performance (auto)';
-const MAX_LEARNING_LINES = 25;
+const NEWS_TITLE = '📰 Veille — actus utilisées par l\'IA (auto)';
+const MAX_AUTO_LINES = 25;
 
 /**
- * Fusionne des enseignements dans la fiche « learnings » du projet (une seule
- * fiche, dédupliquée, bornée) — injectée ensuite dans toutes les générations.
+ * Fusionne des lignes dans UNE fiche auto-entretenue de la base de
+ * connaissances (dédupliquée par début de phrase, bornée, plus récent en tête).
  */
-export function upsertLearnings(userId: string, planId: string | null, lines: string[]): number {
+function upsertAutoEntry(
+  userId: string, planId: string | null,
+  category: KnowledgeCategory, title: string, lines: string[],
+): number {
   const clean = lines.map((l) => l.replace(/^[-•]\s*/, '').trim()).filter((l) => l.length > 8);
   if (clean.length === 0) return 0;
 
   const existing = storage.getKnowledgeByPlan(userId, planId)
-    .find((e) => e.category === 'learnings' && e.title === LEARNINGS_TITLE);
+    .find((e) => e.category === category && e.title === title);
 
   const current = existing
     ? existing.content.split('\n').map((l) => l.replace(/^[-•]\s*/, '').trim()).filter(Boolean)
     : [];
-  // Déduplication approximative : même début de phrase = même enseignement
+  // Déduplication approximative : même début de phrase = même information
   const key = (l: string) => l.toLowerCase().slice(0, 40);
   const seen = new Set(current.map(key));
   const added = clean.filter((l) => !seen.has(key(l)));
   if (added.length === 0) return 0;
 
-  const merged = [...added, ...current].slice(0, MAX_LEARNING_LINES);
+  const merged = [...added, ...current].slice(0, MAX_AUTO_LINES);
   const content = merged.map((l) => `- ${l}`).join('\n');
   const now = new Date().toISOString();
 
@@ -253,12 +257,30 @@ export function upsertLearnings(userId: string, planId: string | null, lines: st
     storage.updateKnowledge(existing.id, { content });
   } else {
     const entry: KnowledgeEntry = {
-      id: uuid(), userId, planId, category: 'learnings',
-      title: LEARNINGS_TITLE, content, createdAt: now, updatedAt: now,
+      id: uuid(), userId, planId, category,
+      title, content, createdAt: now, updatedAt: now,
     };
     storage.saveKnowledge(entry);
   }
   return added.length;
+}
+
+/**
+ * Fusionne des enseignements dans la fiche « learnings » du projet (une seule
+ * fiche, dédupliquée, bornée) — injectée ensuite dans toutes les générations.
+ */
+export function upsertLearnings(userId: string, planId: string | null, lines: string[]): number {
+  return upsertAutoEntry(userId, planId, 'learnings', LEARNINGS_TITLE, lines);
+}
+
+/**
+ * Archive les faits d'actualité utilisés par l'IA dans une fiche « 📰 Veille »
+ * du projet (opt-in par série récurrente) — visibles et éditables par
+ * l'utilisateur dans la vue Connaissances, réinjectés dans les générations.
+ */
+export function upsertNewsArchive(userId: string, planId: string | null, facts: string[]): number {
+  const dated = facts.map((f) => `${new Date().toLocaleDateString('fr-FR')} — ${f}`);
+  return upsertAutoEntry(userId, planId, 'news', NEWS_TITLE, dated);
 }
 
 export interface PostAnalysis {

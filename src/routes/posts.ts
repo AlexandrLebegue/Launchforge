@@ -8,7 +8,7 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
-import { markPublished } from '../services/postPublisher';
+import { markPublished, generateOccurrenceContent } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { analyzePost } from '../services/analytics';
 import { Post, PostStatus, Recurrence } from '../types';
@@ -63,6 +63,10 @@ router.post('/', (req: Request, res: Response) => {
     imageUrl:    typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null,
     recurrence:  RECURRENCES.includes(body.recurrence as Recurrence) ? (body.recurrence as Recurrence) : 'none',
     recurrenceBrief: typeof body.recurrenceBrief === 'string' && body.recurrenceBrief.trim() ? body.recurrenceBrief.trim().slice(0, 600) : null,
+    seriesId:    null,
+    recurrenceUseNews:      body.recurrenceUseNews ? 1 : 0,
+    recurrenceUseKnowledge: body.recurrenceUseKnowledge === undefined ? 1 : (body.recurrenceUseKnowledge ? 1 : 0),
+    recurrenceUpdateKb:     body.recurrenceUpdateKb ? 1 : 0,
     autoPublish: body.autoPublish ? 1 : 0,
     publishError: null,
     calendarSynced: 0,
@@ -105,6 +109,9 @@ router.patch('/:id', (req: Request, res: Response) => {
       ? body.recurrenceBrief.trim().slice(0, 600)
       : null;
   }
+  if (body.recurrenceUseNews !== undefined)      patch.recurrenceUseNews = body.recurrenceUseNews ? 1 : 0;
+  if (body.recurrenceUseKnowledge !== undefined) patch.recurrenceUseKnowledge = body.recurrenceUseKnowledge ? 1 : 0;
+  if (body.recurrenceUpdateKb !== undefined)     patch.recurrenceUpdateKb = body.recurrenceUpdateKb ? 1 : 0;
   if (body.autoPublish !== undefined) {
     patch.autoPublish = body.autoPublish ? 1 : 0;
     // Réactiver l'auto-publication efface l'erreur précédente
@@ -156,6 +163,43 @@ router.post('/:id/publish', (req: Request, res: Response) => {
   if (next) syncPostsToCalendarInBackground([next]);
 
   res.json({ success: true, data: { post: published, next } });
+});
+
+// ── POST /api/posts/:id/recurrence/preview ───────────────────────────────────
+// Mode « simuler » : génère la prochaine occurrence de la série SANS rien
+// enregistrer — l'utilisateur voit ce que l'IA produira avec ses réglages
+// (instruction, base de connaissances, actus, mémoire de série). Les réglages
+// du corps de requête priment sur ceux du post pour tester avant de sauver.
+router.post('/:id/recurrence/preview', async (req: Request, res: Response) => {
+  const post = loadOwnedPost(req, res);
+  if (!post) return;
+
+  const body = req.body as Partial<Post>;
+  const candidate: Post = {
+    ...post,
+    recurrenceBrief: typeof body.recurrenceBrief === 'string' && body.recurrenceBrief.trim()
+      ? body.recurrenceBrief.trim().slice(0, 600)
+      : post.recurrenceBrief,
+    recurrenceUseNews:      body.recurrenceUseNews !== undefined ? (body.recurrenceUseNews ? 1 : 0) : post.recurrenceUseNews,
+    recurrenceUseKnowledge: body.recurrenceUseKnowledge !== undefined ? (body.recurrenceUseKnowledge ? 1 : 0) : post.recurrenceUseKnowledge,
+    // Simulation : jamais d'écriture en base de connaissances
+    recurrenceUpdateKb: 0,
+  };
+
+  if (!candidate.recurrenceBrief) {
+    return res.status(400).json({ success: false, error: 'Définissez d\'abord l\'instruction de régénération de la série' });
+  }
+  if (!isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+
+  try {
+    const gen = await generateOccurrenceContent(candidate);
+    const tags = gen.hashtags.length > 0 ? `\n\n${gen.hashtags.map((h) => `#${h}`).join(' ')}` : '';
+    res.json({ success: true, data: { title: gen.title, content: gen.content + tags } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Simulation échouée' });
+  }
 });
 
 // ── POST /api/posts/:id/sync-metrics ─────────────────────────────────────────

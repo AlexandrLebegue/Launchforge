@@ -22,6 +22,7 @@ const CATEGORY_LABELS: Record<KnowledgeCategory, string> = {
   tone:     'Ton & style',
   offers:   'Offres & tarifs',
   learnings:'Enseignements de performance (issus de VOS résultats — applique-les en priorité)',
+  news:     'Veille et actualités (faits récents archivés — vérifie leur fraîcheur avant de les citer)',
   other:    'Divers',
 };
 
@@ -80,6 +81,8 @@ export interface GeneratedContent {
   title: string;
   content: string;
   hashtags: string[];
+  /** Faits d'actualité réellement utilisés (si collectNewsFacts) — pour la fiche 📰 Veille */
+  newsFacts?: string[];
 }
 
 export interface GenerateParams {
@@ -91,6 +94,12 @@ export interface GenerateParams {
   baseContent?: string;
   /** Enrichir avec une recherche d'actualités web sur le sujet */
   useNews?: boolean;
+  /** Ne PAS injecter la base de connaissances (séries récurrentes : accès débrayable) */
+  skipKnowledge?: boolean;
+  /** Occurrences déjà publiées de la même série récurrente — à ne pas répéter */
+  seriesHistory?: { title: string; content: string }[];
+  /** Demander au modèle de lister les faits d'actualité utilisés (archivage Veille) */
+  collectNewsFacts?: boolean;
 }
 
 export async function generateContent(params: GenerateParams): Promise<GeneratedContent> {
@@ -98,7 +107,7 @@ export async function generateContent(params: GenerateParams): Promise<Generated
     throw new Error('AI_NOT_CONFIGURED');
   }
 
-  const knowledge = buildKnowledgeContext(params.userId);
+  const knowledge = params.skipKnowledge ? '' : buildKnowledgeContext(params.userId);
   const company   = buildCompanyContext(params.userId);
   const guideline = PLATFORM_GUIDELINES[params.platform] || `Adapte le contenu aux codes de la plateforme ${params.platform}.`;
 
@@ -122,6 +131,16 @@ export async function generateContent(params: GenerateParams): Promise<Generated
       `## Angles déjà utilisés (NE PAS répéter — trouve un angle réellement différent : autre accroche, autre format, autre bénéfice mis en avant)\n- ${recentTitles.join('\n- ')}`
     );
   }
+  // Mémoire de série : les occurrences déjà publiées de CE post récurrent.
+  // Plus ciblé que les titres du projet — l'IA voit le contenu réel à ne pas refaire.
+  if (params.seriesHistory && params.seriesHistory.length > 0) {
+    const history = params.seriesHistory
+      .map((p, i) => `${i + 1}. « ${p.title} » — ${p.content.slice(0, 180).replace(/\n+/g, ' ')}…`)
+      .join('\n');
+    systemParts.push(
+      `## Occurrences DÉJÀ PUBLIÉES de cette série récurrente (interdiction absolue de répéter ces idées, exemples, accroches ou structures — apporte du neuf à chaque occurrence)\n${history}`
+    );
+  }
   systemParts.push(`Contexte temporel : nous sommes le ${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}. Chaque génération doit être unique.`);
 
   // Actualités du web : ancrer le post dans l'actu du sujet
@@ -136,9 +155,12 @@ export async function generateContent(params: GenerateParams): Promise<Generated
       }
     } catch { /* la génération reste possible sans actus */ }
   }
+  const newsFactsField = params.collectNewsFacts
+    ? ', "newsFacts": ["fait d\'actualité réellement utilisé dans le post, daté et avec sa source", …] (tableau vide si aucune actu utilisée)'
+    : '';
   systemParts.push(
     'Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni fences markdown :\n' +
-    '{"title": "titre court du post (usage interne)", "content": "le contenu complet prêt à publier", "hashtags": ["hashtag", "sans", "le", "diese"]}\n' +
+    `{"title": "titre court du post (usage interne)", "content": "le contenu complet prêt à publier", "hashtags": ["hashtag", "sans", "le", "diese"]${newsFactsField}}\n` +
     'hashtags : tableau vide si non pertinent pour la plateforme.'
   );
 
@@ -161,5 +183,6 @@ export async function generateContent(params: GenerateParams): Promise<Generated
     title: parsed.title || params.brief.slice(0, 60),
     content: parsed.content,
     hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags : [],
+    newsFacts: Array.isArray(parsed.newsFacts) ? parsed.newsFacts.filter((f) => typeof f === 'string') : undefined,
   };
 }

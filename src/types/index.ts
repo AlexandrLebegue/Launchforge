@@ -291,6 +291,14 @@ export interface Post {
   /** Si renseignée : chaque nouvelle occurrence est RÉGÉNÉRÉE par l'IA à
    *  partir de cette instruction (sinon le même contenu est repris) */
   recurrenceBrief: string | null;
+  /** Id du post d'origine de la série récurrente (null = tête de série ou non récurrent) */
+  seriesId: string | null;
+  /** La régénération IA s'appuie sur une recherche d'actualités web */
+  recurrenceUseNews: number;
+  /** La régénération IA s'appuie sur la base de connaissances (défaut : oui) */
+  recurrenceUseKnowledge: number;
+  /** L'IA archive les actus utilisées dans la fiche 📰 Veille de la base de connaissances */
+  recurrenceUpdateKb: number;
   /** Publication automatique à l'heure programmée par le worker (via Composio) */
   autoPublish: number;
   /** Dernière erreur de publication automatique (null si OK) */
@@ -307,7 +315,7 @@ export interface Post {
   updatedAt: string;
 }
 
-export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'other';
+export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'news' | 'other';
 
 export interface KnowledgeEntry {
   id: string;

@@ -12,6 +12,7 @@ const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint:
   { value: 'tone',     label: 'Ton & style',       icon: '🎨', hint: 'Voix de marque, mots à utiliser/éviter…' },
   { value: 'offers',   label: 'Offres & tarifs',   icon: '💰', hint: 'Plans, promos, garanties…' },
   { value: 'learnings',label: 'Enseignements',     icon: '📈', hint: 'Tirés de vos résultats — alimentés par l\'analyse IA' },
+  { value: 'news',     label: 'Veille & actus',    icon: '📰', hint: 'Actus archivées par les séries récurrentes (opt-in) — éditables' },
   { value: 'other',    label: 'Divers',            icon: '📌', hint: 'Tout le reste' },
 ];
 

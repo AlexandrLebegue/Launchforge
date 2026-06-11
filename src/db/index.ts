@@ -313,6 +313,20 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'metricsSyncedAt')) {
     database.exec(`ALTER TABLE posts ADD COLUMN metricsSyncedAt TEXT`);
   }
+  // Posts récurrents : filiation des occurrences (seriesId = post d'origine)
+  // + réglages IA de régénération par série
+  if (!postCols.some((c) => c.name === 'seriesId')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN seriesId TEXT`);
+  }
+  if (!postCols.some((c) => c.name === 'recurrenceUseNews')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN recurrenceUseNews INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!postCols.some((c) => c.name === 'recurrenceUseKnowledge')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN recurrenceUseKnowledge INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!postCols.some((c) => c.name === 'recurrenceUpdateKb')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN recurrenceUpdateKb INTEGER NOT NULL DEFAULT 0`);
+  }
   // Thème Marp des présentations (choix + CSS custom généré par l'IA)
   if (!userCols.some((c) => c.name === 'marpTheme')) {
     database.exec(`ALTER TABLE users ADD COLUMN marpTheme TEXT`);

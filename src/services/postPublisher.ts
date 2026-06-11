@@ -7,7 +7,8 @@
 import { v4 as uuid } from 'uuid';
 import { storage } from './storage';
 import { isAIConfigured } from './aiClient';
-import { generateContent } from './contentAssistant';
+import { generateContent, GeneratedContent } from './contentAssistant';
+import { upsertNewsArchive } from './analytics';
 import { Post, Recurrence } from '../types';
 
 /** Prochaine occurrence d'un post récurrent */
@@ -23,17 +24,36 @@ export function nextOccurrence(from: Date, recurrence: Recurrence): Date | null 
 }
 
 /**
+ * Génère le contenu d'une occurrence selon les réglages IA de la série :
+ * instruction (recurrenceBrief), accès à la base de connaissances, recherche
+ * d'actualités, et mémoire de série (occurrences déjà publiées, à ne pas
+ * répéter). Partagé entre le worker et le mode « simuler » de l'éditeur.
+ */
+export async function generateOccurrenceContent(post: Post): Promise<GeneratedContent> {
+  if (!post.recurrenceBrief) throw new Error('NO_RECURRENCE_BRIEF');
+  const seriesId = post.seriesId ?? post.id;
+  const history = storage.getSeriesHistory(seriesId)
+    .filter((p) => p.id !== post.id)
+    .map((p) => ({ title: p.title, content: p.content }));
+  return generateContent({
+    userId: post.userId,
+    platform: post.platform,
+    brief: post.recurrenceBrief,
+    useNews: Boolean(post.recurrenceUseNews),
+    skipKnowledge: !post.recurrenceUseKnowledge,
+    seriesHistory: history,
+    collectNewsFacts: Boolean(post.recurrenceUpdateKb && post.recurrenceUseNews),
+  });
+}
+
+/**
  * Régénère le contenu d'une occurrence récurrente à partir de son instruction
  * (recurrenceBrief). Best-effort en arrière-plan : en cas d'échec, l'occurrence
  * garde le contenu copié du post précédent — la publication n'est jamais bloquée.
  */
 export function regenerateOccurrenceInBackground(next: Post): void {
   if (!next.recurrenceBrief || !isAIConfigured()) return;
-  void generateContent({
-    userId: next.userId,
-    platform: next.platform,
-    brief: next.recurrenceBrief,
-  })
+  void generateOccurrenceContent(next)
     .then((gen) => {
       // Le post a pu être modifié/supprimé entre-temps : ne pas écraser
       const fresh = storage.getPostById(next.id);
@@ -43,6 +63,10 @@ export function regenerateOccurrenceInBackground(next: Post): void {
         title: gen.title,
         content: gen.content + tags,
       });
+      // Opt-in : les actus utilisées sont archivées dans la fiche 📰 Veille
+      if (next.recurrenceUpdateKb && gen.newsFacts && gen.newsFacts.length > 0) {
+        upsertNewsArchive(next.userId, next.planId, gen.newsFacts);
+      }
     })
     .catch((err) => {
       console.error(`⚠️  Régénération IA de l'occurrence ${next.id} échouée (contenu précédent conservé) :`, err instanceof Error ? err.message : err);
@@ -73,6 +97,8 @@ export function markPublished(post: Post): { post: Post; next: Post | null } {
       next = {
         ...post,
         id:          uuid(),
+        // Filiation : toutes les occurrences pointent vers le post d'origine
+        seriesId:    post.seriesId ?? post.id,
         status:      'scheduled',
         scheduledAt: scheduled.toISOString(),
         publishedAt: null,

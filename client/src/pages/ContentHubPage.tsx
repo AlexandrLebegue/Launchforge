@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 're
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
+  previewRecurrence,
   generateCalendar, getOverview,
   generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   analyzePostPerf,
@@ -83,6 +84,9 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
     imageUrl:    post?.imageUrl ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
     recurrenceBrief: post?.recurrenceBrief ?? '',
+    recurrenceUseNews:      Boolean(post?.recurrenceUseNews),
+    recurrenceUseKnowledge: post ? Boolean(post.recurrenceUseKnowledge) : true,
+    recurrenceUpdateKb:     Boolean(post?.recurrenceUpdateKb),
     autoPublish: Boolean(post?.autoPublish),
     impressions: post?.impressions ?? 0,
     likes:       post?.likes ?? 0,
@@ -161,6 +165,25 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
   const [error,      setError]      = useState('');
   const [analysis,   setAnalysis]   = useState('');
   const [analyzing,  setAnalyzing]  = useState(false);
+  // Mode simulé : aperçu de la prochaine occurrence de la série (rien n'est enregistré)
+  const [simBusy,    setSimBusy]    = useState(false);
+  const [simResult,  setSimResult]  = useState<{ title: string; content: string } | null>(null);
+  const [simError,   setSimError]   = useState('');
+
+  const handleSimulate = async () => {
+    if (!post) return;
+    setSimBusy(true);
+    setSimError('');
+    setSimResult(null);
+    const res = await previewRecurrence(post.id, {
+      recurrenceBrief: form.recurrenceBrief.trim() || undefined,
+      recurrenceUseNews: form.recurrenceUseNews,
+      recurrenceUseKnowledge: form.recurrenceUseKnowledge,
+    });
+    setSimBusy(false);
+    if (res.success && res.data) setSimResult(res.data);
+    else setSimError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Simulation échouée.');
+  };
 
   const handleAnalyze = async () => {
     if (!post) return;
@@ -246,6 +269,9 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
       imageUrl:    form.imageUrl.trim() || null,
       recurrence:  form.recurrence,
       recurrenceBrief: form.recurrence !== 'none' && form.recurrenceBrief.trim() ? form.recurrenceBrief.trim() : null,
+      recurrenceUseNews:      form.recurrenceUseNews ? 1 : 0,
+      recurrenceUseKnowledge: form.recurrenceUseKnowledge ? 1 : 0,
+      recurrenceUpdateKb:     form.recurrenceUpdateKb ? 1 : 0,
       autoPublish: form.autoPublish ? 1 : 0,
       impressions: Number(form.impressions) || 0,
       likes:       Number(form.likes) || 0,
@@ -412,24 +438,74 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
             </label>
           </div>
 
-          {/* Régénération IA des occurrences récurrentes */}
+          {/* Série récurrente : pilotage de l'IA + mode simulé */}
           {form.recurrence !== 'none' && (
-            <label className="form-label-block">
-              🪄 Instruction de régénération IA <span className="form-hint-inline">(optionnel)</span>
-              <textarea
-                className="form-input"
-                value={form.recurrenceBrief}
-                onChange={(e) => set('recurrenceBrief', e.target.value)}
-                rows={3}
-                maxLength={600}
-                placeholder="ex. « Partage un conseil actionnable différent à chaque fois sur la prospection LinkedIn, avec un exemple concret »"
-              />
-              <span className="form-hint-inline">
-                Si renseignée, chaque nouvelle occurrence est <strong>réécrite par l'IA</strong> à partir de cette
-                consigne (et de votre base de connaissances) — fini le même contenu republié à l'identique.
-                Laissez vide pour reprendre le contenu tel quel.
-              </span>
-            </label>
+            <div className="recur-panel">
+              <div className="ai-assist-header">🔁 Série récurrente — pilotage de l'IA</div>
+
+              <label className="form-label-block" style={{ marginTop: 8 }}>
+                🪄 Instruction de régénération <span className="form-hint-inline">(le sujet, l'angle, ce que l'IA doit chercher)</span>
+                <textarea
+                  className="form-input"
+                  value={form.recurrenceBrief}
+                  onChange={(e) => set('recurrenceBrief', e.target.value)}
+                  rows={3}
+                  maxLength={600}
+                  placeholder="ex. « Partage un conseil actionnable différent à chaque fois sur la prospection LinkedIn, avec un exemple concret »"
+                />
+                <span className="form-hint-inline">
+                  Si renseignée, chaque nouvelle occurrence est <strong>réécrite par l'IA</strong> — qui voit aussi
+                  les occurrences déjà publiées de la série pour ne jamais se répéter. Vide = même contenu repris.
+                </span>
+              </label>
+
+              <div className="recur-toggles">
+                <label className="recur-toggle">
+                  <input type="checkbox" checked={form.recurrenceUseKnowledge}
+                         onChange={(e) => set('recurrenceUseKnowledge', e.target.checked)} />
+                  📚 S'appuyer sur la <Link to="/knowledge">base de connaissances</Link>
+                </label>
+                <label className="recur-toggle">
+                  <input type="checkbox" checked={form.recurrenceUseNews}
+                         onChange={(e) => set('recurrenceUseNews', e.target.checked)} />
+                  📰 Rechercher les actualités du web sur le sujet
+                </label>
+                {form.recurrenceUseNews && (
+                  <label className="recur-toggle">
+                    <input type="checkbox" checked={form.recurrenceUpdateKb}
+                           onChange={(e) => set('recurrenceUpdateKb', e.target.checked)} />
+                    📥 Archiver les actus utilisées dans la fiche « 📰 Veille » de la base de connaissances
+                  </label>
+                )}
+              </div>
+
+              {/* Mode simulé : tester les réglages sans rien publier ni enregistrer */}
+              <div className="ai-assist-row" style={{ marginTop: 10 }}>
+                <button type="button" className="btn btn-ghost" onClick={handleSimulate}
+                        disabled={simBusy || !post || !form.recurrenceBrief.trim()}
+                        title={!post ? 'Enregistrez d\'abord le post pour pouvoir simuler'
+                          : !form.recurrenceBrief.trim() ? 'Renseignez l\'instruction de régénération'
+                          : 'Génère la prochaine occurrence avec ces réglages — rien n\'est enregistré'}>
+                  {simBusy ? '⏳ Simulation…' : '🧪 Simuler la prochaine occurrence'}
+                </button>
+                {!post && <span className="form-hint-inline">Enregistrez d'abord le post pour simuler.</span>}
+              </div>
+              {simError && <div className="chat-error" style={{ marginTop: 6 }}>{simError}</div>}
+              {simResult && (
+                <div className="recur-sim-result">
+                  <div className="recur-sim-head">
+                    <span>🧪 Aperçu — <strong>{simResult.title}</strong></span>
+                    <button type="button" className="btn btn-ghost btn-sm"
+                            onClick={() => { set('title', simResult.title); set('content', simResult.content); setSimResult(null); }}
+                            title="Remplace le titre et le contenu du post par cette simulation">
+                      ✍️ Utiliser ce contenu
+                    </button>
+                  </div>
+                  <div className="recur-sim-body"><Markdown text={simResult.content} /></div>
+                  <span className="form-hint-inline">Simple aperçu : rien n'a été enregistré ni archivé.</span>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Publication automatique (worker + Composio) */}
@@ -740,6 +816,17 @@ export default function ContentHubPage() {
   );
   const published = useMemo(() => posts.filter((p) => p.status === 'published'), [posts]);
 
+  // Séries récurrentes actives : la prochaine occurrence (programmée ou brouillon)
+  // de chaque série, avec le nombre d'occurrences déjà publiées
+  const recurringSeries = useMemo(() => {
+    const heads = posts.filter((p) => p.recurrence !== 'none' && (p.status === 'scheduled' || p.status === 'draft'));
+    return heads.map((p) => {
+      const sid = p.seriesId ?? p.id;
+      const publishedCount = posts.filter((x) => (x.seriesId ?? x.id) === sid && x.status === 'published').length;
+      return { post: p, publishedCount };
+    });
+  }, [posts]);
+
   const totals = useMemo(() => {
     const impressions = published.reduce((s, p) => s + p.impressions, 0);
     const interactions = published.reduce((s, p) => s + p.likes + p.comments + p.shares, 0);
@@ -817,6 +904,30 @@ export default function ContentHubPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Séries récurrentes : la machine à contenu qui tourne toute seule */}
+      {recurringSeries.length > 0 && (
+        <div className="upcoming-strip recur-strip">
+          <div className="upcoming-title">🔁 Séries récurrentes</div>
+          {recurringSeries.map(({ post: p, publishedCount }) => (
+            <div key={p.id} className="upcoming-item">
+              <span className="upcoming-icon">{platformIcon(p.platform)}</span>
+              <span className="upcoming-name" onClick={() => setEditing(p)}>{p.title || platformLabel(p.platform)}</span>
+              <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>
+              {p.recurrenceBrief && <span className="chip chip-recur" title={`Régénérée par l'IA : ${p.recurrenceBrief}`}>🪄 IA</span>}
+              {Boolean(p.recurrenceUseNews) && <span className="chip chip-recur" title="S'appuie sur les actualités du web">📰 actus</span>}
+              {!p.recurrenceUseKnowledge && <span className="chip chip-recur" title="Base de connaissances désactivée pour cette série">📚 off</span>}
+              {Boolean(p.recurrenceUpdateKb) && <span className="chip chip-recur" title="Archive les actus utilisées dans la fiche Veille">📥 veille</span>}
+              {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">⚡ auto</span>}
+              {publishedCount > 0 && <span className="form-hint-inline">{publishedCount} publiée{publishedCount > 1 ? 's' : ''}</span>}
+              <span className="upcoming-date">
+                {p.status === 'scheduled' ? `prochaine : ${fmtDate(p.scheduledAt)}` : '✏️ brouillon'}
+              </span>
+              <button className="btn btn-sm btn-ghost" onClick={() => setEditing(p)}>⚙️ Gérer</button>
+            </div>
+          ))}
         </div>
       )}
 

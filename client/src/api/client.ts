@@ -494,6 +494,14 @@ export interface Post {
   /** Instruction de régénération IA : chaque nouvelle occurrence est réécrite
    *  par l'IA à partir de cette consigne (null = même contenu repris) */
   recurrenceBrief: string | null;
+  /** Id du post d'origine de la série récurrente (null = tête de série) */
+  seriesId: string | null;
+  /** 1 = la régénération IA s'appuie sur une recherche d'actualités web */
+  recurrenceUseNews: number;
+  /** 1 = la régénération IA s'appuie sur la base de connaissances */
+  recurrenceUseKnowledge: number;
+  /** 1 = l'IA archive les actus utilisées dans la fiche 📰 Veille */
+  recurrenceUpdateKb: number;
   /** 1 = publié automatiquement à l'heure programmée par le worker (Composio) */
   autoPublish: number;
   /** Dernière erreur de publication automatique */
@@ -529,6 +537,14 @@ export async function publishPost(id: string): Promise<ApiResponse<{ post: Post;
   return request(`/posts/${id}/publish`, { method: 'POST' });
 }
 
+/** Mode simulé : génère la prochaine occurrence d'une série récurrente sans rien enregistrer */
+export async function previewRecurrence(
+  id: string,
+  opts: { recurrenceBrief?: string; recurrenceUseNews?: boolean; recurrenceUseKnowledge?: boolean },
+): Promise<ApiResponse<{ title: string; content: string }>> {
+  return request(`/posts/${id}/recurrence/preview`, { method: 'POST', body: JSON.stringify(opts) });
+}
+
 /** Synchronise les métriques réelles via le serveur MCP Composio */
 export async function syncPostMetrics(
   id: string
@@ -538,7 +554,7 @@ export async function syncPostMetrics(
 
 // ── Base de connaissances ─────────────────────────────────────────────────────
 
-export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'other';
+export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'news' | 'other';
 
 export interface KnowledgeEntry {
   id: string;
