@@ -132,7 +132,7 @@ export default function LandingPage() {
         <div className="landing-nav-inner">
           <span className="landing-logo">
             <span className="landing-logo-icon"><Flame size={20} /></span>
-            LaunchForge
+            <span>Launch<span className="logo-forge">Forge</span></span>
           </span>
           <div className="landing-nav-links">
             <a href="#features">Fonctionnalités</a>
@@ -263,7 +263,7 @@ export default function LandingPage() {
       <footer className="landing-footer">
         <p>
           Conçu pour les fondateurs qui exécutent. &copy; 2026{' '}
-          <strong style={{ color: 'var(--color-text)' }}>LaunchForge</strong>
+          <strong style={{ color: 'var(--color-text)' }}>Launch<span className="logo-forge">Forge</span></strong>
         </p>
         <p style={{ marginTop: 6 }}>
           <a href="#features">Fonctionnalités</a>

@@ -22,9 +22,9 @@ const C = {
 };
 
 const tooltipStyle = {
-  background: '#16121f',
-  border: '1px solid rgba(124,92,252,0.35)',
-  borderRadius: 10,
+  background: '#1a1816',
+  border: '1px solid rgba(255,107,53,0.35)',
+  borderRadius: 3,
   fontSize: '0.8rem',
 };
 
@@ -92,7 +92,7 @@ export default function PerformancePage() {
                 <YAxis yAxisId="likes" orientation="right" tick={{ fill: C.text, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={fmtNum} />
                 <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#fff' }} />
                 <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
-                <Bar yAxisId="imp" dataKey="impressions" name="👁️ Vues" fill={C.impressions} fillOpacity={0.75} radius={[6, 6, 0, 0]} maxBarSize={34} />
+                <Bar yAxisId="imp" dataKey="impressions" name="👁️ Vues" fill={C.impressions} fillOpacity={0.75} radius={[2, 2, 0, 0]} maxBarSize={34} />
                 <Line yAxisId="likes" type="monotone" dataKey="likes" name="❤️ Likes" stroke={C.likes} strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
