@@ -52,6 +52,15 @@ describe('Worker de publication automatique', () => {
     storage.deletePost(post.id);
   });
 
+  it('enregistre l\'URL du post créé renvoyée par le publieur (synchro métriques sans saisie)', async () => {
+    const post = await createDuePost({ title: 'Post avec URL retour' });
+    await processDuePosts(new Date(), async () => 'OK: publié sur X — https://x.com/lf/status/9876543210.');
+    const fresh = storage.getPostById(post.id)!;
+    expect(fresh.status).toBe('published');
+    expect(fresh.externalUrl).toBe('https://x.com/lf/status/9876543210');
+    storage.deletePost(post.id);
+  });
+
   it('publie les posts dus quand le publieur répond OK', async () => {
     const post = await createDuePost();
     const published = await processDuePosts(new Date(), async () => 'OK: publié (id 123)');

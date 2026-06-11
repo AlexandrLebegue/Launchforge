@@ -202,13 +202,26 @@ export async function publishViaComposio(
     platformKeywords(platform),
     `Tu es un opérateur de publication. Tu disposes des outils Composio de l'utilisateur pour la plateforme ${platform}.
 Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.${mediaInstruction}
-Si la publication réussit, réponds en une phrase avec le résultat (et l'URL/id du post si disponible), préfixée par "OK:".
+Si la publication réussit, réponds en une phrase avec le résultat, préfixée par "OK:". Si la réponse de l'outil contient l'URL ou l'identifiant du post créé, inclus-le TEL QUEL dans ta phrase (il sera enregistré pour la synchro des métriques).
 Si aucun outil ne permet de publier sur ${platform} ou si la publication échoue, réponds préfixé par "ECHEC:" avec la raison.
 IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, pas de markdown.`,
     `Publie ce contenu sur ${platform} :\n\n${content}${imageUrl ? `\n\n--- Image à joindre (paramètre média de l'outil) ---\n${imageUrl}` : ''}`,
     ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit', 'media', 'photo'],
   );
   return guardedReply(result);
+}
+
+/**
+ * Extrait l'URL (ou l'identifiant) du post créé depuis la réponse de
+ * publication — enregistrée dans externalUrl pour la synchro des métriques.
+ */
+export function extractPublishedRef(reply: string): string | null {
+  if (!reply.trim().toUpperCase().startsWith('OK')) return null;
+  const url = reply.match(/https?:\/\/[^\s)\]»"']+/);
+  if (url) return url[0].replace(/[.,;:!?]+$/, '');
+  // À défaut d'URL : identifiant/URN renvoyé par l'outil (ex. urn:li:share:…)
+  const id = reply.match(/\b(?:id|urn)\s*[:=]?\s*([\w:.-]{8,})/i);
+  return id ? id[1] : null;
 }
 
 // ── Synchronisation des métriques ─────────────────────────────────────────────
@@ -234,6 +247,10 @@ export async function syncMetricsViaComposio(
     platformKeywords(platform),
     `Tu es un analyste social media. Tu disposes des outils Composio de l'utilisateur pour ${platform}.
 Mission : retrouver le post publié indiqué (via son URL/identifiant) et récupérer ses métriques de performance avec les outils de lecture/lookup disponibles.
+IMPORTANT :
+- N'accède JAMAIS à l'URL par une requête web directe (fetch/scraping) : les plateformes renvoient 403 aux accès non authentifiés. Utilise UNIQUEMENT les outils Composio (API authentifiée).
+- Si un outil attend un identifiant plutôt qu'une URL, extrais-le de l'URL (X/Twitter : le nombre final de /status/<id> ; LinkedIn : l'identifiant d'activité urn:li:activity:<id> ; etc.).
+- Si la recherche directe échoue, liste tes propres posts récents avec les outils disponibles et retrouve celui qui correspond au titre indiqué.
 Mapping attendu : impressions = vues/impressions ; likes = likes/réactions/favoris ; comments = commentaires/réponses ; shares = partages/retweets/reposts ; clicks = clics sur lien si disponible.
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour :
 {"found": boolean, "impressions": number, "likes": number, "comments": number, "shares": number, "clicks": number, "note": "explication courte"}

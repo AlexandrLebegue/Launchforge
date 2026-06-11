@@ -12,7 +12,7 @@
  */
 
 import { storage } from './storage';
-import { publishViaComposio, isComposioConfigured } from './composio';
+import { publishViaComposio, extractPublishedRef, isComposioConfigured } from './composio';
 import { isAIConfigured } from './aiClient';
 import { markPublished } from './postPublisher';
 import { syncPostsToCalendarInBackground } from './calendarSync';
@@ -50,6 +50,10 @@ export async function processDuePosts(
 
       if (result.trim().toUpperCase().startsWith('OK')) {
         const { next } = markPublished(fresh);
+        // L'URL/id du post créé (renvoyé par l'outil de publication) est
+        // enregistré : la synchro des métriques n'a plus besoin de saisie manuelle
+        const ref = extractPublishedRef(result);
+        if (ref) storage.updatePost(fresh.id, { externalUrl: ref });
         published += 1;
         // La prochaine occurrence d'un post récurrent hérite de l'auto-publish
         // et repart dans le calendrier personnel

@@ -214,7 +214,9 @@ export default function ConfigPage() {
           <p className="config-desc">
             Le serveur relit automatiquement les métriques réelles (vues, likes,
             commentaires, partages) de vos posts publiés des 30 derniers jours,
-            via vos comptes Composio — l'URL du post doit être renseignée.
+            via vos comptes Composio. L'URL du post est enregistrée automatiquement
+            quand la publication passe par l'app — à saisir uniquement pour les
+            posts publiés à la main.
           </p>
           <label className="form-label-block">
             Fréquence

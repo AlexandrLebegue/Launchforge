@@ -18,7 +18,7 @@ import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
 import { markPublished } from './postPublisher';
-import { publishViaComposio, syncMetricsViaComposio, isComposioConfigured, runMcpTask } from './composio';
+import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { AgentRun, Post, Reminder } from '../types';
 
@@ -424,7 +424,10 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const result = await publishViaComposio(userId, post.platform, post.content, post.imageUrl);
       if (result.trim().toUpperCase().startsWith('OK')) {
         markPublished(post);
-        return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}`;
+        // URL/id du post créé enregistré pour la synchro des métriques
+        const ref = extractPublishedRef(result);
+        if (ref) storage.updatePost(post.id, { externalUrl: ref });
+        return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}${ref ? `\n🔗 URL enregistrée — les métriques se synchroniseront automatiquement.` : ''}`;
       }
       return `Échec de publication : ${result.replace(/^ECHEC:\s*/i, '')}`;
     }

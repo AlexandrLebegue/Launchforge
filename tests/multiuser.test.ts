@@ -135,6 +135,16 @@ describe('Publication avec média', () => {
   });
 });
 
+describe('Extraction de la référence du post publié', () => {
+  it('extrait URL ou identifiant depuis la réponse de publication', async () => {
+    const { extractPublishedRef } = await import('../src/services/composio');
+    expect(extractPublishedRef('OK: publié — https://x.com/u/status/123456789.')).toBe('https://x.com/u/status/123456789');
+    expect(extractPublishedRef('OK: post créé (id: urn:li:share:7654321098)')).toBe('urn:li:share:7654321098');
+    expect(extractPublishedRef('OK: publié sans référence')).toBeNull();
+    expect(extractPublishedRef('ECHEC: rien — https://x.com/doc')).toBeNull();
+  });
+});
+
 describe('Bot Telegram personnel', () => {
   it('rejette un token au format invalide', async () => {
     const res = await request(app)
