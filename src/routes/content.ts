@@ -6,6 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { generateImage, uploadPublicImage, isImageGenConfigured } from '../services/imageGen';
 import { storage } from '../services/storage';
+import { generateCampaignReport } from '../services/analytics';
 import { requireAuth } from '../middleware/auth';
 import { generateContent, isContentAssistantConfigured } from '../services/contentAssistant';
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
@@ -134,6 +135,19 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });
   } finally {
     res.end();
+  }
+});
+
+// ── GET /api/content/report — rapport de campagne narratif (IA) ─────────────
+router.get('/report', async (req: Request, res: Response) => {
+  if (!isContentAssistantConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  try {
+    const { report, stats } = await generateCampaignReport(req.user!.userId);
+    res.json({ success: true, data: { report, stats } });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Rapport échoué' });
   }
 });
 

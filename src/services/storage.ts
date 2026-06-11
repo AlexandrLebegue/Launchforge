@@ -114,6 +114,25 @@ export class Storage {
     getDb().prepare(`DELETE FROM decks WHERE id = ?`).run(id);
   }
 
+  // ── Rapport de campagne hebdomadaire ─────────────────────────────────────
+
+  /** Utilisateurs avec un chat Telegram lié dont le rapport hebdo est dû (> 6 jours) */
+  getUsersDueWeeklyReport(nowIso: string): { userId: string }[] {
+    return getDb()
+      .prepare(
+        `SELECT DISTINCT u.id AS userId
+         FROM users u
+         JOIN telegram_links t ON t.userId = u.id
+         WHERE u.lastWeeklyReportAt IS NULL
+            OR julianday(u.lastWeeklyReportAt) <= julianday(?) - 6`
+      )
+      .all(nowIso) as { userId: string }[];
+  }
+
+  markWeeklyReportSent(userId: string, atIso: string): void {
+    getDb().prepare(`UPDATE users SET lastWeeklyReportAt = ? WHERE id = ?`).run(atIso, userId);
+  }
+
   // ── Synchro automatique des métriques ────────────────────────────────────
 
   /** Intervalle de synchro des métriques (minutes, 0 = désactivée) */

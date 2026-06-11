@@ -4,9 +4,11 @@ import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   generateCalendar, syncAllToCalendar, getOverview,
   generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
+  analyzePostPerf, getCampaignReport,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
+import Markdown from '../components/Markdown';
 
 export const PLATFORMS: { value: string; label: string; icon: string }[] = [
   { value: 'linkedin',     label: 'LinkedIn',      icon: '💼' },
@@ -155,6 +157,23 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
   const [syncing,    setSyncing]    = useState(false);
   const [syncNote,   setSyncNote]   = useState('');
   const [error,      setError]      = useState('');
+  const [analysis,   setAnalysis]   = useState('');
+  const [analyzing,  setAnalyzing]  = useState(false);
+
+  const handleAnalyze = async () => {
+    if (!post) return;
+    setAnalyzing(true);
+    setError('');
+    const res = await analyzePostPerf(post.id);
+    setAnalyzing(false);
+    if (res.success && res.data) {
+      setAnalysis(res.data.analysis + (res.data.learnings.length
+        ? `\n\n---\n📚 **${res.data.learnings.length} enseignement(s) ajouté(s) à la base de connaissances** — les prochaines générations en tiendront compte.`
+        : ''));
+    } else {
+      setError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Analyse échouée.');
+    }
+  };
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -431,6 +450,24 @@ function PostEditor({ post, onClose, onSaved }: EditorProps) {
           {post?.publishError && (
             <div className="chat-error">
               ⚠️ La publication automatique a échoué : {post.publishError} — corrigez puis réactivez l'option, ou publiez manuellement.
+            </div>
+          )}
+
+          {/* Analyse IA du post publié */}
+          {post && form.status === 'published' && (
+            <div className="ai-assist-box">
+              <div className="ai-assist-header">
+                🔎 Analyse de performance
+                <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
+                        onClick={handleAnalyze} disabled={analyzing}>
+                  {analyzing ? '⏳ Analyse…' : analysis ? '↺ Re-analyser' : '🔎 Analyser ce post'}
+                </button>
+              </div>
+              {analysis && (
+                <div style={{ fontSize: '0.85rem', marginTop: 6 }}>
+                  <Markdown text={analysis} />
+                </div>
+              )}
             </div>
           )}
 
@@ -898,6 +935,7 @@ export default function ContentHubPage() {
           </div>
         ) : (
           <div className="analytics-wrap">
+            <CampaignReportCard />
             {bestPost && (
               <div className="best-post-card" onClick={() => setEditing(bestPost)}>
                 <span className="best-post-label">🏆 Meilleur post</span>
@@ -1251,6 +1289,47 @@ function DecksPanel() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rapport de campagne IA — l'analyse narrative en tête de l'onglet Analyse
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CampaignReportCard() {
+  const [report,  setReport]  = useState('');
+  const [busy,    setBusy]    = useState(false);
+  const [err,     setErr]     = useState('');
+
+  const generate = async () => {
+    setBusy(true);
+    setErr('');
+    const res = await getCampaignReport();
+    setBusy(false);
+    if (res.success && res.data) setReport(res.data.report);
+    else setErr(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Rapport échoué.');
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="config-card-head">
+        <span className="config-card-title">🗞️ Rapport de campagne</span>
+        <button type="button" className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={generate} disabled={busy}>
+          {busy ? '⏳ Analyse…' : report ? '↺ Actualiser' : '✨ Générer le rapport'}
+        </button>
+      </div>
+      {!report && !busy && (
+        <p className="form-hint">
+          L'IA analyse vos posts publiés (plateformes, jours, médias, leads générés) et vous dit
+          ce qui marche, ce qui ne marche pas, et quoi faire cette semaine. Les enseignements
+          alimentent la base de connaissances : chaque génération suivante en profite.
+          Aussi envoyé automatiquement chaque lundi sur Telegram.
+        </p>
+      )}
+      {err && <div className="chat-error">{err}</div>}
+      {report && <div style={{ fontSize: '0.875rem' }}><Markdown text={report} /></div>}
     </div>
   );
 }

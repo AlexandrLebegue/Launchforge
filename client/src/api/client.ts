@@ -538,7 +538,7 @@ export async function syncPostMetrics(
 
 // ── Base de connaissances ─────────────────────────────────────────────────────
 
-export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'other';
+export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'other';
 
 export interface KnowledgeEntry {
   id: string;
@@ -809,6 +809,16 @@ export async function assignPlatformToCard(data: {
   cardEffort: 'low' | 'medium' | 'high';
 }): Promise<ApiResponse<AgentRun>> {
   return request('/agents/assign-platform', { method: 'POST', body: JSON.stringify(data) });
+}
+
+/** Post-mortem IA d'un post publié (les enseignements alimentent la base de connaissances) */
+export async function analyzePostPerf(id: string): Promise<ApiResponse<{ analysis: string; learnings: string[] }>> {
+  return request(`/posts/${id}/analyze`, { method: 'POST' });
+}
+
+/** Rapport de campagne narratif du projet actif */
+export async function getCampaignReport(): Promise<ApiResponse<{ report: string; stats: unknown }>> {
+  return request('/content/report');
 }
 
 /** Synchronise tous les posts programmés vers le calendrier personnel */

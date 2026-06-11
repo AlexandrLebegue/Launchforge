@@ -320,6 +320,10 @@ function runMigrations(database: Database.Database): void {
   if (!userCols.some((c) => c.name === 'marpCustomCss')) {
     database.exec(`ALTER TABLE users ADD COLUMN marpCustomCss TEXT`);
   }
+  // Rapport de campagne hebdomadaire (Telegram, le lundi)
+  if (!userCols.some((c) => c.name === 'lastWeeklyReportAt')) {
+    database.exec(`ALTER TABLE users ADD COLUMN lastWeeklyReportAt TEXT`);
+  }
 
   // Présentations Marp générées par l'IA
   database.exec(`

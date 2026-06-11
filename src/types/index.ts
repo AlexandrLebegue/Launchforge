@@ -307,7 +307,7 @@ export interface Post {
   updatedAt: string;
 }
 
-export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'other';
+export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'other';
 
 export interface KnowledgeEntry {
   id: string;

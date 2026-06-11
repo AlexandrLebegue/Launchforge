@@ -213,7 +213,8 @@ function AnalyzeModal({ mode, onClose, onImported }: {
         source: mode === 'inbox'
           ? 'boîte mail'
           : mode === 'post'
-            ? `réactions ${scannedPost ? platformLabel(scannedPost.platform) : 'post'}`
+            // L'id court du post permet l'attribution post → leads dans l'Analyse
+            ? `réactions post [${scannedPost ? scannedPost.id.slice(0, 8) : '?'}] ${scannedPost ? platformLabel(scannedPost.platform) : ''}`.trim()
             : source,
         interestScore: c.score,
         interestSummary: c.summary,

@@ -21,6 +21,7 @@ const CATEGORY_LABELS: Record<KnowledgeCategory, string> = {
   audience: 'Audience',
   tone:     'Ton & style',
   offers:   'Offres & tarifs',
+  learnings:'Enseignements de performance (issus de VOS résultats — applique-les en priorité)',
   other:    'Divers',
 };
 

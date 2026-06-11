@@ -12,7 +12,7 @@ import { KnowledgeCategory, KnowledgeEntry } from '../types';
 const router = Router();
 router.use(requireAuth);
 
-const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'other'];
+const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'other'];
 
 function loadOwnedEntry(req: Request, res: Response): KnowledgeEntry | null {
   const entry = storage.getKnowledgeById(req.params.id);

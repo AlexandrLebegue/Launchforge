@@ -7,6 +7,7 @@ import { startScheduler } from './services/scheduler';
 import { startMetricsSync } from './services/metricsSync';
 import { startTelegramBot } from './services/telegramBot';
 import { startMediaCleanup } from './services/mediaStore';
+import { startWeeklyReports } from './services/analytics';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -23,6 +24,7 @@ async function main() {
     startMetricsSync();
     startTelegramBot();
     startMediaCleanup();
+    startWeeklyReports();
   });
 }
 

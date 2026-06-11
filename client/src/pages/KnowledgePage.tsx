@@ -11,10 +11,11 @@ const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint:
   { value: 'audience', label: 'Audience',          icon: '🎯', hint: 'Personas, problèmes, objections fréquentes…' },
   { value: 'tone',     label: 'Ton & style',       icon: '🎨', hint: 'Voix de marque, mots à utiliser/éviter…' },
   { value: 'offers',   label: 'Offres & tarifs',   icon: '💰', hint: 'Plans, promos, garanties…' },
+  { value: 'learnings',label: 'Enseignements',     icon: '📈', hint: 'Tirés de vos résultats — alimentés par l\'analyse IA' },
   { value: 'other',    label: 'Divers',            icon: '📌', hint: 'Tout le reste' },
 ];
 
-const catMeta = (c: KnowledgeCategory) => CATEGORIES.find((x) => x.value === c) ?? CATEGORIES[5];
+const catMeta = (c: KnowledgeCategory) => CATEGORIES.find((x) => x.value === c) ?? CATEGORIES[CATEGORIES.length - 1];
 
 interface EditorProps {
   entry: KnowledgeEntry | null;

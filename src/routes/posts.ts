@@ -10,6 +10,7 @@ import { isAIConfigured } from '../services/aiClient';
 import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
 import { markPublished } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
+import { analyzePost } from '../services/analytics';
 import { Post, PostStatus, Recurrence } from '../types';
 
 const router = Router();
@@ -192,6 +193,26 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
       success: false,
       error: err instanceof Error ? err.message : 'Sync failed',
     });
+  }
+});
+
+// ── POST /api/posts/:id/analyze ──────────────────────────────────────────────
+// Post-mortem IA d'un post publié : pourquoi ça a marché (ou pas), quoi
+// refaire. Les enseignements alimentent la base de connaissances du projet.
+router.post('/:id/analyze', async (req: Request, res: Response) => {
+  const post = loadOwnedPost(req, res);
+  if (!post) return;
+  if (!isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  if (post.status !== 'published') {
+    return res.status(400).json({ success: false, error: 'Seuls les posts publiés peuvent être analysés' });
+  }
+  try {
+    const result = await analyzePost(req.user!.userId, post);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Analyse échouée' });
   }
 });
 

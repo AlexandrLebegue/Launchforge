@@ -22,6 +22,7 @@ import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComp
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
 import { generateDeckMarkdown, themeForUser } from './decks';
+import { analyzePost, generateCampaignReport } from './analytics';
 import { renderDeckGif, renderDeckMp4 } from './deckMedia';
 import { saveMediaFile } from './mediaStore';
 import { uploadPublicImage } from './imageGen';
@@ -221,6 +222,20 @@ export const TOOLS: ToolDef[] = [
       },
       required: ['deckId', 'format'],
     },
+  },
+  {
+    name: 'analyze_post',
+    description: 'POST-MORTEM IA d\'un post publié : pourquoi il a performé (ou pas), quoi refaire, réécriture d\'accroche suggérée. Les enseignements alimentent automatiquement la base de connaissances. Pour « pourquoi ce post a marché/floppé ? », « analyse mon dernier post ».',
+    parameters: {
+      type: 'object',
+      properties: { postId: { type: 'string', description: 'Id court du post publié' } },
+      required: ['postId'],
+    },
+  },
+  {
+    name: 'campaign_report',
+    description: 'RAPPORT DE CAMPAGNE complet du projet : tendance, ce qui marche/ne marche pas, attribution posts → leads, 3 recommandations pour la semaine. Pour « analyse mes campagnes », « bilan de la semaine », « comment performent mes posts ? ».',
+    parameters: { type: 'object', properties: {} },
   },
   {
     name: 'sync_post_metrics',
@@ -534,6 +549,19 @@ Pour en faire un média de post : render_deck_media avec deckId="${shortId(deck.
       return `GIF animé généré : ${publicUrl ?? url}${publicUrl ? `\n(copie serveur : ${url})` : ''}\nUtilise set_post_image pour l'attacher à un post.`;
     }
 
+    case 'analyze_post': {
+      const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status === 'published');
+      const post = findByShortId(posts, String(args.postId || ''));
+      if (!post) return `ERREUR : post publié introuvable. Publiés : ${posts.slice(0, 5).map((p) => `[${shortId(p.id)}] ${p.title}`).join(' · ') || 'aucun'}`;
+      const { analysis, learnings } = await analyzePost(userId, post);
+      return `${analysis}${learnings.length > 0 ? `\n\n📚 ${learnings.length} enseignement(s) ajouté(s) à la base de connaissances — les prochaines générations en tiendront compte.` : ''}`;
+    }
+
+    case 'campaign_report': {
+      const { report } = await generateCampaignReport(userId);
+      return report;
+    }
+
     case 'sync_post_metrics': {
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — synchro impossible.';
       const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status === 'published');
@@ -681,7 +709,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck, puis render_deck_media pour en faire un GIF/MP4 animé), rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), analyse de performance (analyze_post pour un post, campaign_report pour le bilan global — leurs enseignements améliorent automatiquement les générations suivantes), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck, puis render_deck_media pour en faire un GIF/MP4 animé), rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
@@ -742,6 +770,8 @@ Tu peux me demander par exemple :
 • « Envoie un mail à contact@exemple.com »
 • « Lis mes derniers mails »
 • « Combien de likes sur mon dernier post ? »
+• « Pourquoi mon post de mardi a floppé ? »
+• « Fais-moi le bilan de mes campagnes »
 • « Génère une image pour ce post »
 • « Fais-moi un pitch deck de 8 slides »
 • « J'ai quoi dans mon agenda demain ? »
