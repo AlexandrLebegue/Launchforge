@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit,
-  setTelegramBot, removeTelegramBot,
+  setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
   ConfigStatus,
 } from '../api/client';
+
+const SYNC_INTERVALS = [
+  { value: 0,    label: 'Désactivée' },
+  { value: 60,   label: 'Toutes les heures' },
+  { value: 360,  label: 'Toutes les 6 h' },
+  { value: 720,  label: 'Toutes les 12 h' },
+  { value: 1440, label: 'Une fois par jour' },
+];
 
 const TOOLKIT_ICONS: Record<string, string> = {
   linkedin: '💼', twitter: '🐦', instagram: '📸', facebook: '📘',
@@ -17,6 +25,7 @@ export default function ConfigPage() {
   const [tgCode,  setTgCode]  = useState<string | null>(null);
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
+  const [savingSync, setSavingSync] = useState(false);
   // Bot Telegram personnel
   const [botToken,  setBotToken]  = useState('');
   const [botSaving, setBotSaving] = useState(false);
@@ -80,6 +89,16 @@ export default function ConfigPage() {
     const res = await setPublishMode(mode);
     setSavingMode(false);
     if (res.success) setStatus({ ...status, publishMode: mode });
+  };
+
+  const handleSyncInterval = async (minutes: number) => {
+    if (!status) return;
+    setSavingSync(true);
+    const res = await setMetricsSyncInterval(minutes);
+    setSavingSync(false);
+    if (res.success && res.data) {
+      setStatus({ ...status, metricsSync: { intervalMinutes: res.data.intervalMinutes } });
+    }
   };
 
   const handleSaveBot = async () => {
@@ -182,6 +201,39 @@ export default function ConfigPage() {
               <span className="approval-mode-desc">Sans confirmation — réservé aux comptes de confiance</span>
             </button>
           </div>
+        </div>
+
+        {/* ── Synchro automatique des métriques ── */}
+        <div className="card config-card">
+          <div className="config-card-head">
+            <span className="config-card-title">📈 Synchro des métriques</span>
+            {status.metricsSync.intervalMinutes > 0
+              ? <span className="config-badge ok">✅ Active</span>
+              : <span className="config-badge warn">Désactivée</span>}
+          </div>
+          <p className="config-desc">
+            Le serveur relit automatiquement les métriques réelles (vues, likes,
+            commentaires, partages) de vos posts publiés des 30 derniers jours,
+            via vos comptes Composio — l'URL du post doit être renseignée.
+          </p>
+          <label className="form-label-block">
+            Fréquence
+            <select
+              className="form-input"
+              value={status.metricsSync.intervalMinutes}
+              onChange={(e) => handleSyncInterval(Number(e.target.value))}
+              disabled={savingSync}
+            >
+              {SYNC_INTERVALS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <span className="form-hint-inline">
+              Chaque synchro consomme un appel IA — une fréquence quotidienne suffit
+              dans la plupart des cas. Vous pouvez aussi demander une synchro ponctuelle
+              à l'assistant : « combien de likes sur mon dernier post ? ».
+            </span>
+          </label>
         </div>
 
         {/* ── Composio ── */}

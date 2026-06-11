@@ -18,7 +18,7 @@ import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
 import { markPublished } from './postPublisher';
-import { publishViaComposio, isComposioConfigured, runMcpTask } from './composio';
+import { publishViaComposio, syncMetricsViaComposio, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { AgentRun, Post, Reminder } from '../types';
 
@@ -178,6 +178,17 @@ export const TOOLS: ToolDef[] = [
         imageUrl: { type: 'string', description: 'URL https de l\'image' },
       },
       required: ['postId', 'imageUrl'],
+    },
+  },
+  {
+    name: 'sync_post_metrics',
+    description: 'Synchronise les métriques réelles (vues, likes, commentaires, partages) d\'un post PUBLIÉ via les comptes Composio. Le post doit avoir son URL renseignée (sinon demande-la à l\'utilisateur). Pour « combien de likes sur mon dernier post ? », « synchronise les métriques ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        postId: { type: 'string', description: 'Id court du post publié' },
+      },
+      required: ['postId'],
     },
   },
   {
@@ -418,6 +429,22 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       return `Échec de publication : ${result.replace(/^ECHEC:\s*/i, '')}`;
     }
 
+    case 'sync_post_metrics': {
+      if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — synchro impossible.';
+      const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status === 'published');
+      const post = findByShortId(posts, String(args.postId || ''));
+      if (!post) return 'ERREUR : post publié introuvable.';
+      if (!post.externalUrl) return `ERREUR : le post [${shortId(post.id)}] n'a pas d'URL — demande à l'utilisateur l'URL du post publié, enregistre-la via le Hub, ou donne-la moi pour mémoire.`;
+      const metrics = await syncMetricsViaComposio(userId, post.platform, post.externalUrl, post.title);
+      if (!metrics.found) return `ERREUR : métriques introuvables — ${metrics.note || 'le post n\'a pas pu être retrouvé via les outils connectés'}`;
+      storage.updatePost(post.id, {
+        impressions: metrics.impressions, likes: metrics.likes,
+        comments: metrics.comments, shares: metrics.shares, clicks: metrics.clicks,
+      });
+      storage.markMetricsSynced(post.id, new Date().toISOString());
+      return `Métriques de « ${post.title} » synchronisées : ${metrics.impressions ?? 0} vues · ${metrics.likes ?? 0} likes · ${metrics.comments ?? 0} commentaires · ${metrics.shares ?? 0} partages${metrics.note ? ` (${metrics.note})` : ''}`;
+    }
+
     case 'send_email_to_contact': {
       const ref = String(args.contactName || '').toLowerCase();
       const contact = storage.getContactsByPlan(userId, planId)
@@ -549,7 +576,7 @@ function systemPrompt(): string {
 
 Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), rappels.
 Règles :
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
@@ -608,6 +635,7 @@ Tu peux me demander par exemple :
 • « Envoie un mail à Marie pour proposer une démo »
 • « Envoie un mail à contact@exemple.com »
 • « Lis mes derniers mails »
+• « Combien de likes sur mon dernier post ? »
 • « J'ai quoi dans mon agenda demain ? »
 • « Ajoute un rdv client vendredi 14h »
 • « Rappelle-moi demain 9h de relancer les leads »

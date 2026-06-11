@@ -89,6 +89,10 @@ router.get('/status', async (req: Request, res: Response) => {
           connected: connected.has(t.slug),
         })),
       },
+      metricsSync: {
+        // Intervalle de synchro automatique des métriques (minutes, 0 = off)
+        intervalMinutes: storage.getMetricsSyncMinutes(req.user!.userId),
+      },
       telegram: {
         configured: isTelegramConfigured(req.user!.userId),
         linked: storage.getTelegramLinksByUserId(req.user!.userId).length > 0,
@@ -146,6 +150,19 @@ router.patch('/telegram-bot', async (req: Request, res: Response) => {
 router.delete('/telegram-bot', (req: Request, res: Response) => {
   removeUserBot(req.user!.userId);
   res.json({ success: true, data: { ownBot: false } });
+});
+
+// ── PATCH /api/config/metrics-sync ───────────────────────────────────────────
+// Intervalle de synchro automatique des métriques (0 = désactivée). Chaque
+// synchro coûte un appel modèle : on borne entre 15 min et 7 jours.
+router.patch('/metrics-sync', (req: Request, res: Response) => {
+  const raw = Number((req.body as { intervalMinutes?: unknown }).intervalMinutes);
+  if (!Number.isFinite(raw) || raw < 0) {
+    return res.status(400).json({ success: false, error: 'intervalMinutes must be a positive number (0 = disabled)' });
+  }
+  const minutes = raw === 0 ? 0 : Math.max(15, Math.min(10080, Math.round(raw)));
+  storage.setMetricsSyncMinutes(req.user!.userId, minutes);
+  res.json({ success: true, data: { intervalMinutes: minutes } });
 });
 
 // ── PATCH /api/config/publish-mode ───────────────────────────────────────────

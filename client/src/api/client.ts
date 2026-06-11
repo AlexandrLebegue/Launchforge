@@ -708,6 +708,7 @@ export interface ConfigToolkit {
 export interface ConfigStatus {
   ai: { configured: boolean; model: string | null };
   composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[] };
+  metricsSync: { intervalMinutes: number };
   telegram: { configured: boolean; linked: boolean; ownBot: boolean; botUsername: string | null };
   publishMode: 'auto' | 'manual';
 }
@@ -729,6 +730,11 @@ export async function setTelegramBot(token: string): Promise<ApiResponse<{ ownBo
 /** Supprime le bot Telegram personnel */
 export async function removeTelegramBot(): Promise<ApiResponse<{ ownBot: boolean }>> {
   return request('/config/telegram-bot', { method: 'DELETE' });
+}
+
+/** Intervalle de synchro automatique des métriques (minutes, 0 = désactivée) */
+export async function setMetricsSyncInterval(intervalMinutes: number): Promise<ApiResponse<{ intervalMinutes: number }>> {
+  return request('/config/metrics-sync', { method: 'PATCH', body: JSON.stringify({ intervalMinutes }) });
 }
 
 export async function setPublishMode(mode: 'auto' | 'manual'): Promise<ApiResponse<{ publishMode: string }>> {

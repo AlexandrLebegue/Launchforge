@@ -305,6 +305,14 @@ function runMigrations(database: Database.Database): void {
   if (!userCols.some((c) => c.name === 'telegramBotName')) {
     database.exec(`ALTER TABLE users ADD COLUMN telegramBotName TEXT`);
   }
+  // Synchro automatique des métriques : intervalle par utilisateur (minutes,
+  // 0 = désactivée) + horodatage de dernière synchro par post
+  if (!userCols.some((c) => c.name === 'metricsSyncMinutes')) {
+    database.exec(`ALTER TABLE users ADD COLUMN metricsSyncMinutes INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!postCols.some((c) => c.name === 'metricsSyncedAt')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN metricsSyncedAt TEXT`);
+  }
 
   // Index pour les requêtes scopées par projet (idempotent)
   database.exec(`

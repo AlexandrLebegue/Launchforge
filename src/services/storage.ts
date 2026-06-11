@@ -77,6 +77,47 @@ export class Storage {
     return rows.map((r) => ({ userId: r.id, token: decryptSecret(r.telegramBotToken) }));
   }
 
+  // ── Synchro automatique des métriques ────────────────────────────────────
+
+  /** Intervalle de synchro des métriques (minutes, 0 = désactivée) */
+  setMetricsSyncMinutes(userId: string, minutes: number): void {
+    getDb().prepare(`UPDATE users SET metricsSyncMinutes = ? WHERE id = ?`).run(minutes, userId);
+  }
+
+  getMetricsSyncMinutes(userId: string): number {
+    const row = getDb().prepare(`SELECT metricsSyncMinutes FROM users WHERE id = ?`).get(userId) as any;
+    return row?.metricsSyncMinutes ?? 0;
+  }
+
+  /**
+   * Posts publiés dont les métriques sont à resynchroniser : URL renseignée,
+   * synchro activée chez leur propriétaire, fenêtre d'intervalle écoulée, et
+   * publiés depuis moins de 30 jours (au-delà les chiffres ne bougent plus —
+   * chaque synchro coûte un appel IA). julianday digère les dates ISO.
+   */
+  getMetricsSyncDuePosts(nowIso: string, limit = 5): Post[] {
+    return getDb()
+      .prepare(
+        `SELECT p.* FROM posts p
+         JOIN users u ON u.id = p.userId
+         WHERE p.status = 'published'
+           AND p.externalUrl IS NOT NULL
+           AND u.metricsSyncMinutes > 0
+           AND p.publishedAt IS NOT NULL
+           AND julianday(p.publishedAt) >= julianday(?) - 30
+           AND (p.metricsSyncedAt IS NULL
+                OR julianday(p.metricsSyncedAt) <= julianday(?) - u.metricsSyncMinutes / 1440.0)
+         ORDER BY p.metricsSyncedAt IS NOT NULL, p.metricsSyncedAt ASC
+         LIMIT ?`
+      )
+      .all(nowIso, nowIso, limit) as Post[];
+  }
+
+  /** Horodate la tentative de synchro (avant l'appel : pas de boucle de retry) */
+  markMetricsSynced(postId: string, atIso: string): void {
+    getDb().prepare(`UPDATE posts SET metricsSyncedAt = ? WHERE id = ?`).run(atIso, postId);
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Plans
   // ──────────────────────────────────────────────────────────────
