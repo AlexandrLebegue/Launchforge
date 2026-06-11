@@ -184,6 +184,20 @@ describe('Connexion de comptes (Configuration)', () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
   });
+
+  it('déconnexion : mêmes garde-fous (toolkit requis, 503 sans Composio)', async () => {
+    const bad = await request(app).post('/api/config/disconnect').set(auth()).send({});
+    expect(bad.status).toBe(400);
+
+    delete process.env.COMPOSIO_MCP_URL;
+    delete process.env.COMPOSIO_API_KEY;
+    const res = await request(app)
+      .post('/api/config/disconnect')
+      .set(auth())
+      .send({ toolkit: 'linkedin' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
+  });
 });
 
 describe('Knowledge base', () => {

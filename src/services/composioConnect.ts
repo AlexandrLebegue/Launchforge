@@ -110,6 +110,28 @@ async function ensureServerToolkit(toolkit: string, authConfigId: string): Promi
 }
 
 /**
+ * Déconnecte un toolkit pour un utilisateur LaunchForge : supprime TOUS ses
+ * comptes connectés de ce toolkit chez Composio (y compris expirés/en échec,
+ * pour repartir proprement). Retourne le nombre de comptes supprimés.
+ * Cas d'usage : re-autoriser avec de nouveaux droits OAuth (ex. mise à jour
+ * des scopes LinkedIn) — déconnecter puis reconnecter.
+ */
+export async function disconnectToolkit(lfUserId: string, toolkit: string): Promise<number> {
+  const userId = composioUserIdFor(lfUserId);
+  if (!userId) throw new Error('COMPOSIO_NOT_CONFIGURED');
+
+  const list = await composioApi(`/connected_accounts?limit=100&user_ids=${encodeURIComponent(userId)}`);
+  // Garde-fou multi-utilisateur : uniquement les comptes de SON identité
+  const targets = (list?.items || []).filter((a: any) =>
+    a?.id && a?.user_id === userId && String(a?.toolkit?.slug).toLowerCase() === toolkit);
+
+  for (const account of targets) {
+    await composioApi(`/connected_accounts/${account.id}`, { method: 'DELETE' });
+  }
+  return targets.length;
+}
+
+/**
  * Prépare la connexion d'un compte POUR un utilisateur LaunchForge donné et
  * retourne le lien d'autorisation OAuth à ouvrir dans son navigateur.
  */

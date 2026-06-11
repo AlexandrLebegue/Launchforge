@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit,
+  getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
   setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
   setMarpTheme, customizeMarpTheme, themePreviewUrl,
   ConfigStatus,
@@ -38,6 +38,7 @@ export default function ConfigPage() {
   // Connexion de comptes : lien OAuth généré + erreurs, par toolkit
   const [connectLinks,  setConnectLinks]  = useState<Record<string, string>>({});
   const [connecting,    setConnecting]    = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -85,6 +86,22 @@ export default function ConfigPage() {
           ? 'Composio non configuré côté serveur (COMPOSIO_MCP_URL + COMPOSIO_API_KEY).'
           : res.error || 'Connexion impossible.',
       }));
+    }
+  };
+
+  /** Déconnexion d'un compte — utile pour re-autoriser avec de nouveaux droits OAuth */
+  const handleDisconnect = async (slug: string, name: string) => {
+    if (!window.confirm(`Déconnecter ${name} ? Les publications et synchros via ce compte cesseront jusqu'à reconnexion.`)) return;
+    setDisconnecting(slug);
+    setConnectErrors((e) => ({ ...e, [slug]: '' }));
+    const res = await disconnectToolkit(slug);
+    setDisconnecting(null);
+    if (res.success) {
+      // Le lien OAuth précédent n'est plus valable pour une reconnexion propre
+      setConnectLinks((l) => { const { [slug]: _gone, ...rest } = l; return rest; });
+      load(true);
+    } else {
+      setConnectErrors((e) => ({ ...e, [slug]: res.error || 'Déconnexion impossible.' }));
     }
   };
 
@@ -346,14 +363,25 @@ export default function ConfigPage() {
                 <span className="config-toolkit-main">
                   <span className="config-toolkit-name">{t.name}</span>
                   <span className="config-toolkit-cap">{t.capability}</span>
-                  {!t.connected && connectErrors[t.slug] && (
+                  {connectErrors[t.slug] && (
                     <span className="config-toolkit-cap" style={{ color: 'var(--color-danger, #f87171)' }}>
                       ⚠️ {connectErrors[t.slug]}
                     </span>
                   )}
                 </span>
                 {t.connected ? (
-                  <span className="config-badge ok">Fonctionnel</span>
+                  <>
+                    <span className="config-badge ok">Fonctionnel</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => handleDisconnect(t.slug, t.name)}
+                      disabled={disconnecting === t.slug}
+                      title="Supprime le compte connecté chez Composio — reconnectez ensuite pour re-autoriser avec les droits à jour"
+                    >
+                      {disconnecting === t.slug ? '⏳…' : '✕ Déconnecter'}
+                    </button>
+                  </>
                 ) : connectLinks[t.slug] ? (
                   <a
                     className="config-badge warn link"

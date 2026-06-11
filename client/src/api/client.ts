@@ -739,6 +739,11 @@ export async function connectToolkit(toolkit: string): Promise<ApiResponse<{ red
   return request('/config/connect', { method: 'POST', body: JSON.stringify({ toolkit }) });
 }
 
+/** Déconnecte un compte (supprime les comptes connectés du toolkit chez Composio) */
+export async function disconnectToolkit(toolkit: string): Promise<ApiResponse<{ removed: number }>> {
+  return request('/config/disconnect', { method: 'POST', body: JSON.stringify({ toolkit }) });
+}
+
 /** Enregistre le bot Telegram personnel (token @BotFather) et démarre son poller */
 export async function setTelegramBot(token: string): Promise<ApiResponse<{ ownBot: boolean; botUsername: string }>> {
   return request('/config/telegram-bot', { method: 'PATCH', body: JSON.stringify({ token }) });

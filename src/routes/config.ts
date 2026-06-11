@@ -9,7 +9,7 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured, getModel } from '../services/aiClient';
 import { isComposioConfigured } from '../services/mcpClient';
-import { composioUserIdFor, createConnectLink } from '../services/composioConnect';
+import { composioUserIdFor, createConnectLink, disconnectToolkit } from '../services/composioConnect';
 import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/telegramBot';
 import { availableThemes, generateCustomTheme, CUSTOM_THEMES, BUILTIN_THEMES } from '../services/decks';
 
@@ -130,6 +130,29 @@ router.post('/connect', async (req: Request, res: Response) => {
     res.status(502).json({
       success: false,
       error: err instanceof Error ? err.message : 'Connexion impossible',
+    });
+  }
+});
+
+// ── POST /api/config/disconnect ──────────────────────────────────────────────
+// Supprime les comptes connectés d'un toolkit pour l'utilisateur (chez
+// Composio) — permet de re-autoriser proprement avec de nouveaux droits OAuth.
+router.post('/disconnect', async (req: Request, res: Response) => {
+  const { toolkit } = req.body as { toolkit?: string };
+  if (!toolkit || typeof toolkit !== 'string' || !/^[a-z0-9_-]{2,40}$/i.test(toolkit)) {
+    return res.status(400).json({ success: false, error: 'toolkit is required' });
+  }
+  if (!isComposioConfigured() || !process.env.COMPOSIO_API_KEY) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+  try {
+    const removed = await disconnectToolkit(req.user!.userId, toolkit.toLowerCase());
+    toolkitCache.delete(composioUserIdFor(req.user!.userId) ?? '__none__');
+    res.json({ success: true, data: { removed } });
+  } catch (err) {
+    res.status(502).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Déconnexion impossible',
     });
   }
 });
