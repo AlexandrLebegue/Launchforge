@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { ClipboardCheck } from 'lucide-react';
 import { getApprovals, approveRun, rejectRun, ApprovalItem } from '../api/client';
 
 const PLATFORM_ICONS: Record<string, string> = {
@@ -92,6 +93,7 @@ export default function ApprovalsPage() {
 
       {items.length === 0 ? (
         <div className="plan-empty">
+          <span className="plan-empty-icon"><ClipboardCheck size={40} /></span>
           <h2>Tout est à jour</h2>
           <p>
             Quand un agent en mode « validation » prépare un contenu, il apparaît ici

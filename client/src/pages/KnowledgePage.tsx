@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
+import { BookOpen } from 'lucide-react';
 import {
   getKnowledge, createKnowledge, updateKnowledge, deleteKnowledge,
   KnowledgeEntry, KnowledgeCategory,
@@ -202,6 +203,7 @@ export default function KnowledgePage() {
 
       {filtered.length === 0 ? (
         <div className="plan-empty">
+          <span className="plan-empty-icon"><BookOpen size={40} /></span>
           <h2>{entries.length === 0 ? 'Votre base est vide' : 'Aucune fiche ne correspond'}</h2>
           <p>
             Commencez par 3 fiches : votre proposition de valeur (Produit), votre client idéal (Audience)

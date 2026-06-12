@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Trophy, TrendingUp } from 'lucide-react';
 import {
   ComposedChart, Line, Bar, Area, AreaChart, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -96,6 +97,7 @@ export default function PerformancePage() {
 
       {!hasData ? (
         <div className="plan-empty">
+          <span className="plan-empty-icon"><TrendingUp size={40} /></span>
           <h2>Pas encore de données</h2>
           <p>Publiez des posts (et laissez la synchro des métriques travailler, ou saisissez-les) — les courbes apparaîtront ici.</p>
         </div>
@@ -171,7 +173,7 @@ export default function PerformancePage() {
           {/* ── Meilleur post ── */}
           {bestPost && (
             <div className="best-post-card" onClick={() => navigate(`/content?edit=${bestPost.id}`)}>
-              <span className="best-post-label">Meilleur post</span>
+              <span className="best-post-label"><Trophy size={14} /> Meilleur post</span>
               <span className="best-post-title">{bestPost.title || '(sans titre)'}</span>
               <span className="best-post-rate">{engagementRate(bestPost)!.toFixed(1)} % d'engagement</span>
             </div>
@@ -215,7 +217,7 @@ export default function PerformancePage() {
                       <div key={p.id} className={`platform-row${best ? ' cross-best' : ''}`}
                            onClick={() => navigate(`/content?edit=${p.id}`)} style={{ cursor: 'pointer' }}>
                         <span className="platform-row-name">
-                          {best ? '' : ''}{platformLabel(p.platform)}
+                          {best && <Trophy size={13} className="cross-trophy" />}{platformLabel(p.platform)}
                         </span>
                         <div className="platform-row-bar">
                           <div className="platform-row-fill"

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare } from 'lucide-react';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   previewRecurrence, crosspostPost,
@@ -355,11 +356,11 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 disabled={generating}
               />
               <button type="button" className="btn btn-primary" onClick={() => handleGenerate(false)} disabled={generating}>
-                {generating ? '⏳…' : 'Générer'}
+                {generating ? '⏳…' : <><Sparkles size={15} /> Générer</>}
               </button>
               {form.content.trim() && (
                 <button type="button" className="btn btn-ghost" onClick={() => handleGenerate(true)} disabled={generating}>
-                  Améliorer
+                  <Wand2 size={15} /> Améliorer
                 </button>
               )}
             </div>
@@ -412,7 +413,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 disabled={imgBusy}
               />
               <button type="button" className="btn btn-primary" onClick={handleGenerateImage} disabled={imgBusy || !imgPrompt.trim()}>
-                {imgBusy ? '⏳…' : 'Générer'}
+                {imgBusy ? '⏳…' : <><Sparkles size={15} /> Générer</>}
               </button>
             </div>
             {decks.length > 0 && (
@@ -767,7 +768,7 @@ function CalendarModal({ onClose, onGenerated }: {
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Annuler</button>
             <button className="btn btn-primary" onClick={generate} disabled={busy}>
-              {busy ? '⏳ Rédaction de vos posts… (≈ 1 min)' : `Générer ${Math.min(weeks * postsPerWeek, 20)} posts`}
+              {busy ? '⏳ Rédaction de vos posts… (≈ 1 min)' : <><Sparkles size={15} /> Générer {Math.min(weeks * postsPerWeek, 20)} posts</>}
             </button>
           </div>
         </div>
@@ -936,10 +937,10 @@ export default function ContentHubPage() {
 
       {/* Stats */}
       <div className="dashboard-stats">
-        <div className="stat-card"><div className="stat-card-value">{totals.scheduled}</div><div className="stat-card-label">Programmés</div></div>
-        <div className="stat-card"><div className="stat-card-value">{totals.published}</div><div className="stat-card-label">Publiés</div></div>
-        <div className="stat-card"><div className="stat-card-value">{fmtNum(totals.impressions)}</div><div className="stat-card-label">Impressions</div></div>
-        <div className="stat-card"><div className="stat-card-value">{totals.engagement !== null ? `${totals.engagement.toFixed(1)} %` : '—'}</div><div className="stat-card-label">Engagement moyen</div></div>
+        <div className="stat-card"><span className="stat-card-icon"><CalendarClock size={20} /></span><div className="stat-card-value">{totals.scheduled}</div><div className="stat-card-label">Programmés</div></div>
+        <div className="stat-card"><span className="stat-card-icon"><CheckCircle2 size={20} /></span><div className="stat-card-value">{totals.published}</div><div className="stat-card-label">Publiés</div></div>
+        <div className="stat-card"><span className="stat-card-icon"><Eye size={20} /></span><div className="stat-card-value">{fmtNum(totals.impressions)}</div><div className="stat-card-label">Impressions</div></div>
+        <div className="stat-card"><span className="stat-card-icon"><TrendingUp size={20} /></span><div className="stat-card-value">{totals.engagement !== null ? `${totals.engagement.toFixed(1)} %` : '—'}</div><div className="stat-card-label">Engagement moyen</div></div>
       </div>
 
       {/* À publier prochainement */}
@@ -1016,7 +1017,8 @@ export default function ContentHubPage() {
 
           {filtered.length === 0 ? (
             <div className="plan-empty">
-                            <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
+              <span className="plan-empty-icon"><Megaphone size={40} /></span>
+              <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
               <p>Créez votre premier post — l'assistant IA le rédige à partir de votre base de connaissances.</p>
               <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
                 ＋ Créer un post
@@ -1080,7 +1082,7 @@ export default function ContentHubPage() {
           className="assistant-fab"
           onClick={() => setShowAssistant(true)}
           title="Assistant de création de posts"
-        >Assistant</button>
+        ><MessageSquare size={22} /></button>
       )}
       <PostAssistant
         open={showAssistant}

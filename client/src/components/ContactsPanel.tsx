@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
+import { Users } from 'lucide-react';
 import {
   getContacts, createContact, updateContact, deleteContact,
   analyzeLeads, scanInbox, scanPost, getPosts, draftContactEmail, sendContactEmail,
@@ -524,7 +525,8 @@ export default function ContactsPanel() {
 
       {filtered.length === 0 ? (
         <div className="plan-empty">
-                    <h2>{contacts.length === 0 ? 'Aucun contact pour l\'instant' : 'Aucun contact ne correspond'}</h2>
+          <span className="plan-empty-icon"><Users size={40} /></span>
+          <h2>{contacts.length === 0 ? 'Aucun contact pour l\'instant' : 'Aucun contact ne correspond'}</h2>
           <p>
             Collez des messages, scannez les likes et commentaires d'un post, ou votre boîte mail :
             l'IA détecte les personnes les plus intéressées et les score de 0 à 100.

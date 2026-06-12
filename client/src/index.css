@@ -804,9 +804,10 @@ form .btn { margin-top: 8px; }
 .stat-card:hover::after { transform: scaleX(1); }
 
 .stat-card-icon {
-  font-size: 1.4rem;
+  display: flex;
+  color: var(--color-primary);
+  opacity: 0.75;
   margin-bottom: 10px;
-  display: block;
 }
 
 .stat-card-value {
@@ -949,10 +950,10 @@ form .btn { margin-top: 8px; }
   animation: fadeIn 0.5s ease;
 }
 .plan-empty-icon {
-  font-size: 4rem;
-  display: block;
+  display: flex;
+  justify-content: center;
+  color: var(--color-text-subtle);
   margin-bottom: 18px;
-  animation: floatSlow 4s ease-in-out infinite;
 }
 .plan-empty h2 {
   font-size: 1.3rem;
@@ -4497,3 +4498,10 @@ video.md-media { background: #000; }
   font-size: 0.68rem;
   font-weight: 700;
 }
+
+
+/* Icônes structurelles (lucide) */
+.best-post-label { display: inline-flex; align-items: center; gap: 6px; }
+.cross-trophy { color: var(--color-primary); margin-right: 5px; vertical-align: -2px; }
+.platform-row-name { display: inline-flex; align-items: center; }
+.approval-banner-icon { display: flex; color: var(--color-warning); }

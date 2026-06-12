@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CalendarClock, PenLine, CheckCircle2, ClipboardCheck, Rocket } from 'lucide-react';
 import { getOverview, getPlan, Overview, LaunchPlan } from '../api/client';
 
 /**
@@ -40,7 +41,8 @@ export default function DashboardPage() {
     return (
       <div className="animate-fadeIn">
         <div className="plan-empty">
-                    <h2>Aucun projet</h2>
+          <span className="plan-empty-icon"><Rocket size={40} /></span>
+          <h2>Aucun projet</h2>
           <p>L'assistant IA vous pose quelques questions, recherche votre entreprise, et génère votre plan d'action.</p>
           <Link
             to="/new"
@@ -86,7 +88,8 @@ export default function DashboardPage() {
       {/* Validations en attente — action prioritaire */}
       {approvals > 0 && (
         <Link to="/approvals" className="approval-banner animate-fadeInUp">
-                    <span>
+          <span className="approval-banner-icon"><ClipboardCheck size={20} /></span>
+          <span>
             <strong>{approvals} contenu{approvals > 1 ? 's' : ''}</strong> proposé{approvals > 1 ? 's' : ''} par
             l'IA attend{approvals > 1 ? 'ent' : ''} votre validation
           </span>
@@ -102,6 +105,7 @@ export default function DashboardPage() {
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
         >
+          <span className="stat-card-icon"><CalendarClock size={20} /></span>
           <div className="stat-card-value">{posts.scheduled}</div>
           <div className="stat-card-label">Posts programmés</div>
         </div>
@@ -111,10 +115,12 @@ export default function DashboardPage() {
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
         >
+          <span className="stat-card-icon"><PenLine size={20} /></span>
           <div className="stat-card-value">{posts.drafts}</div>
           <div className="stat-card-label">Brouillons & idées</div>
         </div>
         <div className="stat-card animate-fadeInUp stagger-3">
+          <span className="stat-card-icon"><CheckCircle2 size={20} /></span>
           <div className="stat-card-value">{posts.published}</div>
           <div className="stat-card-label">Posts publiés</div>
         </div>
@@ -124,6 +130,7 @@ export default function DashboardPage() {
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/approvals')}
         >
+          <span className="stat-card-icon"><ClipboardCheck size={20} /></span>
           <div className="stat-card-value" style={approvals > 0 ? { color: '#f59e0b' } : undefined}>{approvals}</div>
           <div className="stat-card-label">À valider</div>
         </div>
