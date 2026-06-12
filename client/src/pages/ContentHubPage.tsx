@@ -312,345 +312,396 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     onSaved(res.data);
   };
 
+  // Aperçu : le média attaché peut être une image, un GIF animé ou une vidéo
+  const mediaUrl = form.imageUrl.trim();
+  const mediaIsVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(mediaUrl);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box modal-box-lg" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-box modal-box-xl" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{post ? 'Modifier le post' : 'Nouveau post'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        <form onSubmit={handleSave} className="post-editor">
-          <div className="post-editor-row">
-            <label className="form-label-block">
-              Plateforme
-              <select value={form.platform} onChange={(e) => set('platform', e.target.value)} className="form-input">
-                {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </select>
-            </label>
-            <label className="form-label-block">
-              Statut
-              <select value={form.status} onChange={(e) => set('status', e.target.value as PostStatus)} className="form-input">
-                <option value="idea">Idée</option>
-                <option value="draft">Brouillon</option>
-                <option value="scheduled">Programmé</option>
-                <option value="published">Publié</option>
-              </select>
-            </label>
-          </div>
+        <form onSubmit={handleSave} className="post-editor pe-form">
+          <div className="pe-grid">
 
-          <label className="form-label-block">
-            Titre <span className="form-hint-inline">(usage interne)</span>
-            <input className="form-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="ex. Annonce nouvelle fonctionnalité" />
-          </label>
+            {/* ════ Colonne gauche : ce que VOUS écrivez et réglez ════ */}
+            <div className="pe-col">
 
-          {/* Assistant IA */}
-          <div className="ai-assist-box">
-            <div className="ai-assist-header">Assistant IA <span className="form-hint-inline">— s'appuie sur votre <Link to="/knowledge">base de connaissances</Link></span></div>
-            <div className="ai-assist-row">
-              <input
-                className="form-input"
-                value={brief}
-                onChange={(e) => setBrief(e.target.value)}
-                placeholder="Brief : sujet, angle, objectif… ex. « Annoncer la v2 avec un avant/après client »"
-                disabled={generating}
-              />
-              <button type="button" className="btn btn-primary" onClick={() => handleGenerate(false)} disabled={generating}>
-                {generating ? '⏳…' : <><Sparkles size={15} /> Générer</>}
-              </button>
-              {form.content.trim() && (
-                <button type="button" className="btn btn-ghost" onClick={() => handleGenerate(true)} disabled={generating}>
-                  <Wand2 size={15} /> Améliorer
-                </button>
-              )}
-            </div>
-            <label className="ai-news-toggle">
-              <input type="checkbox" checked={useNews} onChange={(e) => setUseNews(e.target.checked)} />
-              S'appuyer sur les actus du web (recherche en direct sur le sujet)
-            </label>
-          </div>
-
-          <label className="form-label-block">
-            Contenu
-            <textarea
-              className="form-input post-content-area"
-              value={form.content}
-              onChange={(e) => set('content', e.target.value)}
-              rows={10}
-              placeholder="Le contenu du post — ou laissez l'assistant IA le rédiger…"
-            />
-            <span className="form-hint-inline">{form.content.length} caractères</span>
-          </label>
-
-          <label className="form-label-block">
-            Image du post <span className="form-hint-inline">(jointe à la publication — obligatoire pour Instagram)</span>
-            <div className="ai-assist-row">
-              <input
-                className="form-input"
-                value={form.imageUrl}
-                onChange={(e) => set('imageUrl', e.target.value)}
-                placeholder="https://…/visuel.png — ou générez/téléversez ci-dessous"
-              />
-              <button
-                type="button" className="btn btn-ghost"
-                onClick={() => fileRef.current?.click()}
-                disabled={imgBusy}
-                title="Téléverser une image depuis votre machine (hébergée publiquement)"
-              >
-                Upload
-              </button>
-              <input
-                ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={handleUploadImage}
-              />
-            </div>
-            <div className="ai-assist-row" style={{ marginTop: 6 }}>
-              <input
-                className="form-input"
-                value={imgPrompt}
-                onChange={(e) => setImgPrompt(e.target.value)}
-                placeholder="Ou décrivez le visuel à générer par l'IA (~0,04 $)…"
-                disabled={imgBusy}
-              />
-              <button type="button" className="btn btn-primary" onClick={handleGenerateImage} disabled={imgBusy || !imgPrompt.trim()}>
-                {imgBusy ? '⏳…' : <><Sparkles size={15} /> Générer</>}
-              </button>
-            </div>
-            {decks.length > 0 && (
-              <div className="ai-assist-row" style={{ marginTop: 6 }}>
-                <select
-                  className="form-input"
-                  value={selectedDeck}
-                  onChange={(e) => setSelectedDeck(e.target.value)}
-                  disabled={imgBusy}
-                >
-                  <option value="">Ou utilisez une présentation (onglet Slides)…</option>
-                  {decks.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
-                </select>
-                <button type="button" className="btn btn-ghost" onClick={handleDeckGif} disabled={imgBusy || !selectedDeck}
-                        title="Transforme la présentation en GIF animé (fondus) et l'attache au post">
-                  {imgBusy ? '⏳…' : 'GIF animé'}
-                </button>
-              </div>
-            )}
-            {imgError && <div className="chat-error" style={{ marginTop: 6 }}>{imgError}</div>}
-            {form.imageUrl.trim() && (
-              <img src={form.imageUrl.trim()} alt="aperçu" className="post-image-preview"
-                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            )}
-          </label>
-
-          <div className="post-editor-row">
-            <label className="form-label-block">
-              Date de publication prévue
-              <input
-                type="datetime-local"
-                className="form-input"
-                value={form.scheduledAt}
-                onChange={(e) => set('scheduledAt', e.target.value)}
-              />
-            </label>
-            <label className="form-label-block">
-              Récurrence
-              <select value={form.recurrence} onChange={(e) => set('recurrence', e.target.value as Recurrence)} className="form-input">
-                {(Object.keys(RECURRENCE_LABELS) as Recurrence[]).map((r) => (
-                  <option key={r} value={r}>{RECURRENCE_LABELS[r]}</option>
-                ))}
-              </select>
-              {form.recurrence !== 'none' && (
-                <span className="form-hint-inline">À chaque publication, la prochaine occurrence est créée automatiquement.</span>
-              )}
-            </label>
-          </div>
-
-          {/* Déclinaison multi-plateformes : un exemplaire indépendant par plateforme */}
-          <div className="form-label-block">
-            Publier aussi sur d'autres plateformes
-            {post?.crossPostId && (
-              <span className="form-hint-inline"> — ce post fait déjà partie d'un groupe multi-plateformes</span>
-            )}
-            <div className="calendar-platforms" style={{ marginTop: 6 }}>
-              {PLATFORMS.filter((p) => p.value !== form.platform).map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  className={`knowledge-cat${crossPlatforms.has(p.value) ? ' active' : ''}`}
-                  onClick={() => toggleCross(p.value)}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            {crossPlatforms.size > 0 && (
-              <>
-                <label className="ai-news-toggle" style={{ marginTop: 8 }}>
-                  <input type="checkbox" checked={crossAdapt} onChange={(e) => setCrossAdapt(e.target.checked)} />
-                  Adapter le contenu aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
-                </label>
-                <span className="form-hint-inline">
-                  À l'enregistrement, un exemplaire indépendant est créé par plateforme (même date,
-                  même auto-publication) — chacun se publie et se mesure séparément, et la vue
-                  Performances compare les plateformes sur ce même contenu.
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* Série récurrente : pilotage de l'IA + mode simulé */}
-          {form.recurrence !== 'none' && (
-            <div className="recur-panel">
-              <div className="ai-assist-header">Série récurrente — pilotage de l'IA</div>
-
-              <label className="form-label-block" style={{ marginTop: 8 }}>
-                Instruction de régénération <span className="form-hint-inline">(le sujet, l'angle, ce que l'IA doit chercher)</span>
-                <textarea
-                  className="form-input"
-                  value={form.recurrenceBrief}
-                  onChange={(e) => set('recurrenceBrief', e.target.value)}
-                  rows={3}
-                  maxLength={600}
-                  placeholder="ex. « Partage un conseil actionnable différent à chaque fois sur la prospection LinkedIn, avec un exemple concret »"
-                />
-                <span className="form-hint-inline">
-                  Si renseignée, chaque nouvelle occurrence est <strong>réécrite par l'IA</strong> — qui voit aussi
-                  les occurrences déjà publiées de la série pour ne jamais se répéter. Vide = même contenu repris.
-                </span>
-              </label>
-
-              <div className="recur-toggles">
-                <label className="recur-toggle">
-                  <input type="checkbox" checked={form.recurrenceUseKnowledge}
-                         onChange={(e) => set('recurrenceUseKnowledge', e.target.checked)} />
-                  S'appuyer sur la <Link to="/knowledge">base de connaissances</Link>
-                </label>
-                <label className="recur-toggle">
-                  <input type="checkbox" checked={form.recurrenceUseNews}
-                         onChange={(e) => set('recurrenceUseNews', e.target.checked)} />
-                  Rechercher les actualités du web sur le sujet
-                </label>
-                {form.recurrenceUseNews && (
-                  <label className="recur-toggle">
-                    <input type="checkbox" checked={form.recurrenceUpdateKb}
-                           onChange={(e) => set('recurrenceUpdateKb', e.target.checked)} />
-                    Archiver les actus utilisées dans la fiche « Veille » de la base de connaissances
+              {/* 1. Contenu */}
+              <section className="pe-panel">
+                <h3 className="pe-panel-title">Contenu</h3>
+                <div className="post-editor-row">
+                  <label className="form-label-block">
+                    Plateforme
+                    <select value={form.platform} onChange={(e) => set('platform', e.target.value)} className="form-input">
+                      {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    </select>
                   </label>
-                )}
-              </div>
-
-              {/* Mode simulé : tester les réglages sans rien publier ni enregistrer */}
-              <div className="ai-assist-row" style={{ marginTop: 10 }}>
-                <button type="button" className="btn btn-ghost" onClick={handleSimulate}
-                        disabled={simBusy || !post || !form.recurrenceBrief.trim()}
-                        title={!post ? 'Enregistrez d\'abord le post pour pouvoir simuler'
-                          : !form.recurrenceBrief.trim() ? 'Renseignez l\'instruction de régénération'
-                          : 'Génère la prochaine occurrence avec ces réglages — rien n\'est enregistré'}>
-                  {simBusy ? '⏳ Simulation…' : 'Simuler la prochaine occurrence'}
-                </button>
-                {!post && <span className="form-hint-inline">Enregistrez d'abord le post pour simuler.</span>}
-              </div>
-              {simError && <div className="chat-error" style={{ marginTop: 6 }}>{simError}</div>}
-              {simResult && (
-                <div className="recur-sim-result">
-                  <div className="recur-sim-head">
-                    <span>Aperçu — <strong>{simResult.title}</strong></span>
-                    <button type="button" className="btn btn-ghost btn-sm"
-                            onClick={() => { set('title', simResult.title); set('content', simResult.content); setSimResult(null); }}
-                            title="Remplace le titre et le contenu du post par cette simulation">
-                      Utiliser ce contenu
-                    </button>
-                  </div>
-                  <div className="recur-sim-body"><Markdown text={simResult.content} /></div>
-                  <span className="form-hint-inline">Simple aperçu : rien n'a été enregistré ni archivé.</span>
+                  <label className="form-label-block">
+                    Statut
+                    <select value={form.status} onChange={(e) => set('status', e.target.value as PostStatus)} className="form-input">
+                      <option value="idea">Idée</option>
+                      <option value="draft">Brouillon</option>
+                      <option value="scheduled">Programmé</option>
+                      <option value="published">Publié</option>
+                    </select>
+                  </label>
                 </div>
-              )}
-            </div>
-          )}
+                <label className="form-label-block">
+                  Titre <span className="form-hint-inline">(usage interne)</span>
+                  <input className="form-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="ex. Annonce nouvelle fonctionnalité" />
+                </label>
+                <label className="form-label-block">
+                  Texte du post
+                  <textarea
+                    className="form-input post-content-area"
+                    value={form.content}
+                    onChange={(e) => set('content', e.target.value)}
+                    rows={12}
+                    placeholder="Écrivez ici — ou briefez l'IA dans le panneau de droite, elle remplit ce champ."
+                  />
+                  <span className="form-hint-inline">{form.content.length} caractères</span>
+                </label>
+              </section>
 
-          {/* Publication automatique (worker + Composio) */}
-          {form.status === 'scheduled' && (
-            <label className={`autopublish-toggle${form.autoPublish ? ' on' : ''}`}>
-              <input
-                type="checkbox"
-                checked={form.autoPublish}
-                onChange={(e) => set('autoPublish', e.target.checked)}
-              />
-              <span className="autopublish-text">
-                <span className="autopublish-title">Publication automatique</span>
-                <span className="form-hint-inline">
-                  Le worker publie ce post tout seul à l'heure programmée via vos comptes Composio —
-                  vérifiez le contenu avant d'activer. Sans cette option, vous publiez manuellement.
-                </span>
-              </span>
-            </label>
-          )}
-          {post?.publishError && (
-            <div className="chat-error">
-              La publication automatique a échoué : {post.publishError} — corrigez puis réactivez l'option, ou publiez manuellement.
-            </div>
-          )}
-
-          {/* Analyse IA du post publié */}
-          {post && form.status === 'published' && (
-            <div className="ai-assist-box">
-              <div className="ai-assist-header">
-                Analyse de performance
-                <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
-                        onClick={handleAnalyze} disabled={analyzing}>
-                  {analyzing ? '⏳ Analyse…' : analysis ? '↺ Re-analyser' : 'Analyser ce post'}
-                </button>
-              </div>
-              {analysis && (
-                <div style={{ fontSize: '0.85rem', marginTop: 6 }}>
-                  <Markdown text={analysis} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Métriques (posts publiés) */}
-          {form.status === 'published' && (
-            <div className="metrics-section">
-              <label className="form-label-block">
-                URL du post publié
+              {/* 2. Média */}
+              <section className="pe-panel">
+                <h3 className="pe-panel-title">Média <span className="form-hint-inline">— image, GIF ou vidéo joint à la publication (obligatoire pour Instagram)</span></h3>
                 <div className="ai-assist-row">
                   <input
                     className="form-input"
-                    value={form.externalUrl}
-                    onChange={(e) => set('externalUrl', e.target.value)}
-                    placeholder="ex. https://x.com/vous/status/12345…"
+                    value={form.imageUrl}
+                    onChange={(e) => set('imageUrl', e.target.value)}
+                    placeholder="https://…/visuel.png — collez une URL, téléversez, ou générez à droite"
                   />
-                  {post && (
-                    <button type="button" className="btn btn-ghost" onClick={handleSync} disabled={syncing}>
-                      {syncing ? '⏳ Synchro…' : 'Synchroniser via Composio'}
+                  <button
+                    type="button" className="btn btn-ghost"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={imgBusy}
+                    title="Téléverser une image depuis votre machine (hébergée publiquement)"
+                  >
+                    Téléverser
+                  </button>
+                  <input
+                    ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={handleUploadImage}
+                  />
+                </div>
+              </section>
+
+              {/* 3. Planification */}
+              <section className="pe-panel">
+                <h3 className="pe-panel-title">Planification</h3>
+                <div className="post-editor-row">
+                  <label className="form-label-block">
+                    Date de publication prévue
+                    <input
+                      type="datetime-local"
+                      className="form-input"
+                      value={form.scheduledAt}
+                      onChange={(e) => set('scheduledAt', e.target.value)}
+                    />
+                  </label>
+                  <label className="form-label-block">
+                    Récurrence
+                    <select value={form.recurrence} onChange={(e) => set('recurrence', e.target.value as Recurrence)} className="form-input">
+                      {(Object.keys(RECURRENCE_LABELS) as Recurrence[]).map((r) => (
+                        <option key={r} value={r}>{RECURRENCE_LABELS[r]}</option>
+                      ))}
+                    </select>
+                    {form.recurrence !== 'none' && (
+                      <span className="form-hint-inline">Réglez l'IA de la série dans le panneau de droite.</span>
+                    )}
+                  </label>
+                </div>
+                {form.status === 'scheduled' && (
+                  <label className={`autopublish-toggle${form.autoPublish ? ' on' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={form.autoPublish}
+                      onChange={(e) => set('autoPublish', e.target.checked)}
+                    />
+                    <span className="autopublish-text">
+                      <span className="autopublish-title">Publication automatique</span>
+                      <span className="form-hint-inline">
+                        Le worker publie ce post tout seul à l'heure programmée via vos comptes Composio —
+                        vérifiez le contenu avant d'activer.
+                      </span>
+                    </span>
+                  </label>
+                )}
+                {post?.publishError && (
+                  <div className="chat-error">
+                    La publication automatique a échoué : {post.publishError} — corrigez puis réactivez l'option, ou publiez manuellement.
+                  </div>
+                )}
+              </section>
+
+              {/* 4. Diffusion multi-plateformes */}
+              <section className="pe-panel">
+                <h3 className="pe-panel-title">
+                  Diffusion multi-plateformes
+                  {post?.crossPostId && <span className="form-hint-inline"> — fait partie d'un groupe multi-plateformes</span>}
+                </h3>
+                <div className="calendar-platforms">
+                  {PLATFORMS.filter((p) => p.value !== form.platform).map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      className={`knowledge-cat${crossPlatforms.has(p.value) ? ' active' : ''}`}
+                      onClick={() => toggleCross(p.value)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {crossPlatforms.size > 0 && (
+                  <>
+                    <label className="ai-news-toggle" style={{ marginTop: 8 }}>
+                      <input type="checkbox" checked={crossAdapt} onChange={(e) => setCrossAdapt(e.target.checked)} />
+                      Adapter le contenu aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
+                    </label>
+                    <span className="form-hint-inline">
+                      À l'enregistrement, un exemplaire indépendant est créé par plateforme (même date, même
+                      auto-publication) — chacun se publie et se mesure séparément.
+                    </span>
+                  </>
+                )}
+              </section>
+
+              {/* 5. Mesure (posts publiés) */}
+              {form.status === 'published' && (
+                <section className="pe-panel">
+                  <h3 className="pe-panel-title">Mesure</h3>
+                  <label className="form-label-block">
+                    URL du post publié
+                    <div className="ai-assist-row">
+                      <input
+                        className="form-input"
+                        value={form.externalUrl}
+                        onChange={(e) => set('externalUrl', e.target.value)}
+                        placeholder="ex. https://x.com/vous/status/12345…"
+                      />
+                      {post && (
+                        <button type="button" className="btn btn-ghost" onClick={handleSync} disabled={syncing}>
+                          {syncing ? '⏳ Synchro…' : 'Synchroniser'}
+                        </button>
+                      )}
+                    </div>
+                    <span className="form-hint-inline">
+                      La synchro lit les métriques réelles via vos comptes connectés sur Composio. Sinon, saisie manuelle.
+                    </span>
+                  </label>
+                  {syncNote && <div className="approval-feedback" style={{ marginBottom: 0 }}>{syncNote}</div>}
+                  <div className="metrics-grid">
+                    {([
+                      ['impressions', 'Impressions'], ['likes', 'Likes'], ['comments', 'Commentaires'],
+                      ['shares', 'Partages'], ['clicks', 'Clics'],
+                    ] as const).map(([key, label]) => (
+                      <label key={key} className="form-label-block">
+                        {label}
+                        <input
+                          type="number" min={0} className="form-input"
+                          value={form[key]}
+                          onChange={(e) => set(key, Number(e.target.value) as never)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            {/* ════ Colonne droite : aperçu en direct + copilote IA ════ */}
+            <div className="pe-col pe-col-right">
+
+              {/* Aperçu — se met à jour en tapant */}
+              <section className="pe-panel pe-preview">
+                <h3 className="pe-panel-title">Aperçu</h3>
+                <div className="pe-preview-card">
+                  <div className="pe-preview-head">
+                    <span className="pe-preview-platform">{platformLabel(form.platform)}</span>
+                    <span className="pe-preview-meta">
+                      {STATUS_META[form.status].label}
+                      {form.scheduledAt && ` · ${new Date(form.scheduledAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+                    </span>
+                  </div>
+                  <div className="pe-preview-body">
+                    {form.content.trim()
+                      ? <Markdown text={form.content} />
+                      : <span className="pe-preview-empty">Le post apparaîtra ici au fil de la frappe…</span>}
+                  </div>
+                  {mediaUrl && (
+                    mediaIsVideo ? (
+                      <video src={mediaUrl} className="pe-preview-media" controls loop muted playsInline />
+                    ) : (
+                      <img
+                        src={mediaUrl} alt="média du post" className="pe-preview-media"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )
+                  )}
+                </div>
+              </section>
+
+              {/* Rédaction par l'IA */}
+              <section className="pe-panel pe-ai">
+                <h3 className="pe-panel-title"><Sparkles size={14} /> Rédaction par l'IA</h3>
+                <p className="form-hint" style={{ marginBottom: 8 }}>
+                  S'appuie sur votre <Link to="/knowledge">base de connaissances</Link> et écrit
+                  directement dans le texte du post, à gauche.
+                </p>
+                <textarea
+                  className="form-input"
+                  rows={2}
+                  value={brief}
+                  onChange={(e) => setBrief(e.target.value)}
+                  placeholder="Brief : sujet, angle, objectif… ex. « Annoncer la v2 avec un avant/après client »"
+                  disabled={generating}
+                />
+                <label className="ai-news-toggle">
+                  <input type="checkbox" checked={useNews} onChange={(e) => setUseNews(e.target.checked)} />
+                  S'appuyer sur les actus du web
+                </label>
+                <div className="ai-assist-row" style={{ marginTop: 8 }}>
+                  <button type="button" className="btn btn-primary" onClick={() => handleGenerate(false)} disabled={generating || !brief.trim()}>
+                    {generating ? '⏳ Rédaction…' : <><Sparkles size={15} /> Rédiger le post</>}
+                  </button>
+                  {form.content.trim() && (
+                    <button type="button" className="btn btn-ghost" onClick={() => handleGenerate(true)} disabled={generating}>
+                      <Wand2 size={15} /> Améliorer l'existant
                     </button>
                   )}
                 </div>
-                <span className="form-hint-inline">
-                  La synchro lit les métriques réelles via vos comptes connectés sur Composio. Sinon, saisie manuelle ci-dessous.
-                </span>
-              </label>
-              {syncNote && <div className="approval-feedback" style={{ marginBottom: 0 }}>{syncNote}</div>}
-              <div className="metrics-grid">
-                {([
-                  ['impressions', 'Impressions'], ['likes', 'Likes'], ['comments', 'Commentaires'],
-                  ['shares', 'Partages'], ['clicks', 'Clics'],
-                ] as const).map(([key, label]) => (
-                  <label key={key} className="form-label-block">
-                    {label}
-                    <input
-                      type="number" min={0} className="form-input"
-                      value={form[key]}
-                      onChange={(e) => set(key, Number(e.target.value) as never)}
+              </section>
+
+              {/* Visuel par l'IA */}
+              <section className="pe-panel pe-ai">
+                <h3 className="pe-panel-title"><Sparkles size={14} /> Visuel par l'IA</h3>
+                <div className="ai-assist-row">
+                  <input
+                    className="form-input"
+                    value={imgPrompt}
+                    onChange={(e) => setImgPrompt(e.target.value)}
+                    placeholder="Décrivez le visuel à générer (~0,04 $)…"
+                    disabled={imgBusy}
+                  />
+                  <button type="button" className="btn btn-primary" onClick={handleGenerateImage} disabled={imgBusy || !imgPrompt.trim()}>
+                    {imgBusy ? '⏳…' : 'Générer'}
+                  </button>
+                </div>
+                {decks.length > 0 && (
+                  <div className="ai-assist-row" style={{ marginTop: 8 }}>
+                    <select
+                      className="form-input"
+                      value={selectedDeck}
+                      onChange={(e) => setSelectedDeck(e.target.value)}
+                      disabled={imgBusy}
+                    >
+                      <option value="">Depuis une présentation (onglet Slides)…</option>
+                      {decks.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
+                    </select>
+                    <button type="button" className="btn btn-ghost" onClick={handleDeckGif} disabled={imgBusy || !selectedDeck}
+                            title="Transforme la présentation en GIF animé (fondus) et l'attache au post">
+                      {imgBusy ? '⏳…' : 'GIF animé'}
+                    </button>
+                  </div>
+                )}
+                <span className="form-hint-inline">Le résultat s'attache au post et s'affiche dans l'aperçu ci-dessus.</span>
+                {imgError && <div className="chat-error" style={{ marginTop: 6 }}>{imgError}</div>}
+              </section>
+
+              {/* Série récurrente : pilotage de l'IA + mode simulé */}
+              {form.recurrence !== 'none' && (
+                <section className="pe-panel pe-ai">
+                  <h3 className="pe-panel-title"><Sparkles size={14} /> Série récurrente — IA</h3>
+                  <label className="form-label-block">
+                    Instruction de régénération <span className="form-hint-inline">(sujet, angle, ce que l'IA doit chercher)</span>
+                    <textarea
+                      className="form-input"
+                      value={form.recurrenceBrief}
+                      onChange={(e) => set('recurrenceBrief', e.target.value)}
+                      rows={3}
+                      maxLength={600}
+                      placeholder="ex. « Partage un conseil actionnable différent à chaque fois sur la prospection LinkedIn, avec un exemple concret »"
                     />
+                    <span className="form-hint-inline">
+                      Si renseignée, chaque occurrence est <strong>réécrite par l'IA</strong> — qui voit les
+                      occurrences déjà publiées pour ne jamais se répéter. Vide = même contenu repris.
+                    </span>
                   </label>
-                ))}
-              </div>
+                  <div className="recur-toggles">
+                    <label className="recur-toggle">
+                      <input type="checkbox" checked={form.recurrenceUseKnowledge}
+                             onChange={(e) => set('recurrenceUseKnowledge', e.target.checked)} />
+                      S'appuyer sur la <Link to="/knowledge">base de connaissances</Link>
+                    </label>
+                    <label className="recur-toggle">
+                      <input type="checkbox" checked={form.recurrenceUseNews}
+                             onChange={(e) => set('recurrenceUseNews', e.target.checked)} />
+                      Rechercher les actualités du web sur le sujet
+                    </label>
+                    {form.recurrenceUseNews && (
+                      <label className="recur-toggle">
+                        <input type="checkbox" checked={form.recurrenceUpdateKb}
+                               onChange={(e) => set('recurrenceUpdateKb', e.target.checked)} />
+                        Archiver les actus utilisées dans la fiche « Veille »
+                      </label>
+                    )}
+                  </div>
+                  <div className="ai-assist-row" style={{ marginTop: 10 }}>
+                    <button type="button" className="btn btn-ghost" onClick={handleSimulate}
+                            disabled={simBusy || !post || !form.recurrenceBrief.trim()}
+                            title={!post ? 'Enregistrez d\'abord le post pour pouvoir simuler'
+                              : !form.recurrenceBrief.trim() ? 'Renseignez l\'instruction de régénération'
+                              : 'Génère la prochaine occurrence avec ces réglages — rien n\'est enregistré'}>
+                      {simBusy ? '⏳ Simulation…' : 'Simuler la prochaine occurrence'}
+                    </button>
+                    {!post && <span className="form-hint-inline">Enregistrez d'abord le post.</span>}
+                  </div>
+                  {simError && <div className="chat-error" style={{ marginTop: 6 }}>{simError}</div>}
+                  {simResult && (
+                    <div className="recur-sim-result">
+                      <div className="recur-sim-head">
+                        <span>Simulation — <strong>{simResult.title}</strong></span>
+                        <button type="button" className="btn btn-ghost btn-sm"
+                                onClick={() => { set('title', simResult.title); set('content', simResult.content); setSimResult(null); }}
+                                title="Remplace le titre et le contenu du post par cette simulation">
+                          Utiliser ce contenu
+                        </button>
+                      </div>
+                      <div className="recur-sim-body"><Markdown text={simResult.content} /></div>
+                      <span className="form-hint-inline">Simple aperçu : rien n'a été enregistré ni archivé.</span>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* Analyse IA du post publié */}
+              {post && form.status === 'published' && (
+                <section className="pe-panel pe-ai">
+                  <h3 className="pe-panel-title">
+                    <Sparkles size={14} /> Analyse de performance
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
+                            onClick={handleAnalyze} disabled={analyzing}>
+                      {analyzing ? '⏳ Analyse…' : analysis ? '↺ Re-analyser' : 'Analyser ce post'}
+                    </button>
+                  </h3>
+                  {analysis && (
+                    <div style={{ fontSize: '0.85rem', marginTop: 6 }}>
+                      <Markdown text={analysis} />
+                    </div>
+                  )}
+                </section>
+              )}
             </div>
-          )}
+          </div>
 
-          {error && <div className="chat-error">{error}</div>}
-
-          <div className="modal-footer">
+          <div className="modal-footer pe-footer">
+            {error && <span className="chat-error pe-footer-error">{error}</span>}
             <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving
