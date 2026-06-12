@@ -222,11 +222,19 @@ describe('Upload de vidéo (média de post)', () => {
     const { saveMediaStream } = await import('../src/services/mediaStore');
     const { Readable } = await import('stream');
     const fs = await import('fs');
-    const before = fs.readdirSync(process.env.UPLOADS_DIR ?? 'data/uploads').length;
-    await expect(
-      saveMediaStream(Readable.from([Buffer.alloc(2048, 1)]), 'mp4', 1024),
-    ).rejects.toThrow('TOO_LARGE');
-    expect(fs.readdirSync(process.env.UPLOADS_DIR ?? 'data/uploads').length).toBe(before);
+    const path = await import('path');
+    // Dossier dédié : le dossier partagé est touché par les tests parallèles
+    const prev = process.env.UPLOADS_DIR;
+    process.env.UPLOADS_DIR = fs.mkdtempSync(path.join('/tmp', 'lf-toolarge-'));
+    try {
+      await expect(
+        saveMediaStream(Readable.from([Buffer.alloc(2048, 1)]), 'mp4', 1024),
+      ).rejects.toThrow('TOO_LARGE');
+      expect(fs.readdirSync(process.env.UPLOADS_DIR)).toHaveLength(0);
+    } finally {
+      if (prev === undefined) delete process.env.UPLOADS_DIR;
+      else process.env.UPLOADS_DIR = prev;
+    }
   });
 
   it('refuse un type non vidéo ou un corps vide', async () => {

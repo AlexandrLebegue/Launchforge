@@ -15,7 +15,7 @@ async function main() {
   await initEngine();
   getDb();
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`🚀 LaunchForge API running on http://localhost:${PORT}`);
     console.log(`📋 Health: http://localhost:${PORT}/api/health`);
     console.log(`🔐 Auth:   http://localhost:${PORT}/api/auth`);
@@ -26,6 +26,11 @@ async function main() {
     startMediaCleanup();
     startWeeklyReports();
   });
+
+  // Node coupe les requêtes à 300 s par défaut : un upload vidéo de 3 Go sur
+  // une connexion domestique dépasse largement ça. 0 = illimité par requête ;
+  // headersTimeout (60 s) reste actif contre les connexions zombies.
+  server.requestTimeout = 0;
 }
 
 main().catch((err) => {

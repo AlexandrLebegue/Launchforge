@@ -171,17 +171,17 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'publish_post',
-    description: 'Publie immédiatement un post du Hub via Composio (donne l\'id court renvoyé par draft_post ou list_upcoming_posts). L\'image attachée au post est transmise à la plateforme. Instagram/TikTok/YouTube REFUSENT un post sans média : attache d\'abord un visuel avec set_post_image. Demande TOUJOURS confirmation avant.',
+    description: 'Publie immédiatement un post du Hub via Composio (donne l\'id court renvoyé par draft_post ou list_upcoming_posts). Le média attaché (image ou vidéo) est transmis à la plateforme ; une vidéo locale est supprimée du serveur après publication et le lien publié est enregistré sur le post. Instagram/TikTok/YouTube REFUSENT un post sans média : attache-le d\'abord avec set_post_image. Demande TOUJOURS confirmation avant.',
     parameters: { type: 'object', properties: { postId: { type: 'string' } }, required: ['postId'] },
   },
   {
     name: 'set_post_image',
-    description: 'Attache (ou remplace) le visuel d\'un post du Hub à partir d\'une URL d\'image. À utiliser quand l\'utilisateur fournit une URL d\'image pour un post — indispensable avant de publier sur Instagram.',
+    description: 'Attache (ou remplace) le MÉDIA d\'un post du Hub à partir d\'une URL (image, GIF ou vidéo mp4/webm/mov). À utiliser quand l\'utilisateur fournit une URL de média — indispensable avant de publier sur Instagram (média requis) ou YouTube/TikTok (vidéo requise).',
     parameters: {
       type: 'object',
       properties: {
         postId:   { type: 'string', description: 'Id court du post' },
-        imageUrl: { type: 'string', description: 'URL https de l\'image' },
+        imageUrl: { type: 'string', description: 'URL https du média (image ou vidéo)' },
       },
       required: ['postId', 'imageUrl'],
     },
@@ -496,12 +496,12 @@ export async function executeTool(userId: string, _chatId: string, name: string,
 
     case 'set_post_image': {
       const url = String(args.imageUrl || '').trim();
-      if (!/^https?:\/\/\S+$/i.test(url)) return 'ERREUR : URL d\'image invalide (http/https attendu).';
+      if (!/^https?:\/\/\S+$/i.test(url)) return 'ERREUR : URL de média invalide (http/https attendu).';
       const posts = storage.getPostsByPlan(userId, planId);
       const post = findByShortId(posts, String(args.postId || ''));
       if (!post) return 'ERREUR : post introuvable.';
       storage.updatePost(post.id, { imageUrl: url });
-      return `Image attachée au post [${shortId(post.id)}] — prêt à publier (y compris sur Instagram).`;
+      return `Média attaché au post [${shortId(post.id)}] — prêt à publier (y compris sur Instagram/YouTube).`;
     }
 
     case 'list_recurring_posts': {

@@ -205,7 +205,7 @@ router.post('/image/upload', async (req: Request, res: Response) => {
 
 // ── POST /api/content/video/upload — héberge une vidéo de l'utilisateur ─────
 // Corps binaire STREAMÉ vers le disque : mémoire constante quelle que soit la
-// taille (une petite machine 1-2 Go encaisse des uploads de 100 Mo). Stockée
+// taille (une petite machine encaisse des uploads de plusieurs Go). Stockée
 // dans data/uploads (servie sur /uploads, purge à 90 jours). En production,
 // APP_URL rend l'URL publique pour la publication sur les plateformes.
 const VIDEO_TYPES: Record<string, string> = {

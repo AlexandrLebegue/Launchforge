@@ -9,7 +9,7 @@ plus chauds — et se pilote depuis l'app web ou Telegram.
 **Ce que ça fait, concrètement :**
 
 - 🤖 **Onboarding par IA** — un chat vous interviewe, recherche votre entreprise sur le web et génère un plan de lancement tactique semaine par semaine.
-- 📣 **Hub de contenu** — calendrier éditorial généré par l'IA, éditeur de posts avec assistant, images IA, présentations (slides) transformables en GIF/MP4.
+- 📣 **Hub de contenu** — calendrier éditorial généré par l'IA, éditeur de posts avec assistant et aperçus fidèles par plateforme, images IA, présentations (slides) transformables en GIF/MP4, téléversement de vos propres vidéos (jusqu'à 3 Go — le serveur sert de relais et supprime la vidéo une fois publiée).
 - 🔁 **Séries récurrentes** — un post peut se republier tout seul (quotidien → mensuel), réécrit à chaque fois par l'IA avec un sujet différent, sans jamais se répéter.
 - 🗓️ **Calendrier** — vue mensuelle de votre planning, synchronisable avec Google Calendar.
 - 📈 **Performances** — métriques synchronisées automatiquement depuis vos comptes, graphiques d'évolution, analyse IA de chaque post, rapport de campagne hebdomadaire sur Telegram.
