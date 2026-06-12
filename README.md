@@ -1,289 +1,170 @@
-# 🚀 LaunchForge
+# 🔥 LaunchForge
 
-> **AI-powered launch plan generator for SaaS founders & indie hackers.**
+> **Le hub de promotion de votre startup, forgé par l'IA.**
 
-Stop wasting time on generic advice. LaunchForge generates **tactical, personalized launch plans** custom-tailored to your product, audience, and niche.
+LaunchForge construit votre plan de lancement, rédige et publie votre contenu
+(posts, visuels, présentations), suit vos métriques, détecte vos prospects les
+plus chauds — et se pilote depuis l'app web ou Telegram.
 
----
+**Ce que ça fait, concrètement :**
 
-## 📋 Table of Contents
-
-- [Stack](#-stack)
-- [Quick Start](#-quick-start)
-- [API Endpoints](#-api-endpoints)
-- [Architecture](#-architecture)
-- [Examples](#-examples)
-- [Environment Variables](#-environment-variables)
-- [Testing](#-testing)
-- [Next Steps](#-next-steps)
-
----
-
-## 🛠 Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Runtime | **Node.js 18+** |
-| Language | **TypeScript** (strict mode) |
-| Framework | **Express 4** |
-| Storage | In-memory (`Map`) |
-| Testing | **Vitest + Supertest** |
-| Dev server | **tsx watch** (hot reload) |
+- 🤖 **Onboarding par IA** — un chat vous interviewe, recherche votre entreprise sur le web et génère un plan de lancement tactique semaine par semaine.
+- 📣 **Hub de contenu** — calendrier éditorial généré par l'IA, éditeur de posts avec assistant, images IA, présentations (slides) transformables en GIF/MP4.
+- 🔁 **Séries récurrentes** — un post peut se republier tout seul (quotidien → mensuel), réécrit à chaque fois par l'IA avec un sujet différent, sans jamais se répéter.
+- 🗓️ **Calendrier** — vue mensuelle de votre planning, synchronisable avec Google Calendar.
+- 📈 **Performances** — métriques synchronisées automatiquement depuis vos comptes, graphiques d'évolution, analyse IA de chaque post, rapport de campagne hebdomadaire sur Telegram.
+- 🎯 **Leads** — l'IA lit les commentaires de vos posts et votre boîte mail, repère les personnes intéressées et les score de 0 à 100.
+- 💬 **Assistant** — un chat (dans l'app et/ou sur Telegram) qui sait tout faire : rédiger, publier, analyser, configurer les séries, enrichir la base de connaissances.
+- 📚 **Base de connaissances** — vous décrivez votre entreprise une fois ; toutes les générations IA s'en servent (et l'enrichissent avec les enseignements de vos résultats).
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Installation (5 minutes)
+
+### Prérequis
+
+| Outil | Version | Vérifier |
+|---|---|---|
+| [Node.js](https://nodejs.org) | **20 ou plus** | `node --version` |
+| Git | n'importe laquelle | `git --version` |
+| ffmpeg *(optionnel)* | — | uniquement pour l'export **MP4** des présentations (le GIF marche sans) |
+
+### Étapes
 
 ```bash
-# Clone & install
-git clone <your-repo-url> launchforge
-cd launchforge
-cp .env.example .env
-npm install
+# 1. Récupérer le code
+git clone https://github.com/AlexandrLebegue/Launchforge.git
+cd Launchforge
 
-# Development mode (hot reload)
+# 2. Installer les dépendances (serveur puis interface)
+npm install
+cd client && npm install && cd ..
+
+# 3. Créer votre fichier de configuration
+cp .env.example .env
+```
+
+Ouvrez ensuite le fichier **`.env`** dans un éditeur de texte et remplissez-le
+(voir section suivante) — au minimum `JWT_SECRET` et, pour avoir l'IA,
+`OPENROUTER_API_KEY`.
+
+### Lancer l'application
+
+**Option A — la plus simple (un seul terminal) :**
+
+```bash
+cd client && npm run build && cd ..   # construit l'interface (1 fois, ou après une mise à jour)
+npm run build && npm start            # démarre tout sur http://localhost:3000
+```
+
+Ouvrez **http://localhost:3000**, créez votre compte, et laissez-vous guider
+par l'onboarding. C'est tout. 🎉
+
+**Option B — mode développement (rechargement à chaud, 2 terminaux) :**
+
+```bash
+# Terminal 1 — le serveur (API)
 npm run dev
 
-# Build for production
-npm run build
-
-# Production mode
-npm start
+# Terminal 2 — l'interface
+cd client && npm run dev
 ```
 
-The server starts on **http://localhost:3000**.
+Puis ouvrez **http://localhost:5173**.
 
 ---
 
-## 📡 API Endpoints
+## ⚙️ Configuration (`.env`)
 
-### `GET /api/health`
-Health check.
+| Variable | Obligatoire ? | À quoi ça sert / où l'obtenir |
+|---|---|---|
+| `JWT_SECRET` | ✅ Oui | Sécurise les sessions. Générez-le avec `openssl rand -hex 32` (ou tapez une longue phrase aléatoire). |
+| `OPENROUTER_API_KEY` | 🔶 Fortement recommandé | **Toute l'IA** (onboarding, rédaction, analyses, images). Clé à créer sur [openrouter.ai/keys](https://openrouter.ai/keys) — vous ne payez que ce que vous consommez (quelques centimes). |
+| `OPENROUTER_MODEL` | Non | Modèle de texte (défaut : routage automatique). Ex. `deepseek/deepseek-chat` (très économique). |
+| `COMPOSIO_MCP_URL` + `COMPOSIO_API_KEY` | Non | **Publication réelle** sur vos réseaux (LinkedIn, X, Instagram…), synchro des métriques, Gmail, Google Calendar. Compte sur [composio.dev](https://composio.dev) → créez un serveur MCP, copiez son URL et votre clé API. Sans : vous copiez-collez vos posts à la main. |
+| `TELEGRAM_BOT_TOKEN` | Non | Pilotage par chat Telegram. Créez un bot en 30 s avec [@BotFather](https://t.me/BotFather) et collez le token. (Chaque utilisateur peut aussi brancher *son* bot dans la vue Configuration.) |
+| `APP_URL` | En production | L'adresse publique du site (ex. `https://monsite.fr`) — sert aux liens des emails de réinitialisation de mot de passe. |
+| `PORT`, `DB_PATH` | Non | Port du serveur (3000) et emplacement de la base SQLite (`./data/launchforge.db`). |
+
+**Sans aucune clé**, l'app fonctionne quand même : plans en mode modèle,
+posts rédigés à la main, métriques saisies manuellement. Chaque clé ajoutée
+débloque son lot de super-pouvoirs — la vue **⚙️ Configuration** dans l'app
+montre en temps réel ce qui est actif et ce qui manque.
+
+---
+
+## 🔌 Connecter ses comptes (après le premier lancement)
+
+Tout se passe dans l'app, vue **⚙️ Configuration** :
+
+1. **Réseaux sociaux & Google** (si Composio est configuré) : cliquez
+   « 🔗 Connecter » sur LinkedIn, Gmail, Google Calendar… autorisez dans
+   l'onglet qui s'ouvre — le statut passe à « Fonctionnel » tout seul.
+   Le bouton « ✕ Déconnecter » permet de re-autoriser proprement si une
+   plateforme change ses droits.
+2. **Telegram** : liez votre compte avec le code généré, ou collez le token
+   de votre propre bot @BotFather pour avoir un bot personnel.
+3. **Synchro des métriques** : choisissez la fréquence de relevé automatique
+   (ou laissez désactivé).
+4. **Thème des présentations** : choisissez un thème, ou décrivez le vôtre et
+   l'IA fabrique le CSS.
+
+> 💡 **Multi-utilisateur** : chaque compte LaunchForge a son espace étanche et
+> SES connexions — vous pouvez héberger l'app pour plusieurs personnes.
+
+---
+
+## 💾 Vos données
+
+- Tout vit dans le dossier **`data/`** : une base SQLite (`launchforge.db`)
+  + les médias générés (`data/uploads/`, purgés après 90 jours).
+- **Sauvegarder = copier ce dossier.** Pour une sauvegarde propre pendant que
+  l'app tourne : `sqlite3 data/launchforge.db ".backup data/backup.db"`.
+- Aucun cookie tiers, mots de passe hachés (bcrypt), jetons chiffrés au repos.
+
+---
+
+## 🧪 Tests & scripts utiles
 
 ```bash
-curl http://localhost:3000/api/health
-```
-
-```json
-{
-  "success": true,
-  "data": {
-    "status": "ok",
-    "timestamp": "2026-05-07T12:00:00.000Z"
-  }
-}
+npm test            # la suite complète (150 tests)
+npm run lint        # vérification TypeScript
+npm run dev         # serveur en mode développement
+npm run build       # compile le serveur dans dist/
+npm start           # lance le serveur compilé (sert aussi l'interface buildée)
 ```
 
 ---
 
-### `GET /api/templates`
-List all available launch plan templates.
+## 🌍 Mettre en ligne (résumé)
 
-```bash
-curl http://localhost:3000/api/templates
-```
+Un petit VPS suffit (l'app tient dans un seul process Node) :
 
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "standard-launch",
-      "name": "Standard Launch Plan",
-      "description": "A comprehensive 4-week launch plan with community targeting, content strategy, and outreach.",
-      "sections": ["weekly_plan", "community_targets", "content_angles", "outreach_strategy", "launch_sequencing", "validation_checklist", "first_users_tactics"]
-    }
-  ]
-}
-```
+1. Mêmes étapes d'installation que ci-dessus, builds compris.
+2. Dans `.env` : un `JWT_SECRET` fort, `APP_URL=https://votre-domaine.fr`.
+3. Un reverse proxy avec HTTPS automatique, par ex. [Caddy](https://caddyserver.com) :
+   `votre-domaine.fr { reverse_proxy localhost:3000 }`.
+4. Un service systemd (ou `pm2`) pour relancer `npm start` au démarrage.
+5. Une sauvegarde quotidienne de `data/` (cron + `.backup`).
+6. Complétez les champs ⟦entre crochets⟧ des pages `/legal` et `/privacy`
+   (hébergeur, forme juridique).
 
 ---
 
-### `POST /api/plan`
-Generate a personalized launch plan.
+## 🛠 Stack technique
 
-```bash
-curl -X POST http://localhost:3000/api/plan \
-  -H "Content-Type: application/json" \
-  -d '{
-    "productName": "TaskFlow",
-    "description": "A project management tool for remote teams with AI-powered task assignments",
-    "targetAudience": "Remote software teams of 5-50 people",
-    "niche": "saas",
-    "goals": ["first 100 users", "product hunt launch", "10 paying customers"],
-    "pricing": "$29/month per team"
-  }'
-```
-
-**Response** (truncated for readability):
-```json
-{
-  "success": true,
-  "data": {
-    "id": "a1b2c3d4-...",
-    "createdAt": "2026-05-07T12:00:00.000Z",
-    "input": { ... },
-    "weekly_plan": [
-      {
-        "week": 1,
-        "theme": "Pre-launch & Validation",
-        "actions": ["Set up a landing page for TaskFlow with email capture", ...],
-        "kpis": ["50 waitlist signups", "5 customer interviews completed", "10 social media posts"]
-      }
-    ],
-    "community_targets": [...],
-    "content_angles": [...],
-    "outreach_strategy": [...],
-    "launch_sequencing": [...],
-    "validation_checklist": [...],
-    "first_users_tactics": [...]
-  }
-}
-```
+| Couche | Technologie |
+|---|---|
+| Serveur | **Node.js 20+ · TypeScript strict · Express 4** |
+| Base de données | **SQLite** (better-sqlite3, zéro configuration) |
+| Interface | **React 18 · Vite · Recharts** |
+| IA | **OpenRouter** (texte : au choix ; images : seedream) |
+| Intégrations | **Composio MCP** (réseaux sociaux, Gmail, Calendar) · **Telegram Bot API** |
+| Présentations | **Marp** (HTML/PDF) · GIF/MP4 maison (sharp + gifenc + ffmpeg) |
+| Tests | **Vitest + Supertest** — 150 tests |
 
 ---
 
-### `GET /api/plan/:id`
-Retrieve a previously generated plan by ID.
+## 📄 Licence
 
-```bash
-curl http://localhost:3000/api/plan/a1b2c3d4-...
-```
-
-```json
-{
-  "success": true,
-  "data": { ... }
-}
-```
-
----
-
-### `POST /api/feedback`
-Submit feedback on a generated plan.
-
-```bash
-curl -X POST http://localhost:3000/api/feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "planId": "a1b2c3d4-...",
-    "rating": 5,
-    "comment": "The community outreach section was incredibly useful!"
-  }'
-```
-
-```json
-{
-  "success": true,
-  "data": {
-    "id": "f1e2d3c4-...",
-    "planId": "a1b2c3d4-...",
-    "rating": 5,
-    "comment": "The community outreach section was incredibly useful!",
-    "createdAt": "2026-05-07T12:00:00.000Z"
-  }
-}
-```
-
----
-
-## 🏗 Architecture
-
-```
-src/
-├── index.ts              # Entry point — starts Express server
-├── app.ts                # Express app configuration, middleware, routes
-├── types/
-│   └── index.ts          # TypeScript interfaces & types
-├── templates/
-│   └── index.ts          # Plan template engine — generates all sections
-├── services/
-│   ├── storage.ts        # In-memory storage (Map-based)
-│   └── planGenerator.ts  # Orchestrates plan creation
-├── middleware/
-│   ├── rateLimit.ts      # Simple IP-based rate limiter
-│   └── validation.ts     # Input validation for plan & feedback
-├── routes/
-│   ├── plan.ts           # POST /api/plan, GET /api/plan/:id
-│   ├── templates.ts      # GET /api/templates
-│   └── feedback.ts       # POST /api/feedback
-tests/
-└── plan.test.ts          # Integration tests (Vitest + Supertest)
-```
-
-### Data Flow
-
-```
-Client → Express → rateLimit → validation → route handler → planGenerator
-                                                              ↓
-                                                         templates module
-                                                              ↓
-                                                         storage (Map)
-                                                              ↓
-                                                    JSON response ← Client
-```
-
----
-
-## 🌍 Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3000` | Server port |
-| `NODE_ENV` | `development` | Environment mode |
-| `DB_PATH` | `./data/launchforge.db` | SQLite database file |
-| `JWT_SECRET` | dev fallback | Secret for auth tokens — set in production |
-| `OPENROUTER_API_KEY` | — | Clé OpenRouter — toute l'IA (onboarding, plans, contenu, agents). Sans elle : formulaire manuel + templates. |
-| `OPENROUTER_MODEL` | `openrouter/auto` | Modèle OpenRouter à utiliser (ex. `anthropic/claude-sonnet-4.5`). |
-| `COMPOSIO_MCP_URL` | — | URL du serveur MCP Composio — publication réelle (worker automatique inclus), synchro métriques, scan mail/réactions, emails sortants, synchro calendrier personnel. |
-
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-
----
-
-## 🧪 Testing
-
-```bash
-# Run tests (single run)
-npm test
-
-# Watch mode
-npm run test:watch
-```
-
-Tests cover:
-- Health check endpoint
-- Template listing
-- Plan creation with valid/invalid input
-- Plan retrieval by ID
-- Feedback submission with validation
-- Error handling (404, 400, 429)
-
----
-
-## 🚀 Next Steps
-
-- [ ] **Persistent storage** — PostgreSQL via Prisma or SQLite
-- [ ] **OpenAI integration** — Replace template engine with GPT-4o generation for hyper-personalized plans
-- [ ] **Authentication** — Clerk or NextAuth for user accounts
-- [ ] **Frontend** — Next.js dashboard with plan history, sharing, export (PDF)
-- [ ] **Plan scoring** — Score plans by estimated impact
-- [ ] **Webhooks** — Notify users when their plan is ready
-- [ ] **Freemium tier** — Basic plan free, premium with AI generation
-- [ ] **Analytics** — Track which sections users engage with most
-- [ ] **Export** — PDF, Markdown, Notion, or Linear integration
-
----
-
-## 📄 License
-
-MIT
-# test push agent
-# test push agent
-# test push agent
-# test push agent
-retest
-retest
+MIT — faites-en bon usage. 🔥
