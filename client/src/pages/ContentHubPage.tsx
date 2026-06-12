@@ -1102,6 +1102,7 @@ export default function ContentHubPage() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [feedback,     setFeedback]     = useState('');
+  const [publishingNowId, setPublishingNowId] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Arrivée depuis la génération du plan : accueil + brouillons à valider
@@ -1172,6 +1173,26 @@ export default function ContentHubPage() {
         const out = prev.map((p) => (p.id === updated.id ? updated : p));
         return next ? [next, ...out] : out;
       });
+    }
+  };
+
+  // Publication réelle immédiate depuis la liste (groupe entier si multi-post)
+  const handlePublishNow = async (post: Post) => {
+    if (publishingNowId) return;
+    setPublishingNowId(post.id);
+    try {
+      const res = await publishPostNow(post.id, Boolean(post.crossPostId));
+      if (res.success && res.data) {
+        const lines = res.data.results
+          .map((r: PublishOutcome) => `${platformLabel(r.platform)} : ${r.ok ? 'publié ✓' : r.message}`)
+          .join(' — ');
+        setFeedback(lines || res.data.message);
+      } else {
+        setFeedback(`Échec de la publication : ${res.error || 'erreur inconnue'}`);
+      }
+    } finally {
+      setPublishingNowId(null);
+      load();
     }
   };
 
@@ -1269,7 +1290,13 @@ export default function ContentHubPage() {
                 <span className={`upcoming-date${overdue ? ' overdue' : ''}`}>
                   {overdue ? 'En retard — ' : ''}{fmtDate(p.scheduledAt)}
                 </span>
-                <button className="btn btn-sm btn-primary" onClick={() => handlePublish(p)}>Marquer publié</button>
+                <button className="btn btn-sm btn-primary btn-primary-glow" disabled={publishingNowId !== null}
+                        title="Publie réellement sur la plateforme via vos comptes connectés"
+                        onClick={() => handlePublishNow(p)}>
+                  {publishingNowId === p.id ? 'Publication…' : 'Publier maintenant'}
+                </button>
+                <button className="btn btn-sm btn-ghost" title="Marque le post comme publié sans rien envoyer"
+                        onClick={() => handlePublish(p)}>Marquer publié</button>
               </div>
             );
           })}
@@ -1372,9 +1399,17 @@ export default function ContentHubPage() {
                         </span>
                       )}
                       {p.status === 'scheduled' && (
-                        <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); handlePublish(p); }}>
-                          ✓ Marquer publié
-                        </button>
+                        <>
+                          <button className="btn btn-sm btn-primary" disabled={publishingNowId !== null}
+                                  title="Publie réellement sur la plateforme via vos comptes connectés"
+                                  onClick={(e) => { e.stopPropagation(); handlePublishNow(p); }}>
+                            {publishingNowId === p.id ? 'Publication…' : 'Publier maintenant'}
+                          </button>
+                          <button className="btn btn-sm btn-ghost" title="Marque le post comme publié sans rien envoyer"
+                                  onClick={(e) => { e.stopPropagation(); handlePublish(p); }}>
+                            ✓ Marquer publié
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

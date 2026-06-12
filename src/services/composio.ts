@@ -12,7 +12,7 @@
 import { chatComplete, ChatMessage, ToolDef, sanitizeJson, isAIConfigured } from './aiClient';
 import { McpSession, McpTool, isComposioConfigured } from './mcpClient';
 import { composioUserIdFor } from './composioConnect';
-import { publishDirect } from './composioDirect';
+import { publishDirect, syncMetricsDirect } from './composioDirect';
 
 export { isComposioConfigured };
 
@@ -283,6 +283,14 @@ export async function syncMetricsViaComposio(
   externalUrl: string,
   title: string,
 ): Promise<SyncedMetrics> {
+  // Lecture DIRECTE (API Composio, déterministe) quand la référence externe
+  // est exploitable — l'opérateur IA reste le repli (référence illisible,
+  // outil en erreur, plateforme sans stratégie).
+  if (process.env.COMPOSIO_API_KEY) {
+    const direct = await syncMetricsDirect(userId, platform, externalUrl);
+    if (direct.handled && direct.metrics) return direct.metrics;
+  }
+
   const { reply, okCalls } = await runMcpTask(
     userId,
     platformKeywords(platform),
