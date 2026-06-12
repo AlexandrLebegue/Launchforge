@@ -216,6 +216,7 @@ export default function CalendarPage() {
           initialScheduledAt={editing === 'new' ? createDate : null}
           onClose={() => { setEditing(null); setCreateDate(null); }}
           onSaved={handleSaved}
+          onCrossposted={load}
         />
       )}
     </div>

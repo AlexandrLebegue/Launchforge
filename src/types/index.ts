@@ -299,6 +299,8 @@ export interface Post {
   recurrenceUseKnowledge: number;
   /** L'IA archive les actus utilisées dans la fiche 📰 Veille de la base de connaissances */
   recurrenceUpdateKb: number;
+  /** Groupe multi-plateformes : même contenu décliné sur plusieurs plateformes */
+  crossPostId: string | null;
   /** Publication automatique à l'heure programmée par le worker (via Composio) */
   autoPublish: number;
   /** Dernière erreur de publication automatique (null si OK) */

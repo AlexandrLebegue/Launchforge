@@ -520,15 +520,16 @@ export class Storage {
         `INSERT INTO posts
            (id, userId, planId, platform, title, content, status, scheduledAt, publishedAt,
             externalUrl, imageUrl, recurrence, recurrenceBrief, seriesId,
-            recurrenceUseNews, recurrenceUseKnowledge, recurrenceUpdateKb,
+            recurrenceUseNews, recurrenceUseKnowledge, recurrenceUpdateKb, crossPostId,
             autoPublish, publishError, calendarSynced,
             impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.planId, post.platform, post.title, post.content, post.status,
         post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.recurrence, post.recurrenceBrief,
         post.seriesId ?? null, post.recurrenceUseNews ?? 0, post.recurrenceUseKnowledge ?? 1, post.recurrenceUpdateKb ?? 0,
+        post.crossPostId ?? null,
         post.autoPublish, post.publishError, post.calendarSynced,
         post.impressions, post.likes, post.comments, post.shares, post.clicks,
         post.createdAt, post.updatedAt
@@ -539,7 +540,7 @@ export class Storage {
     const allowed: (keyof Post)[] = [
       'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
       'externalUrl', 'imageUrl', 'recurrence', 'recurrenceBrief', 'seriesId',
-      'recurrenceUseNews', 'recurrenceUseKnowledge', 'recurrenceUpdateKb',
+      'recurrenceUseNews', 'recurrenceUseKnowledge', 'recurrenceUpdateKb', 'crossPostId',
       'autoPublish', 'publishError', 'calendarSynced',
       'impressions', 'likes', 'comments', 'shares', 'clicks',
     ];
@@ -559,6 +560,13 @@ export class Storage {
 
   getPostById(id: string): Post | undefined {
     return getDb().prepare(`SELECT * FROM posts WHERE id = ?`).get(id) as Post | undefined;
+  }
+
+  /** Exemplaires d'un groupe multi-plateformes (même contenu, plateformes différentes) */
+  getCrossPostGroup(crossPostId: string): Post[] {
+    return getDb()
+      .prepare(`SELECT * FROM posts WHERE crossPostId = ? ORDER BY createdAt ASC`)
+      .all(crossPostId) as Post[];
   }
 
   /** Occurrences déjà publiées d'une série récurrente, de la plus récente à la plus ancienne */

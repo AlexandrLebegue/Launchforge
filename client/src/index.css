@@ -4469,3 +4469,16 @@ video.md-media { background: #000; }
 }
 .legal-footer a { color: var(--color-text-muted); }
 .legal-footer a:hover { color: var(--color-primary-hover); }
+
+/* Comparaison multi-plateformes (vue Performances) */
+.cross-group {
+  padding: 10px 0 4px;
+  border-top: 1px solid var(--color-border-light);
+}
+.cross-group:first-of-type { border-top: none; padding-top: 0; }
+.cross-group-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.platform-row.cross-best .platform-row-name { color: var(--color-primary); font-weight: 700; }

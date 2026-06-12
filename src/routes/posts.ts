@@ -8,7 +8,7 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
-import { markPublished, generateOccurrenceContent } from '../services/postPublisher';
+import { markPublished, generateOccurrenceContent, crosspostTo } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { analyzePost } from '../services/analytics';
 import { Post, PostStatus, Recurrence } from '../types';
@@ -67,6 +67,7 @@ router.post('/', (req: Request, res: Response) => {
     recurrenceUseNews:      body.recurrenceUseNews ? 1 : 0,
     recurrenceUseKnowledge: body.recurrenceUseKnowledge === undefined ? 1 : (body.recurrenceUseKnowledge ? 1 : 0),
     recurrenceUpdateKb:     body.recurrenceUpdateKb ? 1 : 0,
+    crossPostId: null,
     autoPublish: body.autoPublish ? 1 : 0,
     publishError: null,
     calendarSynced: 0,
@@ -163,6 +164,35 @@ router.post('/:id/publish', (req: Request, res: Response) => {
   if (next) syncPostsToCalendarInBackground([next]);
 
   res.json({ success: true, data: { post: published, next } });
+});
+
+// ── POST /api/posts/:id/crosspost ────────────────────────────────────────────
+// Décline un post vers d'autres plateformes (un exemplaire indépendant par
+// plateforme, groupés par crossPostId — chaque exemplaire se publie, se mesure
+// et s'analyse séparément). adapt=true : l'IA réécrit chaque exemplaire aux
+// codes de sa plateforme.
+router.post('/:id/crosspost', async (req: Request, res: Response) => {
+  const post = loadOwnedPost(req, res);
+  if (!post) return;
+
+  const { platforms, adapt } = req.body as { platforms?: unknown; adapt?: unknown };
+  if (!Array.isArray(platforms) || platforms.length === 0 ||
+      !platforms.every((p) => typeof p === 'string' && /^[a-z0-9_-]{2,30}$/i.test(p))) {
+    return res.status(400).json({ success: false, error: 'platforms must be a non-empty array of platform names' });
+  }
+
+  try {
+    const created = await crosspostTo(post, platforms as string[], Boolean(adapt));
+    // Les exemplaires programmés repartent dans le calendrier personnel
+    const scheduled = created.filter((p) => p.status === 'scheduled' && p.scheduledAt);
+    if (scheduled.length > 0) syncPostsToCalendarInBackground(scheduled);
+    res.json({
+      success: true,
+      data: { posts: created, post: storage.getPostById(post.id)!, skipped: platforms.length - created.length },
+    });
+  } catch (err) {
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Déclinaison échouée' });
+  }
 });
 
 // ── POST /api/posts/:id/recurrence/preview ───────────────────────────────────

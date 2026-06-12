@@ -17,7 +17,7 @@ import { chatComplete, ChatMessage, ToolDef, isAIConfigured } from './aiClient';
 import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
-import { markPublished, generateOccurrenceContent } from './postPublisher';
+import { markPublished, generateOccurrenceContent, crosspostTo } from './postPublisher';
 import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
@@ -355,6 +355,19 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'crosspost_post',
+    description: 'DÉCLINE un post du Hub vers d\'autres plateformes : un exemplaire indépendant par plateforme (mêmes date/auto-publication, métriques séparées), reliés en groupe multi-plateformes pour comparer leurs performances. Avec adapt=true (défaut conseillé), l\'IA réécrit chaque exemplaire aux codes de sa plateforme. Pour « publie aussi ce post sur X et Instagram », « décline-le partout ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        postId:    { type: 'string', description: 'Id court du post à décliner' },
+        platforms: { type: 'array', items: { type: 'string' }, description: 'Plateformes cibles (linkedin, twitter, instagram, facebook, reddit, blog, newsletter…)' },
+        adapt:     { type: 'boolean', description: 'true = l\'IA adapte le contenu aux codes de chaque plateforme (défaut conseillé)' },
+      },
+      required: ['postId', 'platforms'],
+    },
+  },
+  {
     name: 'add_knowledge',
     description: 'AJOUTE une fiche à la BASE DE CONNAISSANCES du projet actif — elle sera injectée dans TOUTES les générations de contenu futures. Pour « retiens que… », « ajoute à la base de connaissances… », « note que notre cible est… ». Reformule l\'information proprement et de façon autonome (compréhensible sans le contexte du chat) avant d\'enregistrer. Si une fiche du même titre existe déjà, le contenu y est ajouté à la suite.',
     parameters: {
@@ -546,6 +559,25 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       return `🧪 SIMULATION (rien n'a été enregistré ni publié) — voici ce que donnerait la prochaine occurrence :\n\nTitre : ${gen.title}\n\n${gen.content}${tags}`;
     }
 
+    case 'crosspost_post': {
+      const posts = storage.getPostsByPlan(userId, planId);
+      const post = findByShortId(posts, String(args.postId || ''));
+      if (!post) return 'ERREUR : post introuvable.';
+      const platforms = Array.isArray(args.platforms) ? args.platforms.map(String) : [];
+      if (platforms.length === 0) return 'ERREUR : indique au moins une plateforme cible.';
+
+      const created = await crosspostTo(post, platforms, args.adapt !== false);
+      if (created.length === 0) {
+        return 'Aucun exemplaire créé : ces plateformes sont déjà couvertes par ce groupe multi-plateformes.';
+      }
+      return [
+        `Post décliné sur ${created.length} plateforme(s) — groupe multi-plateformes [${shortId(post.crossPostId ?? post.id)}] :`,
+        ...created.map((p) =>
+          `[${shortId(p.id)}] ${p.platform} — ${p.status === 'scheduled' ? `programmé le ${fmtDate(p.scheduledAt)}${p.autoPublish ? ' · ⚡ auto' : ''}` : p.status}`),
+        'Chaque exemplaire se publie et se mesure séparément ; la vue Performances comparera les plateformes sur ce même contenu.',
+      ].join('\n');
+    }
+
     case 'add_knowledge': {
       const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'news', 'other'];
       const category = (CATEGORIES.includes(args.category) ? args.category : 'other') as KnowledgeCategory;
@@ -603,7 +635,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
         title: generated.title, content: generated.content,
         status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,
         imageUrl: typeof args.imageUrl === 'string' && /^https?:\/\//i.test(args.imageUrl.trim()) ? args.imageUrl.trim() : null,
-        recurrence: 'none', recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0,
+        recurrence: 'none', recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0, crossPostId: null,
         autoPublish: 0, publishError: null, calendarSynced: 0,
         impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
         createdAt: now, updatedAt: now,

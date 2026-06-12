@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 're
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  previewRecurrence,
+  previewRecurrence, crosspostPost,
   generateCalendar, getOverview,
   generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   analyzePostPerf,
@@ -64,6 +64,8 @@ interface EditorProps {
   initialScheduledAt?: string | null;
   onClose: () => void;
   onSaved: (post: Post) => void;
+  /** Des exemplaires multi-plateformes ont été créés → la liste doit être rechargée */
+  onCrossposted?: () => void;
 }
 
 function toLocalInput(iso: string | null): string {
@@ -73,7 +75,7 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: EditorProps) {
+export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCrossposted }: EditorProps) {
   const [form, setForm] = useState({
     platform:    post?.platform ?? 'linkedin',
     title:       post?.title ?? '',
@@ -165,6 +167,15 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
   const [error,      setError]      = useState('');
   const [analysis,   setAnalysis]   = useState('');
   const [analyzing,  setAnalyzing]  = useState(false);
+  // Déclinaison multi-plateformes (à l'enregistrement)
+  const [crossPlatforms, setCrossPlatforms] = useState<Set<string>>(new Set());
+  const [crossAdapt,     setCrossAdapt]     = useState(true);
+  const toggleCross = (p: string) =>
+    setCrossPlatforms((prev) => {
+      const next = new Set(prev);
+      next.has(p) ? next.delete(p) : next.add(p);
+      return next;
+    });
   // Mode simulé : aperçu de la prochaine occurrence de la série (rien n'est enregistré)
   const [simBusy,    setSimBusy]    = useState(false);
   const [simResult,  setSimResult]  = useState<{ title: string; content: string } | null>(null);
@@ -282,9 +293,23 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
     const res = post
       ? await updatePost(post.id, payload)
       : await createPost(payload as Partial<Post> & { platform: string });
+    if (!res.success || !res.data) {
+      setSaving(false);
+      setError(res.error || 'Enregistrement impossible.');
+      return;
+    }
+    // Déclinaison vers les plateformes cochées (exemplaires liés, groupe 📡)
+    if (crossPlatforms.size > 0) {
+      const cross = await crosspostPost(res.data.id, [...crossPlatforms], crossAdapt);
+      if (!cross.success) {
+        setSaving(false);
+        setError(`Post enregistré, mais déclinaison échouée : ${cross.error || 'erreur inconnue'}`);
+        return;
+      }
+      onCrossposted?.();
+    }
     setSaving(false);
-    if (res.success && res.data) onSaved(res.data);
-    else setError(res.error || 'Enregistrement impossible.');
+    onSaved(res.data);
   };
 
   return (
@@ -436,6 +461,39 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
                 <span className="form-hint-inline">À chaque publication, la prochaine occurrence est créée automatiquement.</span>
               )}
             </label>
+          </div>
+
+          {/* Déclinaison multi-plateformes : un exemplaire indépendant par plateforme */}
+          <div className="form-label-block">
+            📡 Publier aussi sur d'autres plateformes
+            {post?.crossPostId && (
+              <span className="form-hint-inline"> — ce post fait déjà partie d'un groupe multi-plateformes</span>
+            )}
+            <div className="calendar-platforms" style={{ marginTop: 6 }}>
+              {PLATFORMS.filter((p) => p.value !== form.platform).map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  className={`knowledge-cat${crossPlatforms.has(p.value) ? ' active' : ''}`}
+                  onClick={() => toggleCross(p.value)}
+                >
+                  {p.icon} {p.label}
+                </button>
+              ))}
+            </div>
+            {crossPlatforms.size > 0 && (
+              <>
+                <label className="ai-news-toggle" style={{ marginTop: 8 }}>
+                  <input type="checkbox" checked={crossAdapt} onChange={(e) => setCrossAdapt(e.target.checked)} />
+                  🪄 Adapter le contenu aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
+                </label>
+                <span className="form-hint-inline">
+                  À l'enregistrement, un exemplaire indépendant est créé par plateforme (même date,
+                  même auto-publication) — chacun se publie et se mesure séparément, et la vue
+                  Performances compare les plateformes sur ce même contenu.
+                </span>
+              </>
+            )}
           </div>
 
           {/* Série récurrente : pilotage de l'IA + mode simulé */}
@@ -595,7 +653,9 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved }: Edito
           <div className="modal-footer">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? '⏳ Enregistrement…' : '💾 Enregistrer'}
+              {saving
+                ? (crossPlatforms.size > 0 ? '⏳ Enregistrement + déclinaison…' : '⏳ Enregistrement…')
+                : crossPlatforms.size > 0 ? `💾 Enregistrer + décliner (${crossPlatforms.size})` : '💾 Enregistrer'}
             </button>
           </div>
         </form>
@@ -980,6 +1040,7 @@ export default function ContentHubPage() {
                     <div className="post-card-title">{p.title || '(sans titre)'}</div>
                     {p.content && <div className="post-card-excerpt">{p.content.slice(0, 140)}{p.content.length > 140 ? '…' : ''}</div>}
                     <div className="post-card-footer">
+                      {p.crossPostId && <span className="chip chip-recur" title="Même contenu décliné sur plusieurs plateformes — performances comparées dans la vue Performances">📡 multi</span>}
                       {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
                       {p.recurrence !== 'none' && p.recurrenceBrief && (
                         <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">🪄 IA</span>
@@ -1015,6 +1076,7 @@ export default function ContentHubPage() {
           post={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
+          onCrossposted={load}
         />
       )}
       {!showAssistant && (

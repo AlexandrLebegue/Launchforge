@@ -73,6 +73,70 @@ export function regenerateOccurrenceInBackground(next: Post): void {
     });
 }
 
+const MAX_CROSSPOST_TARGETS = 6;
+
+/**
+ * Décline un post vers d'autres plateformes : un exemplaire indépendant par
+ * plateforme (publication, métriques et analyse restent par plateforme),
+ * reliés entre eux par un crossPostId. Avec `adapt`, l'IA réécrit chaque
+ * exemplaire aux codes de sa plateforme (échec → copie telle quelle).
+ * Les plateformes déjà présentes dans le groupe sont ignorées.
+ */
+export async function crosspostTo(post: Post, platforms: string[], adapt: boolean): Promise<Post[]> {
+  const groupId = post.crossPostId ?? uuid();
+  if (!post.crossPostId) storage.updatePost(post.id, { crossPostId: groupId });
+
+  const taken = new Set(
+    [post, ...storage.getCrossPostGroup(groupId)].map((p) => p.platform.toLowerCase()),
+  );
+  const targets = [...new Set(platforms.map((p) => p.toLowerCase().trim()).filter(Boolean))]
+    .filter((p) => !taken.has(p))
+    .slice(0, MAX_CROSSPOST_TARGETS);
+
+  const created: Post[] = [];
+  for (const platform of targets) {
+    let title = post.title;
+    let content = post.content;
+    if (adapt && isAIConfigured() && post.content.trim()) {
+      try {
+        const gen = await generateContent({
+          userId: post.userId,
+          platform,
+          brief: `Adapte ce contenu aux codes de la plateforme ${platform} sans changer le fond ni le message — uniquement le format, le ton et la longueur.`,
+          baseContent: post.content,
+        });
+        title = post.title || gen.title;
+        content = gen.content + (gen.hashtags.length > 0 ? `\n\n${gen.hashtags.map((h) => `#${h}`).join(' ')}` : '');
+      } catch { /* copie telle quelle — la déclinaison n'échoue jamais pour ça */ }
+    }
+
+    // Un original déjà publié se décline en brouillons (à programmer/publier)
+    const status = post.status === 'published' ? 'draft' : post.status;
+    const ts = new Date().toISOString();
+    const sibling: Post = {
+      ...post,
+      id:          uuid(),
+      platform,
+      title,
+      content,
+      status,
+      scheduledAt: status === 'scheduled' ? post.scheduledAt : null,
+      publishedAt: null,
+      externalUrl: null,
+      publishError: null,
+      calendarSynced: 0,
+      crossPostId: groupId,
+      seriesId:    null, // chaque exemplaire récurrent démarre sa propre série
+      impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
+      createdAt:   ts,
+      updatedAt:   ts,
+    };
+    storage.savePost(sibling);
+    created.push(sibling);
+  }
+  return created;
+}
+
 /**
  * Marque le post publié et, s'il est récurrent, crée la prochaine occurrence
  * programmée (métriques à zéro, à re-synchroniser au calendrier). Si une
@@ -99,6 +163,9 @@ export function markPublished(post: Post): { post: Post; next: Post | null } {
         id:          uuid(),
         // Filiation : toutes les occurrences pointent vers le post d'origine
         seriesId:    post.seriesId ?? post.id,
+        // L'occurrence suivante est un contenu NEUF : pas de comparaison
+        // multi-plateformes avec les exemplaires du cycle précédent
+        crossPostId: null,
         status:      'scheduled',
         scheduledAt: scheduled.toISOString(),
         publishedAt: null,

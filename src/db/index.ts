@@ -327,6 +327,11 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'recurrenceUpdateKb')) {
     database.exec(`ALTER TABLE posts ADD COLUMN recurrenceUpdateKb INTEGER NOT NULL DEFAULT 0`);
   }
+  // Multi-plateformes : les exemplaires d'un même contenu publiés sur
+  // plusieurs plateformes partagent un crossPostId (groupe de cross-posts)
+  if (!postCols.some((c) => c.name === 'crossPostId')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN crossPostId TEXT`);
+  }
   // Réinitialisation de mot de passe (jeton haché + expiration)
   if (!userCols.some((c) => c.name === 'resetTokenHash')) {
     database.exec(`ALTER TABLE users ADD COLUMN resetTokenHash TEXT`);

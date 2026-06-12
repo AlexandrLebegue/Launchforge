@@ -53,6 +53,27 @@ export default function PerformancePage() {
     .filter((p) => engagementRate(p) !== null)
     .sort((a, b) => engagementRate(b)! - engagementRate(a)!)[0];
 
+  // Groupes multi-plateformes : même contenu publié sur ≥ 2 plateformes
+  const crossGroups = (() => {
+    const byGroup = new Map<string, Post[]>();
+    for (const p of published) {
+      if (p.crossPostId) byGroup.set(p.crossPostId, [...(byGroup.get(p.crossPostId) ?? []), p]);
+    }
+    return [...byGroup.entries()]
+      .filter(([, group]) => group.length >= 2)
+      .map(([id, group]) => {
+        const best = [...group].sort((a, b) =>
+          (engagementRate(b) ?? -1) - (engagementRate(a) ?? -1) || b.impressions - a.impressions)[0];
+        return {
+          id,
+          title: group[0].title || '(sans titre)',
+          posts: [...group].sort((a, b) => b.impressions - a.impressions),
+          bestId: best.id,
+          maxImpressions: Math.max(...group.map((p) => p.impressions)),
+        };
+      });
+  })();
+
   const byPlatform = Object.entries(
     published.reduce<Record<string, { posts: number; impressions: number; interactions: number }>>((acc, p) => {
       const s = acc[p.platform] ?? { posts: 0, impressions: 0, interactions: 0 };
@@ -176,6 +197,41 @@ export default function PerformancePage() {
               );
             })}
           </div>
+
+          {/* ── Multi-plateformes : même contenu, plateformes comparées ── */}
+          {crossGroups.length > 0 && (
+            <div className="card">
+              <div className="card-header">📡 Même contenu, plusieurs plateformes</div>
+              <p className="form-hint" style={{ marginBottom: 12 }}>
+                La comparaison la plus fiable qui soit : seul le canal change. La plateforme
+                gagnante de chaque groupe est mise en avant.
+              </p>
+              {crossGroups.map((group) => (
+                <div key={group.id} className="cross-group">
+                  <div className="cross-group-title">{group.title}</div>
+                  {group.posts.map((p) => {
+                    const rate = engagementRate(p);
+                    const best = group.bestId === p.id;
+                    return (
+                      <div key={p.id} className={`platform-row${best ? ' cross-best' : ''}`}
+                           onClick={() => navigate(`/content?edit=${p.id}`)} style={{ cursor: 'pointer' }}>
+                        <span className="platform-row-name">
+                          {best ? '🏆 ' : ''}{platformIcon(p.platform)} {platformLabel(p.platform)}
+                        </span>
+                        <div className="platform-row-bar">
+                          <div className="platform-row-fill"
+                               style={{ width: `${Math.max(4, (p.impressions / (group.maxImpressions || 1)) * 100)}%` }} />
+                        </div>
+                        <span className="platform-row-stats">
+                          👁️ {fmtNum(p.impressions)} · ❤️ {fmtNum(p.likes)} · 📈 {rate !== null ? `${rate.toFixed(1)} %` : '—'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* ── Tableau détaillé ── */}
           <div className="card">

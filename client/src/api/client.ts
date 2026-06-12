@@ -515,6 +515,8 @@ export interface Post {
   recurrenceUseKnowledge: number;
   /** 1 = l'IA archive les actus utilisées dans la fiche 📰 Veille */
   recurrenceUpdateKb: number;
+  /** Groupe multi-plateformes (même contenu décliné sur plusieurs plateformes) */
+  crossPostId: string | null;
   /** 1 = publié automatiquement à l'heure programmée par le worker (Composio) */
   autoPublish: number;
   /** Dernière erreur de publication automatique */
@@ -548,6 +550,15 @@ export async function deletePost(id: string): Promise<ApiResponse<null>> {
 
 export async function publishPost(id: string): Promise<ApiResponse<{ post: Post; next: Post | null }>> {
   return request(`/posts/${id}/publish`, { method: 'POST' });
+}
+
+/** Décline un post vers d'autres plateformes (adapt = réécriture IA par plateforme) */
+export async function crosspostPost(
+  id: string,
+  platforms: string[],
+  adapt: boolean,
+): Promise<ApiResponse<{ posts: Post[]; post: Post; skipped: number }>> {
+  return request(`/posts/${id}/crosspost`, { method: 'POST', body: JSON.stringify({ platforms, adapt }) });
 }
 
 /** Mode simulé : génère la prochaine occurrence d'une série récurrente sans rien enregistrer */

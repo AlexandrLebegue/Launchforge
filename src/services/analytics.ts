@@ -36,6 +36,12 @@ export interface ProjectStats {
   leads: { total: number; fromPosts: number; hot: number; byPost: { postId: string; title: string; leads: number }[] };
   lastWeek: { posts: number; impressions: number; likes: number };
   previousWeek: { posts: number; impressions: number; likes: number };
+  /** Groupes multi-plateformes : le MÊME contenu comparé d'une plateforme à l'autre */
+  crossGroups: {
+    title: string;
+    posts: { postId: string; platform: string; impressions: number; likes: number; engagement: number | null }[];
+    bestPlatform: string | null;
+  }[];
 }
 
 const DAY_NAMES = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -97,6 +103,32 @@ export function computeProjectStats(userId: string, planId: string | null): Proj
     };
   };
 
+  // Multi-plateformes : groupes de cross-posts avec ≥ 2 exemplaires publiés —
+  // la comparaison la plus propre qui soit (même contenu, seule la plateforme change)
+  const byGroup = new Map<string, Post[]>();
+  for (const p of posts) {
+    if (p.crossPostId) byGroup.set(p.crossPostId, [...(byGroup.get(p.crossPostId) ?? []), p]);
+  }
+  const crossGroups = [...byGroup.values()]
+    .filter((group) => group.length >= 2)
+    .map((group) => {
+      const entries = group.map((p) => ({
+        postId: p.id, platform: p.platform,
+        impressions: p.impressions, likes: p.likes,
+        engagement: engagement(p) === null ? null : Math.round(engagement(p)! * 10) / 10,
+      }));
+      const best = [...entries]
+        .filter((e) => e.engagement !== null || e.impressions > 0)
+        .sort((a, b) => (b.engagement ?? -1) - (a.engagement ?? -1) || b.impressions - a.impressions)[0];
+      return {
+        title: group[0].title || '(sans titre)',
+        posts: entries,
+        bestPlatform: best?.platform ?? null,
+      };
+    })
+    .sort((a, b) => b.posts.length - a.posts.length)
+    .slice(0, 10);
+
   return {
     publishedCount: posts.length,
     withMetricsCount: withMetrics.length,
@@ -136,6 +168,7 @@ export function computeProjectStats(userId: string, planId: string | null): Proj
     },
     lastWeek: weekStats(0),
     previousWeek: weekStats(7),
+    crossGroups,
   };
 }
 
@@ -151,6 +184,11 @@ function statsForPrompt(stats: ProjectStats): string {
     `Top : ${stats.topPosts.map((p) => `« ${p.title} » (${p.platform}, ${p.engagement} %, ${p.leads} leads)`).join(' · ') || 'n/a'}`,
     `Leads : ${stats.leads.total} au total, dont ${stats.leads.fromPosts} attribués à des posts, ${stats.leads.hot} chauds (score ≥ 70)`,
     `Semaine écoulée : ${stats.lastWeek.posts} posts, ${stats.lastWeek.impressions} vues vs semaine précédente : ${stats.previousWeek.posts} posts, ${stats.previousWeek.impressions} vues`,
+    ...(stats.crossGroups.length > 0 ? [
+      `Multi-plateformes (MÊME contenu décliné — comparaison directe des plateformes) : ${stats.crossGroups.slice(0, 3).map((g) =>
+        `« ${g.title} » → ${g.posts.map((p) => `${p.platform} ${p.engagement !== null ? `${p.engagement} %` : `${p.impressions} vues`}`).join(' vs ')}${g.bestPlatform ? ` (meilleure : ${g.bestPlatform})` : ''}`
+      ).join(' · ')}`,
+    ] : []),
   ].join('\n');
 }
 
@@ -311,7 +349,7 @@ Métriques : ${post.impressions} vues · ${post.likes} likes · ${post.comments}
 
 --- Contenu ---
 ${post.content.slice(0, 2000)}
-
+${crossPostContext(post)}
 ## Référentiel du projet
 ${statsForPrompt(stats)}`,
       },
@@ -328,6 +366,23 @@ ${statsForPrompt(stats)}`,
   if (learnings.length > 0) upsertLearnings(userId, post.planId, learnings);
 
   return { analysis: String(parsed.analysis || 'Analyse vide'), learnings };
+}
+
+/**
+ * Contexte multi-plateformes pour le post-mortem : le MÊME contenu publié
+ * ailleurs est le meilleur point de comparaison qui existe (seule la
+ * plateforme change) — l'IA doit en tirer des conclusions plateforme vs contenu.
+ */
+function crossPostContext(post: Post): string {
+  if (!post.crossPostId) return '';
+  const siblings = storage.getCrossPostGroup(post.crossPostId)
+    .filter((p) => p.id !== post.id && p.status === 'published');
+  if (siblings.length === 0) return '';
+  const lines = siblings.map((p) => {
+    const r = engagement(p);
+    return `- ${p.platform} : ${p.impressions} vues · ${p.likes} likes · ${p.comments} commentaires · engagement ${r === null ? 'n/a' : `${r.toFixed(1)} %`}`;
+  });
+  return `\n## Le MÊME contenu sur d'autres plateformes (comparaison directe — distingue ce qui relève de la plateforme de ce qui relève du contenu)\n${lines.join('\n')}\n`;
 }
 
 function computeLeadsForPost(userId: string, post: Post): number {

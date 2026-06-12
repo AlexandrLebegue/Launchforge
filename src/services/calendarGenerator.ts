@@ -132,7 +132,7 @@ export async function generateContentCalendar(params: CalendarParams): Promise<P
       externalUrl: null,
       imageUrl:    null,
       recurrence:  'none',
-      recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0,
+      recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0, crossPostId: null,
       autoPublish: 0,
       publishError: null,
       calendarSynced: 0,
