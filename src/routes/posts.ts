@@ -247,38 +247,60 @@ router.post('/:id/publish-now', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
 
-  let result: string;
-  try {
-    result = await publishViaComposio(req.user!.userId, post.platform, post.content, post.imageUrl, post.title);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Publication échouée';
-    if (msg === 'COMPOSIO_NOT_CONFIGURED' || msg === 'AI_NOT_CONFIGURED') {
-      return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  // Mode groupe : publie aussi tous les exemplaires multi-plateformes NON
+  // publiés du même contenu (un résultat par plateforme).
+  const includeGroup = Boolean((req.body as { group?: unknown })?.group);
+  const targets: Post[] = [post];
+  if (includeGroup && post.crossPostId) {
+    targets.push(...storage.getCrossPostGroup(post.crossPostId)
+      .filter((p) => p.id !== post.id && p.status !== 'published' && p.userId === req.user!.userId));
+  }
+
+  const results: { platform: string; ok: boolean; message: string; url?: string }[] = [];
+  for (const target of targets) {
+    let result: string;
+    try {
+      result = await publishViaComposio(req.user!.userId, target.platform, target.content, target.imageUrl, target.title);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Publication échouée';
+      if (msg === 'COMPOSIO_NOT_CONFIGURED' || msg === 'AI_NOT_CONFIGURED') {
+        return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+      }
+      storage.updatePost(target.id, { publishError: msg.slice(0, 500) });
+      results.push({ platform: target.platform, ok: false, message: msg });
+      continue;
     }
-    storage.updatePost(post.id, { publishError: msg.slice(0, 500) });
-    return res.status(502).json({ success: false, error: msg });
-  }
 
-  if (!result.trim().toUpperCase().startsWith('OK')) {
-    const reason = result.replace(/^ECHEC:\s*/i, '').trim() || 'Publication refusée par la plateforme';
-    storage.updatePost(post.id, { publishError: reason.slice(0, 500) });
-    return res.status(502).json({ success: false, error: reason });
-  }
+    if (!result.trim().toUpperCase().startsWith('OK')) {
+      const reason = result.replace(/^ECHEC:\s*/i, '').trim() || 'Publication refusée par la plateforme';
+      storage.updatePost(target.id, { publishError: reason.slice(0, 500) });
+      results.push({ platform: target.platform, ok: false, message: reason });
+      continue;
+    }
 
-  const { next } = markPublished(storage.getPostById(post.id)!);
-  const ref = extractPublishedRef(result);
-  if (ref) storage.updatePost(post.id, { externalUrl: ref });
-  cleanupPublishedVideo(storage.getPostById(post.id)!);
-  if (next) syncPostsToCalendarInBackground([next]);
-
-  res.json({
-    success: true,
-    data: {
-      post: storage.getPostById(post.id)!,
-      next,
+    const { next } = markPublished(storage.getPostById(target.id)!);
+    const ref = extractPublishedRef(result);
+    if (ref) storage.updatePost(target.id, { externalUrl: ref });
+    cleanupPublishedVideo(storage.getPostById(target.id)!);
+    if (next) syncPostsToCalendarInBackground([next]);
+    results.push({
+      platform: target.platform,
+      ok: true,
       message: result.replace(/^OK:\s*/i, '').trim(),
-    },
-  });
+      url: ref && /^https?:/i.test(ref) ? ref : undefined,
+    });
+  }
+
+  const anyOk = results.some((r) => r.ok);
+  const payload = {
+    post: storage.getPostById(post.id)!,
+    results,
+    message: results[0]?.message ?? '',
+  };
+  if (!anyOk) {
+    return res.status(502).json({ success: false, error: results[0]?.message ?? 'Publication échouée', data: payload });
+  }
+  res.json({ success: true, data: payload });
 });
 
 // ── POST /api/posts/:id/sync-metrics ─────────────────────────────────────────

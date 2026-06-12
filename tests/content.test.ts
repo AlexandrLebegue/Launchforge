@@ -238,6 +238,36 @@ describe('Publication immédiate (publish-now)', () => {
   });
 });
 
+describe('Publication immédiate — mode groupe', () => {
+  it('publie tous les exemplaires non publiés et renvoie un résultat par plateforme', async () => {
+    // Deux plateformes à média obligatoire SANS média : double ECHEC
+    // déterministe (aucun appel réseau), un résultat par exemplaire
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/composio/server/fake?user_id=test';
+    process.env.OPENROUTER_API_KEY = 'test-key';
+
+    const created = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'instagram', title: 'Groupe', content: 'Texte sans média',
+    });
+    const id = created.body.data.id as string;
+    await request(app).post(`/api/posts/${id}/crosspost`).set(auth()).send({ platforms: ['tiktok'] });
+
+    const res = await request(app).post(`/api/posts/${id}/publish-now`).set(auth()).send({ group: true });
+    delete process.env.COMPOSIO_MCP_URL;
+    delete process.env.OPENROUTER_API_KEY;
+
+    expect(res.status).toBe(502); // tout a échoué
+    expect(res.body.data.results).toHaveLength(2);
+    const platforms = res.body.data.results.map((r: { platform: string }) => r.platform).sort();
+    expect(platforms).toEqual(['instagram', 'tiktok']);
+    expect(res.body.data.results.every((r: { ok: boolean }) => r.ok === false)).toBe(true);
+    // Chaque exemplaire porte sa raison d'échec
+    const { storage } = await import('../src/services/storage');
+    const group = storage.getCrossPostGroup(storage.getPostById(id)!.crossPostId!);
+    expect(group.every((p) => p.publishError)).toBe(true);
+    expect(group.every((p) => p.status !== 'published')).toBe(true);
+  });
+});
+
 describe('Upload de vidéo (média de post)', () => {
   it('enregistre une vidéo envoyée en binaire et peut l\'attacher à un post', async () => {
     const post = await request(app).post('/api/posts').set(auth()).send({ platform: 'tiktok', title: 'Vidéo démo' });

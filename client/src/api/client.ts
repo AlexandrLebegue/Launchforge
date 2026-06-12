@@ -567,11 +567,15 @@ export async function deletePost(id: string): Promise<ApiResponse<null>> {
   return request(`/posts/${id}`, { method: 'DELETE' });
 }
 
-/** Publication immédiate et RÉELLE via Composio — renvoie le lien publié ou la raison d'échec */
+export interface PublishOutcome { platform: string; ok: boolean; message: string; url?: string }
+
+/** Publication immédiate et RÉELLE via Composio. group=true publie aussi les
+ *  exemplaires multi-plateformes non publiés — un résultat par plateforme. */
 export async function publishPostNow(
-  id: string
-): Promise<ApiResponse<{ post: Post; next: Post | null; message: string }>> {
-  return request(`/posts/${id}/publish-now`, { method: 'POST' });
+  id: string,
+  group = false,
+): Promise<ApiResponse<{ post: Post; results: PublishOutcome[]; message: string }>> {
+  return request(`/posts/${id}/publish-now`, { method: 'POST', body: JSON.stringify({ group }) });
 }
 
 export async function publishPost(id: string): Promise<ApiResponse<{ post: Post; next: Post | null }>> {

@@ -5207,3 +5207,7 @@ video.md-media { background: #000; }
   max-height: 260px;
   overflow-y: auto;
 }
+
+/* Résultats de publication multi-plateformes */
+.publish-results { display: flex; flex-direction: column; gap: 6px; margin-bottom: 2px; }
+.publish-result-platform { font-weight: 700; white-space: nowrap; }

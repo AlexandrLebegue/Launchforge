@@ -48,6 +48,96 @@ export const executeComposioTool: ToolExecutor = async (composioUserId, slug, ar
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Proxy Composio v3.1 : appel HTTP arbitraire authentifié avec le compte
+ * connecté — NOUS contrôlons les en-têtes. Nécessite une clé API « proxy
+ * execute » dédiée (réglages du projet Composio) dans COMPOSIO_PROXY_API_KEY.
+ * Sert à contourner le bug du toolkit LinkedIn (version d'API périmée).
+ */
+async function proxyExecute(
+  connectedAccountId: string,
+  endpoint: string,
+  method: 'GET' | 'POST',
+  headers: Record<string, string>,
+  body?: unknown,
+): Promise<{ status: number; data: any; headers: Record<string, string> }> {
+  const key = process.env.COMPOSIO_PROXY_API_KEY;
+  if (!key) throw new Error('PROXY_NOT_CONFIGURED');
+  const res = await fetch(`${COMPOSIO_API.replace('/v3', '/v3.1')}/tools/execute/proxy`, {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      connected_account_id: connectedAccountId,
+      endpoint,
+      method,
+      ...(body !== undefined ? { body } : {}),
+      parameters: Object.entries(headers).map(([name, value]) => ({ name, value, in: 'header' })),
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const out: any = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(out?.error?.message || `Composio proxy ${res.status}`);
+  return {
+    status: out?.data?.status ?? out?.status ?? 0,
+    data: out?.data?.data ?? out?.data ?? out,
+    headers: out?.data?.headers ?? out?.headers ?? {},
+  };
+}
+
+/** Compte connecté LinkedIn (ACTIF) d'une identité — mis en cache */
+const linkedinAccountCache = new Map<string, string>();
+async function linkedinAccountId(composioUid: string): Promise<string | null> {
+  const cached = linkedinAccountCache.get(composioUid);
+  if (cached) return cached;
+  const key = process.env.COMPOSIO_PROXY_API_KEY ?? process.env.COMPOSIO_API_KEY;
+  if (!key) return null;
+  const res = await fetch(`${COMPOSIO_API}/connected_accounts?limit=100&user_ids=${encodeURIComponent(composioUid)}`, {
+    headers: { 'x-api-key': process.env.COMPOSIO_API_KEY! },
+  });
+  const data: any = await res.json().catch(() => null);
+  const account = (data?.items || []).find((a: any) =>
+    a?.toolkit?.slug === 'linkedin' && a?.status === 'ACTIVE' && a?.user_id === composioUid);
+  if (account?.id) linkedinAccountCache.set(composioUid, account.id);
+  return account?.id ?? null;
+}
+
+// Versions d'API LinkedIn candidates (actives ~12 mois) — la bonne est mémorisée
+const LINKEDIN_VERSIONS = [process.env.LINKEDIN_VERSION, '202506', '202504', '202601'].filter(Boolean) as string[];
+let workingLinkedinVersion: string | null = null;
+
+/**
+ * Publication LinkedIn via le proxy (contournement du toolkit Composio dont
+ * la version d'API est périmée). Essaie les versions candidates et mémorise
+ * celle qui répond.
+ */
+async function publishLinkedInViaProxy(accountId: string, author: string, commentary: string): Promise<string> {
+  const body = {
+    author,
+    commentary,
+    visibility: 'PUBLIC',
+    distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },
+    lifecycleState: 'PUBLISHED',
+    isReshareDisabledByAuthor: false,
+  };
+  const versions = workingLinkedinVersion ? [workingLinkedinVersion] : LINKEDIN_VERSIONS;
+  let lastErr = '';
+  for (const version of versions) {
+    const res = await proxyExecute(accountId, 'https://api.linkedin.com/rest/posts', 'POST', {
+      'LinkedIn-Version': version,
+      'X-Restli-Protocol-Version': '2.0.0',
+      'Content-Type': 'application/json',
+    }, body);
+    if (res.status >= 200 && res.status < 300) {
+      workingLinkedinVersion = version;
+      const urn = res.headers['x-restli-id'] ?? res.headers['x-linkedin-id'] ?? '';
+      return `OK: post LinkedIn publié${urn ? ` ${urn}` : ''} (via proxy, version ${version})`;
+    }
+    lastErr = JSON.stringify(res.data).slice(0, 250);
+    if (!/NONEXISTENT_VERSION|version/i.test(lastErr)) break; // autre erreur : inutile d'itérer
+  }
+  return `ECHEC: LinkedIn a refusé la publication via le proxy — ${lastErr}`;
+}
+
 // Identités résolues une fois par utilisateur (URN LinkedIn, compte Instagram)
 const linkedinAuthorCache = new Map<string, string>();
 const instagramIdCache = new Map<string, string>();
@@ -122,21 +212,45 @@ export async function publishDirect(
         let author = linkedinAuthorCache.get(uid);
         if (!author) {
           const me = await exec(uid, 'LINKEDIN_GET_MY_INFO', {});
-          author = me?.author_urn
+          // Champ réel constaté : response_dict.author_id (urn:li:person:…)
+          author = me?.response_dict?.author_id
+            ?? me?.author_id
+            ?? me?.author_urn
             ?? me?.response_dict?.author_urn
             ?? (me?.sub ? `urn:li:person:${me.sub}` : me?.response_dict?.sub ? `urn:li:person:${me.response_dict.sub}` : undefined);
           if (!author) return { handled: true, result: 'ECHEC: impossible de déterminer votre URN LinkedIn (LINKEDIN_GET_MY_INFO) — reconnectez le compte LinkedIn dans Configuration.' };
           linkedinAuthorCache.set(uid, author);
         }
-        const data = await exec(uid, 'LINKEDIN_CREATE_LINKED_IN_POST', {
-          author,
-          commentary: content,
-          visibility: 'PUBLIC',
-          lifecycleState: 'PUBLISHED',
-        });
-        const urn = data?.share_id ?? data?.id ?? data?.urn ?? '';
         const note = mediaUrl ? ' (média non joint : le toolkit LinkedIn de Composio ne gère que le texte)' : '';
-        return { handled: true, result: `OK: post LinkedIn publié${urn ? ` ${urn}` : ''}${note}` };
+
+        // Contournement du bug de version du toolkit Composio si la clé proxy est posée
+        if (process.env.COMPOSIO_PROXY_API_KEY) {
+          const accountId = await linkedinAccountId(uid);
+          if (accountId) {
+            const result = await publishLinkedInViaProxy(accountId, author, content);
+            return { handled: true, result: result.startsWith('OK') ? result + note : result };
+          }
+        }
+
+        try {
+          const data = await exec(uid, 'LINKEDIN_CREATE_LINKED_IN_POST', {
+            author,
+            commentary: content,
+            visibility: 'PUBLIC',
+            lifecycleState: 'PUBLISHED',
+          });
+          const urn = data?.share_id ?? data?.id ?? data?.urn ?? '';
+          return { handled: true, result: `OK: post LinkedIn publié${urn ? ` ${urn}` : ''}${note}` };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '';
+          if (/NONEXISTENT_VERSION/i.test(msg)) {
+            return {
+              handled: true,
+              result: 'ECHEC: bug connu du toolkit LinkedIn de Composio (version d\'API périmée, erreur NONEXISTENT_VERSION — rien à voir avec votre compte). Contournement : créez une clé API « proxy execute » dans les réglages de votre projet Composio et posez-la dans COMPOSIO_PROXY_API_KEY — LaunchForge publiera alors en direct sur l\'API LinkedIn avec une version à jour.',
+            };
+          }
+          throw err;
+        }
       }
 
       case 'instagram': {

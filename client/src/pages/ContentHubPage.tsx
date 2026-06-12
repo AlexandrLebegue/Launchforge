@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare } from 'lucide-react';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  previewRecurrence, crosspostPost, publishPostNow,
+  previewRecurrence, crosspostPost, publishPostNow, PublishOutcome,
   generateCalendar, getOverview,
   generatePostImage, uploadPostImage, uploadPostVideo, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   analyzePostPerf,
@@ -435,7 +435,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
 
   // État de la publication immédiate (résultat affiché dans le pied de modale)
   const [publishing, setPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+  const [publishResult, setPublishResult] = useState<{ ok: boolean; lines: PublishOutcome[] } | null>(null);
 
   /** Enregistre le post (création ou mise à jour) + déclinaisons. Retourne le post sauvé. */
   const persist = async (): Promise<Post | null> => {
@@ -495,27 +495,24 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     const saved = await persist();
     if (!saved) { setPublishing(false); return; }
 
-    const res = await publishPostNow(saved.id);
+    // Groupe : ce post + tous les exemplaires multi-plateformes non publiés
+    const publishGroup = crossTargets.length > 0 || Boolean(saved.crossPostId);
+    const res = await publishPostNow(saved.id, publishGroup);
     setPublishing(false);
-    if (res.success && res.data) {
-      const url = res.data.post.externalUrl && /^https?:/i.test(res.data.post.externalUrl)
-        ? res.data.post.externalUrl : undefined;
-      setForm((f) => ({ ...f, status: 'published', externalUrl: res.data!.post.externalUrl ?? f.externalUrl }));
-      setPublishResult({
-        ok: true,
-        text: `Publié sur ${platformLabel(saved.platform)} — ${res.data.message}`,
-        url,
-      });
-      onCrossposted?.(); // recharge la liste du Hub sans fermer l'éditeur
-    } else {
-      setPublishResult({
-        ok: false,
-        text: res.error === 'COMPOSIO_NOT_CONFIGURED'
-          ? 'Composio n\'est pas configuré — connectez vos comptes dans Configuration pour publier depuis l\'app.'
-          : `Échec de la publication : ${res.error || 'erreur inconnue'}`,
-      });
-      onCrossposted?.();
+    const lines: PublishOutcome[] = res.data?.results
+      ?? [{ platform: saved.platform, ok: false, message: res.error === 'COMPOSIO_NOT_CONFIGURED'
+        ? 'Composio n\'est pas configuré — connectez vos comptes dans Configuration pour publier depuis l\'app.'
+        : res.error || 'erreur inconnue' }];
+    const anyOk = lines.some((l) => l.ok);
+    if (anyOk) {
+      setForm((f) => ({
+        ...f,
+        status: res.data!.post.status as PostStatus,
+        externalUrl: res.data!.post.externalUrl ?? f.externalUrl,
+      }));
     }
+    setPublishResult({ ok: anyOk, lines });
+    onCrossposted?.(); // recharge la liste du Hub sans fermer l'éditeur
   };
 
   // Aperçu : le média attaché peut être une image, un GIF animé ou une vidéo
@@ -926,12 +923,17 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           </div>
 
           {publishResult && (
-            <div className={`publish-result${publishResult.ok ? ' ok' : ' ko'}`} role="status">
-              <span>{publishResult.ok ? '✓' : '✗'}</span>
-              <span className="publish-result-text">{publishResult.text}</span>
-              {publishResult.url && (
-                <a href={publishResult.url} target="_blank" rel="noopener noreferrer">Voir le post ↗</a>
-              )}
+            <div className="publish-results" role="status">
+              {publishResult.lines.map((l) => (
+                <div key={l.platform} className={`publish-result${l.ok ? ' ok' : ' ko'}`}>
+                  <span>{l.ok ? '✓' : '✗'}</span>
+                  <span className="publish-result-platform">{platformLabel(l.platform)}</span>
+                  <span className="publish-result-text">{l.message}</span>
+                  {l.url && (
+                    <a href={l.url} target="_blank" rel="noopener noreferrer">Voir le post ↗</a>
+                  )}
+                </div>
+              ))}
             </div>
           )}
           <div className="modal-footer pe-footer">
@@ -950,11 +952,17 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 className="btn btn-primary btn-primary-glow"
                 onClick={handlePublishNow}
                 disabled={publishing || saving || !form.content.trim()}
-                title={`Enregistre puis publie immédiatement sur ${platformLabel(form.platform)} via vos comptes connectés${crossTargets.length > 0 ? ' (les exemplaires des autres plateformes suivent leur propre planification)' : ''}`}
+                title={crossTargets.length > 0 || post?.crossPostId
+                  ? 'Enregistre puis publie immédiatement ce post ET tous ses exemplaires multi-plateformes non publiés — un résultat par plateforme'
+                  : `Enregistre puis publie immédiatement sur ${platformLabel(form.platform)} via vos comptes connectés`}
               >
                 {publishing
                   ? '⏳ Publication en cours…'
-                  : <><Send size={15} /> Publier maintenant sur {platformLabel(form.platform)}</>}
+                  : <><Send size={15} /> {selPlatforms.length > 1
+                      ? `Publier maintenant sur ${selPlatforms.length} plateformes`
+                      : post?.crossPostId
+                        ? 'Publier maintenant (tout le groupe)'
+                        : `Publier maintenant sur ${platformLabel(form.platform)}`}</>}
               </button>
             )}
           </div>
