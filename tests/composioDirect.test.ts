@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
-import { publishDirect, sendEmailDirect, ToolExecutor, McpToolCaller } from '../src/services/composioDirect';
+import { publishDirect, sendEmailDirect, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
 import app from '../src/app';
 
 let userId: string;
@@ -67,6 +67,38 @@ describe('publishDirect — LinkedIn', () => {
     await publishDirect(userId, 'linkedin', 'Autre post', null, '', second.exec);
     expect(second.calls.map((c) => c.slug)).toEqual(['LINKEDIN_CREATE_LINKED_IN_POST']);
   });
+
+  it('joint l\'image du post : téléversement Composio (s3key) puis paramètre images', async () => {
+    const uploaded: string[] = [];
+    const upload: FileUploader = async (toolkit, tool, fileUrl) => {
+      uploaded.push(`${toolkit}/${tool}/${fileUrl}`);
+      return { name: 'visuel.png', mimetype: 'image/png', s3key: '42/linkedin/req/abc' };
+    };
+    const { calls, exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: { id: 'urn:li:share:2000' } });
+    const out = await publishDirect(userId, 'linkedin', 'Post illustré', 'https://cdn.dev/visuel.png', '', exec, undefined, upload);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('image jointe');
+    expect(uploaded).toEqual(['linkedin/LINKEDIN_CREATE_LINKED_IN_POST/https://cdn.dev/visuel.png']);
+    expect(calls[0].args.images).toEqual([{ name: 'visuel.png', mimetype: 'image/png', s3key: '42/linkedin/req/abc' }]);
+  });
+
+  it('publie quand même en texte si le téléversement de l\'image échoue', async () => {
+    const upload: FileUploader = async () => { throw new Error('média inaccessible (HTTP 404)'); };
+    const { calls, exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: { id: 'urn:li:share:2001' } });
+    const out = await publishDirect(userId, 'linkedin', 'Post', 'https://cdn.dev/absent.png', '', exec, undefined, upload);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('image non jointe : média inaccessible (HTTP 404)');
+    expect(calls[0].args.images).toBeUndefined();
+  });
+
+  it('ne tente pas de joindre une vidéo (images uniquement)', async () => {
+    const upload: FileUploader = async () => { throw new Error('ne doit pas être appelé'); };
+    const { calls, exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: { id: 'urn:li:share:2002' } });
+    const out = await publishDirect(userId, 'linkedin', 'Post', 'https://cdn.dev/clip.mp4', '', exec, undefined, upload);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('vidéo non jointe');
+    expect(calls[0].args.images).toBeUndefined();
+  });
 });
 
 describe('publishDirect — LinkedIn, secours MCP legacy (bug NONEXISTENT_VERSION)', () => {
@@ -93,10 +125,13 @@ describe('publishDirect — LinkedIn, secours MCP legacy (bug NONEXISTENT_VERSIO
     else process.env.COMPOSIO_MCP_URL = prevMcpUrl;
   });
 
+  // le téléversement d'image n'est pas le sujet de ces tests : uploader muet
+  const noUpload: FileUploader = async () => { throw new Error('COMPOSIO_NOT_CONFIGURED'); };
+
   it('bascule sur LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE (ugcPosts) en partageant le média du post', async () => {
     const { exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: versionError() });
     const { calls, mcp } = mcpRecorder('{"successfull": true, "data": {"id": "urn:li:share:42424242"}}');
-    const out = await publishDirect(userId, 'linkedin', 'Mon post', 'https://cdn.dev/visuel.png', 'Mon titre', exec, mcp);
+    const out = await publishDirect(userId, 'linkedin', 'Mon post', 'https://cdn.dev/visuel.png', 'Mon titre', exec, mcp, noUpload);
     expect(out.result).toContain('OK:');
     expect(out.result).toContain('https://www.linkedin.com/feed/update/urn:li:share:42424242');
     expect(calls[0].tool).toBe('LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE');
@@ -120,7 +155,7 @@ describe('publishDirect — LinkedIn, secours MCP legacy (bug NONEXISTENT_VERSIO
     try {
       const { exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: versionError() });
       const { calls, mcp } = mcpRecorder('{"successfull": true, "data": {}}');
-      const out = await publishDirect(userId, 'linkedin', 'Post texte', null, '', exec, mcp);
+      const out = await publishDirect(userId, 'linkedin', 'Post texte', null, '', exec, mcp, noUpload);
       expect(out.result).toContain('OK:');
       const share = (calls[0].args as any).specificContent['com.linkedin.ugc.ShareContent'];
       expect(share.media[0].originalUrl).toBe('https://launchforge.example');
@@ -132,7 +167,7 @@ describe('publishDirect — LinkedIn, secours MCP legacy (bug NONEXISTENT_VERSIO
   it('si le secours MCP échoue aussi : message ECHEC actionnable (clé proxy)', async () => {
     const { exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: versionError() });
     const { mcp } = mcpRecorder(new Error('Tool LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE failed: 422'));
-    const out = await publishDirect(userId, 'linkedin', 'Mon post', 'https://cdn.dev/v.png', '', exec, mcp);
+    const out = await publishDirect(userId, 'linkedin', 'Mon post', 'https://cdn.dev/v.png', '', exec, mcp, noUpload);
     expect(out.result).toMatch(/^ECHEC:/);
     expect(out.result).toContain('COMPOSIO_PROXY_API_KEY');
   });

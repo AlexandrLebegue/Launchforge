@@ -9,10 +9,13 @@
  *                  LINKEDIN_CREATE_LINKED_IN_POST en version d'outil 'latest'
  *                  — la version épinglée par défaut sur le projet date de
  *                  2024 et son en-tête LinkedIn-Version est désactivé
- *                  (NONEXISTENT_VERSION). Si l'erreur revient malgré tout :
- *                  secours via le serveur MCP Composio qui expose l'outil
- *                  legacy LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE (v2/ugcPosts
- *                  non versionnée) — toujours en déterministe (tools/call
+ *                  (NONEXISTENT_VERSION). Les images du post sont jointes :
+ *                  téléversées sur l'infra de fichiers Composio (s3key) puis
+ *                  passées dans le paramètre images de l'outil. Si l'erreur
+ *                  de version revient malgré tout : secours via le serveur
+ *                  MCP Composio qui expose l'outil legacy
+ *                  LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE (v2/ugcPosts non
+ *                  versionnée) — toujours en déterministe (tools/call
  *                  direct, aucun modèle) ; clé proxy en dernier recours.
  *  - Instagram   : INSTAGRAM_GET_USER_INFO (compte, mis en cache) puis
  *                  CREATE_MEDIA_CONTAINER (image_url/video_url public) —
@@ -24,6 +27,7 @@
  * page_id…) restent sur l'opérateur IA, qui sait demander le contexte.
  */
 
+import { createHash } from 'crypto';
 import { composioUserIdFor } from './composioConnect';
 import { McpSession, isComposioConfigured } from './mcpClient';
 
@@ -56,6 +60,68 @@ export const executeComposioTool: ToolExecutor = async (composioUserId, slug, ar
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Fichier téléversé sur l'infra Composio, prêt à être passé à un outil */
+export interface ComposioFile {
+  name: string;
+  mimetype: string;
+  s3key: string;
+}
+
+export type FileUploader = (
+  toolkitSlug: string,
+  toolSlug: string,
+  fileUrl: string,
+) => Promise<ComposioFile>;
+
+const EXT_MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+};
+
+/**
+ * Téléverse un fichier (URL publique) sur l'infra de fichiers Composio :
+ * files/upload/request fournit le s3key et une URL présignée, on y PUT les
+ * octets. Le s3key est ensuite passé dans les paramètres FileUploadable des
+ * outils (ex. images de LINKEDIN_CREATE_LINKED_IN_POST).
+ */
+export const uploadFileToComposio: FileUploader = async (toolkitSlug, toolSlug, fileUrl) => {
+  const key = process.env.COMPOSIO_API_KEY;
+  if (!key) throw new Error('COMPOSIO_NOT_CONFIGURED');
+
+  const file = await fetch(fileUrl, { signal: AbortSignal.timeout(120_000) });
+  if (!file.ok) throw new Error(`média inaccessible (HTTP ${file.status})`);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const name = decodeURIComponent(new URL(fileUrl).pathname.split('/').pop() || 'media');
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  const headerType = file.headers.get('content-type')?.split(';')[0]?.trim();
+  const mimetype = (headerType?.startsWith('image/') ? headerType : EXT_MIME[ext]) ?? 'application/octet-stream';
+
+  const req = await fetch(`${COMPOSIO_API}/files/upload/request`, {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      toolkit_slug: toolkitSlug,
+      tool_slug: toolSlug,
+      filename: name,
+      mimetype,
+      md5: createHash('md5').update(bytes).digest('hex'),
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const out: any = await req.json().catch(() => null);
+  const presigned = out?.new_presigned_url ?? out?.newPresignedUrl;
+  if (!req.ok || !out?.key || !presigned) {
+    throw new Error(out?.error?.message || `téléversement Composio refusé (HTTP ${req.status})`);
+  }
+  const put = await fetch(presigned, {
+    method: 'PUT',
+    headers: { 'Content-Type': mimetype },
+    body: bytes,
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!put.ok) throw new Error(`dépôt du média refusé (HTTP ${put.status})`);
+  return { name, mimetype, s3key: out.key };
+};
 
 /** Appel déterministe d'un outil du serveur MCP (tools/call, sans modèle) */
 export type McpToolCaller = (
@@ -246,6 +312,7 @@ export async function publishDirect(
   title = '',
   exec: ToolExecutor = executeComposioTool,
   mcp: McpToolCaller = callMcpToolDirect,
+  upload: FileUploader = uploadFileToComposio,
 ): Promise<DirectPublishResult> {
   const uid = composioUserIdFor(userId);
   if (!uid) return { handled: false };
@@ -273,14 +340,19 @@ export async function publishDirect(
           if (!author) return { handled: true, result: 'ECHEC: impossible de déterminer votre URN LinkedIn (LINKEDIN_GET_MY_INFO) — reconnectez le compte LinkedIn dans Configuration.' };
           linkedinAuthorCache.set(uid, author);
         }
-        const note = mediaUrl ? ' (média non joint : le toolkit LinkedIn de Composio ne gère que le texte)' : '';
-
-        // Contournement du bug de version du toolkit Composio si la clé proxy est posée
-        if (process.env.COMPOSIO_PROXY_API_KEY) {
-          const accountId = await linkedinAccountId(uid);
-          if (accountId) {
-            const result = await publishLinkedInViaProxy(accountId, author, content);
-            return { handled: true, result: result.startsWith('OK') ? result + note : result };
+        // Image du post : téléversée sur l'infra Composio puis jointe (s3key)
+        let images: ComposioFile[] | undefined;
+        let note = '';
+        if (mediaUrl) {
+          if (mediaIsVideo) {
+            note = ' (vidéo non jointe : le toolkit LinkedIn n\'accepte que des images)';
+          } else {
+            try {
+              images = [await upload('linkedin', 'LINKEDIN_CREATE_LINKED_IN_POST', mediaUrl)];
+            } catch (err) {
+              const m = err instanceof Error ? err.message : 'erreur inconnue';
+              note = ` (image non jointe : ${m === 'COMPOSIO_NOT_CONFIGURED' ? 'COMPOSIO_API_KEY absente' : m})`;
+            }
           }
         }
 
@@ -292,12 +364,23 @@ export async function publishDirect(
             commentary: content,
             visibility: 'PUBLIC',
             lifecycleState: 'PUBLISHED',
+            ...(images ? { images } : {}),
           }, 'latest');
           const urn = data?.share_id ?? data?.id ?? data?.urn ?? '';
-          return { handled: true, result: `OK: post LinkedIn publié${urn ? ` ${urn}` : ''}${note}` };
+          return { handled: true, result: `OK: post LinkedIn publié${urn ? ` ${urn}` : ''}${images ? ' (image jointe)' : note}` };
         } catch (err) {
           const msg = err instanceof Error ? err.message : '';
           if (/NONEXISTENT_VERSION/i.test(msg)) {
+            // Clé proxy posée : publication texte directe sur l'API LinkedIn
+            if (process.env.COMPOSIO_PROXY_API_KEY) {
+              const accountId = await linkedinAccountId(uid);
+              if (accountId) {
+                const result = await publishLinkedInViaProxy(accountId, author, content);
+                if (result.startsWith('OK')) {
+                  return { handled: true, result: result + (mediaUrl ? ' (média non joint : publication texte via le proxy)' : '') };
+                }
+              }
+            }
             // Voie de secours : l'outil legacy du serveur MCP (ugcPosts, non
             // versionné) — un partage d'URL, donc seulement si on a un lien.
             const shareUrl = mediaUrl ?? process.env.APP_URL ?? null;
