@@ -4826,3 +4826,159 @@ video.md-media { background: #000; }
   font-weight: 700;
 }
 .btn-danger-solid:hover:not(:disabled) { background: #ef4444; }
+
+/* ============================================================
+   LANDING v2 — boucle de la forge, captures réelles, honnêteté
+   ============================================================ */
+
+/* Affirmations vérifiables sous le CTA */
+.hero-truths {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  margin-top: 34px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+.hero-truths span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-truths svg { color: var(--color-primary); }
+
+/* Sections alternées */
+.landing-section-alt {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+/* ── La boucle de la forge ── */
+.loop-flow {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  margin-top: 48px;
+  padding-bottom: 74px;
+}
+.loop-step-wrap { display: flex; align-items: center; flex: 1; min-width: 0; }
+.loop-step {
+  position: relative;
+  flex: 1;
+  background: var(--color-surface-solid);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 16px 14px 14px;
+  text-align: left;
+}
+.loop-step-icon {
+  display: inline-flex;
+  width: 36px; height: 36px;
+  align-items: center; justify-content: center;
+  border-radius: 4px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  margin-bottom: 10px;
+}
+.loop-step-num {
+  position: absolute;
+  top: 10px; right: 12px;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-subtle);
+}
+.loop-step h3 { font-size: 0.88rem; font-weight: 700; margin-bottom: 4px; }
+.loop-step p { font-size: 0.74rem; color: var(--color-text-muted); line-height: 1.5; }
+.loop-link {
+  width: 26px;
+  height: 2px;
+  flex-shrink: 0;
+  background: var(--gradient-ember);
+  background-size: 200% 100%;
+}
+.loop-return {
+  position: absolute;
+  left: 2%; right: 2%; bottom: 26px;
+  width: 96%;
+  height: 56px;
+  overflow: visible;
+}
+.loop-return-label {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--color-text-subtle);
+}
+@media (max-width: 920px) {
+  .loop-flow { flex-direction: column; gap: 10px; padding-bottom: 16px; }
+  .loop-step-wrap { flex-direction: column; }
+  .loop-link { width: 2px; height: 18px; margin: 4px 0; }
+  .loop-return, .loop-return-label { display: none; }
+}
+
+/* ── Captures réelles ── */
+.shot-row {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 40px;
+  align-items: center;
+  margin-top: 72px;
+}
+.shot-row.reverse { grid-template-columns: 1.15fr 0.85fr; }
+.shot-row.reverse .shot-text { order: 2; }
+.shot-row.reverse .shot-frame { order: 1; }
+.shot-text h3 {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.shot-text p { font-size: 0.9rem; color: var(--color-text-muted); line-height: 1.7; margin-bottom: 14px; }
+.shot-text ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+.shot-text li {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.82rem; font-weight: 600;
+}
+.shot-text li svg { color: var(--color-primary); flex-shrink: 0; }
+.shot-frame {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-surface-solid);
+  box-shadow: var(--shadow-card), 0 0 60px rgba(255, 107, 53, 0.06);
+}
+.shot-frame img { display: block; width: 100%; height: auto; }
+@media (max-width: 920px) {
+  .shot-row, .shot-row.reverse { grid-template-columns: 1fr; gap: 18px; margin-top: 48px; }
+  .shot-row.reverse .shot-text { order: 1; }
+  .shot-row.reverse .shot-frame { order: 2; }
+}
+
+/* ── Honnêteté ── */
+.honest-card {
+  max-width: 620px;
+  margin: 0 auto;
+  text-align: center;
+  border: 1px solid rgba(255, 107, 53, 0.3);
+  border-radius: 6px;
+  background: var(--color-surface-solid);
+  padding: 44px 36px;
+}
+.honest-card h2 {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 14px;
+}
+.honest-card p {
+  font-size: 0.92rem;
+  color: var(--color-text-muted);
+  line-height: 1.75;
+  margin-bottom: 26px;
+}

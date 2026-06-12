@@ -54,6 +54,25 @@ app.use('/api/decks', deckRoutes);
 import { uploadsDir } from './services/mediaStore';
 app.use('/uploads', (req, res, next) => express.static(uploadsDir(), { maxAge: '7d' })(req, res, next));
 
+// SEO : robots + sitemap construits depuis l'URL publique du déploiement
+app.get('/robots.txt', (_req, res) => {
+  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+  res.type('text/plain').send(
+    ['User-agent: *', 'Allow: /', 'Disallow: /api/', 'Disallow: /uploads/',
+     ...(appUrl ? [`Sitemap: ${appUrl}/sitemap.xml`] : [])].join('\n'),
+  );
+});
+app.get('/sitemap.xml', (_req, res) => {
+  const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+  if (!appUrl) return res.status(404).send('APP_URL non configurée');
+  const pages = ['/', '/login', '/register', '/legal', '/privacy'];
+  res.type('application/xml').send(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    pages.map((u) => `  <url><loc>${appUrl}${u}</loc></url>`).join('\n') +
+    `\n</urlset>`,
+  );
+});
+
 const clientDist = path.resolve(process.cwd(), 'client', 'dist');
 app.use(express.static(clientDist));
 app.get('*', (_req, res) => {

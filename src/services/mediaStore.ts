@@ -50,8 +50,9 @@ export function saveMediaStream(
 
     pipeline(source, limiter, out, (err) => {
       if (err) {
-        fs.unlink(full, () => { /* fichier partiel nettoyé */ });
-        reject(err);
+        // Le nettoyage du fichier partiel DOIT précéder le reject (sinon
+        // l'appelant peut observer un état intermédiaire)
+        fs.unlink(full, () => reject(err));
         return;
       }
       resolve({ fileName, url: `/uploads/${fileName}`, bytes });
