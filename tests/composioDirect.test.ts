@@ -4,10 +4,10 @@
  * réseau. Les schémas imités sont ceux constatés sur l'API Composio réelle.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
-import { publishDirect, sendEmailDirect, ToolExecutor } from '../src/services/composioDirect';
+import { publishDirect, sendEmailDirect, ToolExecutor, McpToolCaller } from '../src/services/composioDirect';
 import app from '../src/app';
 
 let userId: string;
@@ -64,6 +64,75 @@ describe('publishDirect — LinkedIn', () => {
     const second = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: { id: 'urn:li:share:1000' } });
     await publishDirect(userId, 'linkedin', 'Autre post', null, '', second.exec);
     expect(second.calls.map((c) => c.slug)).toEqual(['LINKEDIN_CREATE_LINKED_IN_POST']);
+  });
+});
+
+describe('publishDirect — LinkedIn, secours MCP legacy (bug NONEXISTENT_VERSION)', () => {
+  const versionError = () => new Error('{"status":426,"code":"NONEXISTENT_VERSION","message":"Requested version 20241101 is not active"}');
+
+  function mcpRecorder(reply: string | Error) {
+    const calls: { tool: string; args: Record<string, unknown> }[] = [];
+    const mcp: McpToolCaller = async (_uid, tool, args) => {
+      calls.push({ tool, args });
+      if (reply instanceof Error) throw reply;
+      return reply;
+    };
+    return { calls, mcp };
+  }
+
+  let prevMcpUrl: string | undefined;
+  beforeAll(() => {
+    // isComposioConfigured() doit voir un serveur MCP pour activer le secours
+    prevMcpUrl = process.env.COMPOSIO_MCP_URL;
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/partner/composio/test/mcp?user_id=test';
+  });
+  afterAll(() => {
+    if (prevMcpUrl === undefined) delete process.env.COMPOSIO_MCP_URL;
+    else process.env.COMPOSIO_MCP_URL = prevMcpUrl;
+  });
+
+  it('bascule sur LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE (ugcPosts) en partageant le média du post', async () => {
+    const { exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: versionError() });
+    const { calls, mcp } = mcpRecorder('{"successfull": true, "data": {"id": "urn:li:share:42424242"}}');
+    const out = await publishDirect(userId, 'linkedin', 'Mon post', 'https://cdn.dev/visuel.png', 'Mon titre', exec, mcp);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('https://www.linkedin.com/feed/update/urn:li:share:42424242');
+    expect(calls[0].tool).toBe('LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE');
+    expect(calls[0].args).toMatchObject({
+      author: 'urn:li:person:abc123', // résolu par le test précédent (cache)
+      lifecycleState: 'PUBLISHED',
+      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
+      specificContent: {
+        'com.linkedin.ugc.ShareContent': {
+          shareCommentary: { text: 'Mon post' },
+          shareMediaCategory: 'ARTICLE',
+          media: [{ originalUrl: 'https://cdn.dev/visuel.png', title: { text: 'Mon titre' }, status: 'READY' }],
+        },
+      },
+    });
+  });
+
+  it('sans média : partage l\'URL de l\'app (APP_URL) — le schéma legacy exige un lien', async () => {
+    const prev = process.env.APP_URL;
+    process.env.APP_URL = 'https://launchforge.example';
+    try {
+      const { exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: versionError() });
+      const { calls, mcp } = mcpRecorder('{"successfull": true, "data": {}}');
+      const out = await publishDirect(userId, 'linkedin', 'Post texte', null, '', exec, mcp);
+      expect(out.result).toContain('OK:');
+      const share = (calls[0].args as any).specificContent['com.linkedin.ugc.ShareContent'];
+      expect(share.media[0].originalUrl).toBe('https://launchforge.example');
+    } finally {
+      if (prev === undefined) delete process.env.APP_URL; else process.env.APP_URL = prev;
+    }
+  });
+
+  it('si le secours MCP échoue aussi : message ECHEC actionnable (clé proxy)', async () => {
+    const { exec } = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: versionError() });
+    const { mcp } = mcpRecorder(new Error('Tool LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE failed: 422'));
+    const out = await publishDirect(userId, 'linkedin', 'Mon post', 'https://cdn.dev/v.png', '', exec, mcp);
+    expect(out.result).toMatch(/^ECHEC:/);
+    expect(out.result).toContain('COMPOSIO_PROXY_API_KEY');
   });
 });
 

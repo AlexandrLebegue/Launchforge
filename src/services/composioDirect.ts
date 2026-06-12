@@ -7,7 +7,12 @@
  *                  pas d'upload de média → média signalé comme non joint)
  *  - LinkedIn    : LINKEDIN_GET_MY_INFO (URN auteur, mis en cache) puis
  *                  LINKEDIN_CREATE_LINKED_IN_POST (texte ; pas de média
- *                  exposé par le toolkit)
+ *                  exposé par le toolkit). Ce toolkit REST épingle une
+ *                  version d'API LinkedIn périmée (NONEXISTENT_VERSION) :
+ *                  en secours, on appelle le serveur MCP Composio qui, lui,
+ *                  expose l'outil legacy LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE
+ *                  (API v2/ugcPosts non versionnée, fonctionnelle) — toujours
+ *                  en déterministe : tools/call direct, aucun modèle.
  *  - Instagram   : INSTAGRAM_GET_USER_INFO (compte, mis en cache) puis
  *                  CREATE_MEDIA_CONTAINER (image_url/video_url public) —
  *                  attente du traitement pour la vidéo — puis CREATE_POST
@@ -19,6 +24,7 @@
  */
 
 import { composioUserIdFor } from './composioConnect';
+import { McpSession, isComposioConfigured } from './mcpClient';
 
 const COMPOSIO_API = 'https://backend.composio.dev/api/v3';
 
@@ -47,6 +53,48 @@ export const executeComposioTool: ToolExecutor = async (composioUserId, slug, ar
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Appel déterministe d'un outil du serveur MCP (tools/call, sans modèle) */
+export type McpToolCaller = (
+  composioUserId: string,
+  tool: string,
+  args: Record<string, unknown>,
+) => Promise<string>;
+
+export const callMcpToolDirect: McpToolCaller = async (composioUserId, tool, args) => {
+  const session = new McpSession(composioUserId);
+  await session.initialize();
+  return session.callTool(tool, args);
+};
+
+/**
+ * Voie de secours LinkedIn : l'outil legacy du serveur MCP (v2/ugcPosts, non
+ * versionné). Son schéma EXIGE un lien partagé (media[].originalUrl) : c'est
+ * un partage d'URL avec commentaire — d'où le paramètre shareUrl.
+ */
+async function publishLinkedInViaMcpLegacy(
+  composioUid: string,
+  author: string,
+  commentary: string,
+  shareUrl: string,
+  shareTitle: string,
+  mcp: McpToolCaller,
+): Promise<string> {
+  const out = await mcp(composioUid, 'LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE', {
+    author,
+    lifecycleState: 'PUBLISHED',
+    visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
+    specificContent: {
+      'com.linkedin.ugc.ShareContent': {
+        shareCommentary: { text: commentary },
+        shareMediaCategory: 'ARTICLE',
+        media: [{ originalUrl: shareUrl, title: { text: shareTitle }, status: 'READY' }],
+      },
+    },
+  });
+  const urn = out.match(/urn:li:(?:share|ugcPost):[\w-]+/)?.[0] ?? '';
+  return `OK: post LinkedIn publié${urn ? ` https://www.linkedin.com/feed/update/${urn}` : ''} (partage de lien ${shareUrl} — contournement du bug de version du toolkit Composio)`;
+}
 
 /**
  * Proxy Composio v3.1 : appel HTTP arbitraire authentifié avec le compte
@@ -194,6 +242,7 @@ export async function publishDirect(
   mediaUrl: string | null,
   title = '',
   exec: ToolExecutor = executeComposioTool,
+  mcp: McpToolCaller = callMcpToolDirect,
 ): Promise<DirectPublishResult> {
   const uid = composioUserIdFor(userId);
   if (!uid) return { handled: false };
@@ -244,6 +293,18 @@ export async function publishDirect(
         } catch (err) {
           const msg = err instanceof Error ? err.message : '';
           if (/NONEXISTENT_VERSION/i.test(msg)) {
+            // Voie de secours : l'outil legacy du serveur MCP (ugcPosts, non
+            // versionné) — un partage d'URL, donc seulement si on a un lien.
+            const shareUrl = mediaUrl ?? process.env.APP_URL ?? null;
+            if (shareUrl && isComposioConfigured()) {
+              try {
+                const result = await publishLinkedInViaMcpLegacy(
+                  uid, author, content,
+                  shareUrl, (title || firstLine(content) || 'LaunchForge').slice(0, 95), mcp,
+                );
+                return { handled: true, result };
+              } catch { /* secours indisponible : message actionnable ci-dessous */ }
+            }
             return {
               handled: true,
               result: 'ECHEC: bug connu du toolkit LinkedIn de Composio (version d\'API périmée, erreur NONEXISTENT_VERSION — rien à voir avec votre compte). Contournement : créez une clé API « proxy execute » dans les réglages de votre projet Composio et posez-la dans COMPOSIO_PROXY_API_KEY — LaunchForge publiera alors en direct sur l\'API LinkedIn avec une version à jour.',
