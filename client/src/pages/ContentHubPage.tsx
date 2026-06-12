@@ -10,6 +10,7 @@ import {
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
+import PlatformIcon from '../components/PlatformIcon';
 import Markdown from '../components/Markdown';
 
 export const PLATFORMS: { value: string; label: string }[] = [
@@ -57,6 +58,117 @@ const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0'
 // ─────────────────────────────────────────────────────────────────────────────
 // Éditeur de post (modal) avec assistant IA
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aperçus par plateforme — mini-rendus aux couleurs des vraies apps
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PreviewProps {
+  platform: string;
+  title: string;
+  content: string;
+  mediaUrl: string;
+  mediaIsVideo: boolean;
+}
+
+function PlatformPreview({ platform, title, content, mediaUrl, mediaIsVideo }: PreviewProps) {
+  const text = content.trim();
+  const hideOnError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    (e.target as HTMLImageElement).style.display = 'none';
+  };
+  const media = mediaUrl
+    ? (mediaIsVideo
+      ? <video src={mediaUrl} className="pv-media" controls loop muted playsInline />
+      : <img src={mediaUrl} alt="" className="pv-media" onError={hideOnError} />)
+    : null;
+  const empty = <span className="pe-preview-empty">Le post apparaîtra ici au fil de la frappe…</span>;
+
+  if (platform === 'linkedin') {
+    return (
+      <div className="pv pv-light pv-linkedin">
+        <div className="pv-head">
+          <span className="pv-avatar" style={{ background: '#0A66C2' }}>V</span>
+          <span className="pv-id">
+            <strong>Vous</strong>
+            <em>Fondateur·euse · 1ᵉʳ</em>
+            <em>Maintenant · Visible de tous</em>
+          </span>
+        </div>
+        <div className="pv-text">{text ? <Markdown text={text} /> : empty}</div>
+        {media}
+        <div className="pv-actionbar">
+          <span>J'aime</span><span>Commenter</span><span>Republier</span><span>Envoyer</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (platform === 'twitter') {
+    return (
+      <div className="pv pv-x">
+        <div className="pv-head">
+          <span className="pv-avatar" style={{ background: '#333' }}>V</span>
+          <span className="pv-id pv-id-inline">
+            <strong>Vous</strong>
+            <em>@vous · 1 min</em>
+          </span>
+        </div>
+        <div className="pv-text">{text ? <Markdown text={text} /> : empty}</div>
+        {media && <div className="pv-media-rounded">{media}</div>}
+        <div className="pv-actionbar pv-actionbar-x">
+          <span>12</span><span>4</span><span>87</span><span>2,1 k</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (platform === 'instagram') {
+    return (
+      <div className="pv pv-light pv-instagram">
+        <div className="pv-head">
+          <span className="pv-avatar pv-avatar-ig">V</span>
+          <span className="pv-id"><strong>vous</strong></span>
+          <span className="pv-more">···</span>
+        </div>
+        {media
+          ? <div className="pv-ig-media">{media}</div>
+          : <div className="pv-ig-placeholder">Ajoutez un visuel — obligatoire sur Instagram</div>}
+        <div className="pv-ig-likes">128 J'aime</div>
+        <div className="pv-text pv-ig-caption">
+          {text ? <><strong>vous</strong> <Markdown text={text} /></> : empty}
+        </div>
+      </div>
+    );
+  }
+
+  if (platform === 'reddit') {
+    const lines = text.split('\n');
+    const rTitle = title.trim() || lines[0] || '';
+    const body = title.trim() ? text : lines.slice(1).join('\n').trim();
+    return (
+      <div className="pv pv-light pv-reddit">
+        <div className="pv-reddit-meta">r/votre-communauté · publié par u/vous · il y a 1 h</div>
+        <div className="pv-reddit-title">{rTitle || empty}</div>
+        {body && <div className="pv-text pv-reddit-body"><Markdown text={body} /></div>}
+        {media}
+        <div className="pv-actionbar pv-actionbar-reddit">
+          <span className="pv-votes">▲ 247 ▼</span><span>38 commentaires</span><span>Partager</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Autres plateformes : carte générique
+  return (
+    <div className="pe-preview-card">
+      <div className="pe-preview-head">
+        <span className="pe-preview-platform">{platformLabel(platform)}</span>
+      </div>
+      <div className="pe-preview-body">{text ? <Markdown text={text} /> : empty}</div>
+      {media}
+    </div>
+  );
+}
 
 interface EditorProps {
   post: Post | null;            // null = création
@@ -167,15 +279,23 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
   const [error,      setError]      = useState('');
   const [analysis,   setAnalysis]   = useState('');
   const [analyzing,  setAnalyzing]  = useState(false);
-  // Déclinaison multi-plateformes (à l'enregistrement)
-  const [crossPlatforms, setCrossPlatforms] = useState<Set<string>>(new Set());
-  const [crossAdapt,     setCrossAdapt]     = useState(true);
-  const toggleCross = (p: string) =>
-    setCrossPlatforms((prev) => {
-      const next = new Set(prev);
-      next.has(p) ? next.delete(p) : next.add(p);
+  // Sélection multi-plateformes ORDONNÉE : la première est la plateforme
+  // principale du post, les suivantes deviennent des exemplaires liés
+  // (groupe multi-plateformes) à l'enregistrement.
+  const [selPlatforms, setSelPlatforms] = useState<string[]>([post?.platform ?? 'linkedin']);
+  const [crossAdapt,   setCrossAdapt]   = useState(true);
+  const crossTargets = selPlatforms.slice(1);
+  const togglePlatform = (pf: string) =>
+    setSelPlatforms((prev) => {
+      const next = prev.includes(pf) ? prev.filter((x) => x !== pf) : [...prev, pf];
+      if (next.length === 0) return prev; // toujours au moins une plateforme
+      setForm((f) => ({ ...f, platform: next[0] }));
       return next;
     });
+  // Carrousel d'aperçus (un par plateforme sélectionnée)
+  const [previewIdx, setPreviewIdx] = useState(0);
+  const pvIdx = Math.min(previewIdx, selPlatforms.length - 1);
+  const pvPlatform = selPlatforms[pvIdx];
   // Mode simulé : aperçu de la prochaine occurrence de la série (rien n'est enregistré)
   const [simBusy,    setSimBusy]    = useState(false);
   const [simResult,  setSimResult]  = useState<{ title: string; content: string } | null>(null);
@@ -298,9 +418,9 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
       setError(res.error || 'Enregistrement impossible.');
       return;
     }
-    // Déclinaison vers les plateformes cochées (exemplaires liés, groupe )
-    if (crossPlatforms.size > 0) {
-      const cross = await crosspostPost(res.data.id, [...crossPlatforms], crossAdapt);
+    // Déclinaison vers les autres plateformes sélectionnées (exemplaires liés)
+    if (crossTargets.length > 0) {
+      const cross = await crosspostPost(res.data.id, crossTargets, crossAdapt);
       if (!cross.success) {
         setSaving(false);
         setError(`Post enregistré, mais déclinaison échouée : ${cross.error || 'erreur inconnue'}`);
@@ -330,26 +450,56 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             {/* ════ Colonne gauche : ce que VOUS écrivez et réglez ════ */}
             <div className="pe-col">
 
-              {/* 1. Contenu */}
+              {/* 1. Plateformes : multiselect — la première est la principale */}
+              <section className="pe-panel">
+                <h3 className="pe-panel-title">
+                  Plateformes
+                  {post?.crossPostId && <span className="form-hint-inline"> — fait partie d'un groupe multi-plateformes</span>}
+                </h3>
+                <div className="pf-select">
+                  {PLATFORMS.map((p) => {
+                    const pos = selPlatforms.indexOf(p.value);
+                    return (
+                      <button
+                        key={p.value}
+                        type="button"
+                        className={`pf-chip${pos >= 0 ? ' on' : ''}${pos === 0 ? ' primary' : ''}`}
+                        onClick={() => togglePlatform(p.value)}
+                        title={pos === 0 ? 'Plateforme principale' : pos > 0 ? 'Exemplaire lié — re-cliquez pour retirer' : 'Ajouter cette plateforme'}
+                      >
+                        <PlatformIcon platform={p.value} size={15} />
+                        {p.label}
+                        {pos === 0 && selPlatforms.length > 1 && <em>principale</em>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {crossTargets.length > 0 && (
+                  <>
+                    <label className="ai-news-toggle">
+                      <input type="checkbox" checked={crossAdapt} onChange={(e) => setCrossAdapt(e.target.checked)} />
+                      Adapter le texte aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
+                    </label>
+                    <span className="form-hint-inline">
+                      À l'enregistrement, un exemplaire indépendant est créé par plateforme (même date, même
+                      auto-publication) — chacun se publie et se mesure séparément.
+                    </span>
+                  </>
+                )}
+              </section>
+
+              {/* 2. Contenu */}
               <section className="pe-panel">
                 <h3 className="pe-panel-title">Contenu</h3>
-                <div className="post-editor-row">
-                  <label className="form-label-block">
-                    Plateforme
-                    <select value={form.platform} onChange={(e) => set('platform', e.target.value)} className="form-input">
-                      {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="form-label-block">
-                    Statut
-                    <select value={form.status} onChange={(e) => set('status', e.target.value as PostStatus)} className="form-input">
-                      <option value="idea">Idée</option>
-                      <option value="draft">Brouillon</option>
-                      <option value="scheduled">Programmé</option>
-                      <option value="published">Publié</option>
-                    </select>
-                  </label>
-                </div>
+                <label className="form-label-block">
+                  Statut
+                  <select value={form.status} onChange={(e) => set('status', e.target.value as PostStatus)} className="form-input">
+                    <option value="idea">Idée</option>
+                    <option value="draft">Brouillon</option>
+                    <option value="scheduled">Programmé</option>
+                    <option value="published">Publié</option>
+                  </select>
+                </label>
                 <label className="form-label-block">
                   Titre <span className="form-hint-inline">(usage interne)</span>
                   <input className="form-input" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="ex. Annonce nouvelle fonctionnalité" />
@@ -440,38 +590,6 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 )}
               </section>
 
-              {/* 4. Diffusion multi-plateformes */}
-              <section className="pe-panel">
-                <h3 className="pe-panel-title">
-                  Diffusion multi-plateformes
-                  {post?.crossPostId && <span className="form-hint-inline"> — fait partie d'un groupe multi-plateformes</span>}
-                </h3>
-                <div className="calendar-platforms">
-                  {PLATFORMS.filter((p) => p.value !== form.platform).map((p) => (
-                    <button
-                      key={p.value}
-                      type="button"
-                      className={`knowledge-cat${crossPlatforms.has(p.value) ? ' active' : ''}`}
-                      onClick={() => toggleCross(p.value)}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-                {crossPlatforms.size > 0 && (
-                  <>
-                    <label className="ai-news-toggle" style={{ marginTop: 8 }}>
-                      <input type="checkbox" checked={crossAdapt} onChange={(e) => setCrossAdapt(e.target.checked)} />
-                      Adapter le contenu aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
-                    </label>
-                    <span className="form-hint-inline">
-                      À l'enregistrement, un exemplaire indépendant est créé par plateforme (même date, même
-                      auto-publication) — chacun se publie et se mesure séparément.
-                    </span>
-                  </>
-                )}
-              </section>
-
               {/* 5. Mesure (posts publiés) */}
               {form.status === 'published' && (
                 <section className="pe-panel">
@@ -518,33 +636,42 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             {/* ════ Colonne droite : aperçu en direct + copilote IA ════ */}
             <div className="pe-col pe-col-right">
 
-              {/* Aperçu — se met à jour en tapant */}
+              {/* Aperçu — un rendu par plateforme sélectionnée, en carrousel */}
               <section className="pe-panel pe-preview">
-                <h3 className="pe-panel-title">Aperçu</h3>
-                <div className="pe-preview-card">
-                  <div className="pe-preview-head">
-                    <span className="pe-preview-platform">{platformLabel(form.platform)}</span>
-                    <span className="pe-preview-meta">
-                      {STATUS_META[form.status].label}
-                      {form.scheduledAt && ` · ${new Date(form.scheduledAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+                <h3 className="pe-panel-title">
+                  Aperçu
+                  <span className="pe-preview-meta" style={{ marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 }}>
+                    {STATUS_META[form.status].label}
+                    {form.scheduledAt && ` · ${new Date(form.scheduledAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}
+                  </span>
+                </h3>
+                {selPlatforms.length > 1 && (
+                  <div className="pv-nav">
+                    <button type="button" className="pv-nav-btn" onClick={() => setPreviewIdx((pvIdx - 1 + selPlatforms.length) % selPlatforms.length)}>‹</button>
+                    <span className="pv-nav-label">
+                      <PlatformIcon platform={pvPlatform} size={14} /> {platformLabel(pvPlatform)}
+                      <em>{pvIdx + 1} / {selPlatforms.length}</em>
                     </span>
+                    <button type="button" className="pv-nav-btn" onClick={() => setPreviewIdx((pvIdx + 1) % selPlatforms.length)}>›</button>
                   </div>
-                  <div className="pe-preview-body">
-                    {form.content.trim()
-                      ? <Markdown text={form.content} />
-                      : <span className="pe-preview-empty">Le post apparaîtra ici au fil de la frappe…</span>}
+                )}
+                <PlatformPreview
+                  platform={pvPlatform}
+                  title={form.title}
+                  content={form.content}
+                  mediaUrl={mediaUrl}
+                  mediaIsVideo={mediaIsVideo}
+                />
+                {pvIdx > 0 && crossAdapt && (
+                  <span className="form-hint-inline">Le texte sera adapté aux codes de {platformLabel(pvPlatform)} par l'IA à l'enregistrement.</span>
+                )}
+                {selPlatforms.length > 1 && (
+                  <div className="pv-dots">
+                    {selPlatforms.map((pf, i) => (
+                      <button key={pf} type="button" className={`pv-dot${i === pvIdx ? ' on' : ''}`} onClick={() => setPreviewIdx(i)} title={platformLabel(pf)} />
+                    ))}
                   </div>
-                  {mediaUrl && (
-                    mediaIsVideo ? (
-                      <video src={mediaUrl} className="pe-preview-media" controls loop muted playsInline />
-                    ) : (
-                      <img
-                        src={mediaUrl} alt="média du post" className="pe-preview-media"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    )
-                  )}
-                </div>
+                )}
               </section>
 
               {/* Rédaction par l'IA */}
@@ -705,8 +832,8 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving
-                ? (crossPlatforms.size > 0 ? '⏳ Enregistrement + déclinaison…' : '⏳ Enregistrement…')
-                : crossPlatforms.size > 0 ? `Enregistrer + décliner (${crossPlatforms.size})` : 'Enregistrer'}
+                ? (crossTargets.length > 0 ? '⏳ Enregistrement + déclinaison…' : '⏳ Enregistrement…')
+                : crossTargets.length > 0 ? `Enregistrer sur ${selPlatforms.length} plateformes` : 'Enregistrer'}
             </button>
           </div>
         </form>

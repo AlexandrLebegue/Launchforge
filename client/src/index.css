@@ -4620,3 +4620,153 @@ video.md-media { background: #000; }
   .pe-col { overflow: visible; padding-right: 0; }
   .pe-col-right { border-left: none; padding-left: 0; }
 }
+
+/* ============================================================
+   PLATEFORMES — badges de marques, multiselect, aperçus skinnés
+   ============================================================ */
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+}
+
+/* Multiselect de plateformes */
+.pf-select { display: flex; flex-wrap: wrap; gap: 7px; }
+.pf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  transition: var(--transition-fast);
+}
+.pf-chip:hover { border-color: rgba(255, 107, 53, 0.4); color: var(--color-text); }
+.pf-chip.on {
+  color: var(--color-text);
+  background: var(--color-primary-light);
+  border-color: rgba(255, 107, 53, 0.45);
+}
+.pf-chip.primary { border-color: var(--color-primary); }
+.pf-chip em {
+  font-style: normal;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-primary);
+}
+
+/* Carrousel d'aperçus */
+.pv-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pv-nav-btn {
+  width: 26px; height: 26px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+.pv-nav-btn:hover { color: var(--color-text); border-color: rgba(255,107,53,0.4); }
+.pv-nav-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.pv-nav-label em { font-style: normal; font-weight: 500; color: var(--color-text-subtle); font-size: 0.72rem; }
+.pv-dots { display: flex; justify-content: center; gap: 6px; }
+.pv-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-surface-3);
+  padding: 0;
+}
+.pv-dot.on { background: var(--color-primary); }
+
+/* Base des aperçus skinnés */
+.pv { border-radius: 6px; overflow: hidden; font-family: var(--font-body); }
+.pv-light { background: #fff; color: #1a1d21; border: 1px solid #e2e5e9; }
+.pv-head { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px 8px; }
+.pv-avatar {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.pv-id { display: flex; flex-direction: column; line-height: 1.3; font-size: 0.78rem; min-width: 0; }
+.pv-id strong { font-size: 0.82rem; }
+.pv-id em { font-style: normal; opacity: 0.62; font-size: 0.7rem; }
+.pv-id-inline { flex-direction: row; gap: 5px; align-items: baseline; }
+.pv-more { margin-left: auto; opacity: 0.55; font-weight: 700; }
+.pv-text {
+  padding: 0 13px 10px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.pv-light .pv-text a { color: #0A66C2; }
+.pv-media { display: block; width: 100%; max-height: 240px; object-fit: cover; }
+.pv-actionbar {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.65;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+
+/* X / Twitter — sombre */
+.pv-x { background: #000; color: #e7e9ea; border: 1px solid #2f3336; }
+.pv-x .pv-id em { color: #71767b; opacity: 1; }
+.pv-media-rounded { padding: 0 13px 10px; }
+.pv-media-rounded .pv-media { border-radius: 12px; border: 1px solid #2f3336; }
+.pv-actionbar-x { border-top: none; color: #71767b; opacity: 1; padding-top: 2px; }
+
+/* Instagram */
+.pv-avatar-ig {
+  width: 28px; height: 28px; font-size: 0.75rem;
+  background: linear-gradient(45deg, #f09433, #dc2743 50%, #bc1888);
+}
+.pv-instagram .pv-head { align-items: center; padding-bottom: 9px; }
+.pv-ig-media .pv-media { max-height: none; aspect-ratio: 1 / 1; }
+.pv-ig-placeholder {
+  aspect-ratio: 1 / 1;
+  display: flex; align-items: center; justify-content: center;
+  background: #fafafa; color: #8e8e8e;
+  font-size: 0.78rem; text-align: center; padding: 20px;
+  border-top: 1px solid #efefef; border-bottom: 1px solid #efefef;
+}
+.pv-ig-likes { padding: 9px 13px 2px; font-size: 0.78rem; font-weight: 700; }
+.pv-ig-caption { padding-top: 2px; }
+.pv-ig-caption strong { margin-right: 4px; }
+.pv-ig-caption p { display: inline; }
+
+/* Reddit */
+.pv-reddit { background: #fff; }
+.pv-reddit-meta { padding: 10px 13px 4px; font-size: 0.68rem; color: #576f76; }
+.pv-reddit-title { padding: 0 13px 6px; font-size: 0.92rem; font-weight: 700; line-height: 1.35; }
+.pv-reddit-body { font-size: 0.78rem; color: #333; }
+.pv-actionbar-reddit { justify-content: flex-start; gap: 16px; font-size: 0.7rem; }
+.pv-votes { font-weight: 800; }
