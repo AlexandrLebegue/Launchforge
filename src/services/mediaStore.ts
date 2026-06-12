@@ -5,6 +5,7 @@
  */
 
 import fs from 'fs';
+import { pipeline, Transform } from 'stream';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
@@ -21,6 +22,46 @@ export function saveMediaFile(buffer: Buffer, ext: string): { fileName: string; 
   const fileName = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.${ext.replace(/^\./, '')}`;
   fs.writeFileSync(path.join(uploadsDir(), fileName), buffer);
   return { fileName, url: `/uploads/${fileName}` };
+}
+
+/**
+ * Écrit un média en STREAMING vers le disque (mémoire constante, quelle que
+ * soit la taille — indispensable pour les vidéos sur une petite machine).
+ * Rejette TOO_LARGE au-delà de maxBytes et nettoie le fichier partiel.
+ */
+export function saveMediaStream(
+  source: NodeJS.ReadableStream,
+  ext: string,
+  maxBytes: number,
+): Promise<{ fileName: string; url: string; bytes: number }> {
+  return new Promise((resolve, reject) => {
+    const fileName = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.${ext.replace(/^\./, '')}`;
+    const full = path.join(uploadsDir(), fileName);
+    const out = fs.createWriteStream(full);
+    let bytes = 0;
+
+    const limiter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        bytes += chunk.length;
+        if (bytes > maxBytes) cb(new Error('TOO_LARGE'));
+        else cb(null, chunk);
+      },
+    });
+
+    pipeline(source, limiter, out, (err) => {
+      if (err) {
+        fs.unlink(full, () => { /* fichier partiel nettoyé */ });
+        reject(err);
+        return;
+      }
+      resolve({ fileName, url: `/uploads/${fileName}`, bytes });
+    });
+  });
+}
+
+/** Supprime un média par son nom de fichier (best-effort) */
+export function deleteMediaFile(fileName: string): void {
+  fs.unlink(path.join(uploadsDir(), path.basename(fileName)), () => { /* best-effort */ });
 }
 
 /** Supprime les médias plus vieux que `days` jours. Retourne le nombre supprimé. */

@@ -4,9 +4,8 @@
  */
 
 import { Router, Request, Response } from 'express';
-import express from 'express';
 import { generateImage, uploadPublicImage, isImageGenConfigured } from '../services/imageGen';
-import { saveMediaFile } from '../services/mediaStore';
+import { saveMediaStream, deleteMediaFile } from '../services/mediaStore';
 import { storage } from '../services/storage';
 import { generateCampaignReport, computePerformanceSeries } from '../services/analytics';
 import { requireAuth } from '../middleware/auth';
@@ -205,39 +204,44 @@ router.post('/image/upload', async (req: Request, res: Response) => {
 });
 
 // ── POST /api/content/video/upload — héberge une vidéo de l'utilisateur ─────
-// Corps binaire brut (pas de base64 : une vidéo de 100 Mo gonflerait de 33 %).
-// Stockée dans data/uploads (servie sur /uploads, purge à 90 jours comme les
-// médias générés). En production, APP_URL rend l'URL publique pour la
-// publication sur les plateformes.
+// Corps binaire STREAMÉ vers le disque : mémoire constante quelle que soit la
+// taille (une petite machine 1-2 Go encaisse des uploads de 100 Mo). Stockée
+// dans data/uploads (servie sur /uploads, purge à 90 jours). En production,
+// APP_URL rend l'URL publique pour la publication sur les plateformes.
 const VIDEO_TYPES: Record<string, string> = {
   'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
 };
-router.post(
-  '/video/upload',
-  express.raw({ type: Object.keys(VIDEO_TYPES), limit: '120mb' }),
-  (req: Request, res: Response) => {
-    const ext = VIDEO_TYPES[String(req.headers['content-type'] || '').split(';')[0]];
-    if (!ext || !Buffer.isBuffer(req.body) || req.body.length < 1000) {
-      return res.status(400).json({
-        success: false,
-        error: 'Envoyez la vidéo en corps binaire (Content-Type video/mp4, video/webm ou video/quicktime)',
-      });
+const VIDEO_MAX_BYTES = 120 * 1024 * 1024;
+
+router.post('/video/upload', async (req: Request, res: Response) => {
+  const ext = VIDEO_TYPES[String(req.headers['content-type'] || '').split(';')[0]];
+  if (!ext) {
+    return res.status(400).json({
+      success: false,
+      error: 'Envoyez la vidéo en corps binaire (Content-Type video/mp4, video/webm ou video/quicktime)',
+    });
+  }
+  try {
+    const { fileName, url, bytes } = await saveMediaStream(req, ext, VIDEO_MAX_BYTES);
+    if (bytes < 1000) {
+      deleteMediaFile(fileName);
+      return res.status(400).json({ success: false, error: 'Fichier vidéo vide ou corrompu' });
     }
-    try {
-      const { url } = saveMediaFile(req.body, ext);
-      const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
-      const publicUrl = appUrl ? `${appUrl}${url}` : null;
-      const finalUrl = publicUrl ?? url;
-      const postId = typeof req.query.postId === 'string' ? req.query.postId : null;
-      if (postId) {
-        const post = storage.getPostById(postId);
-        if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: finalUrl });
-      }
-      res.json({ success: true, data: { url: finalUrl, publicUrl } });
-    } catch (err) {
-      res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Enregistrement échoué' });
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    const publicUrl = appUrl ? `${appUrl}${url}` : null;
+    const finalUrl = publicUrl ?? url;
+    const postId = typeof req.query.postId === 'string' ? req.query.postId : null;
+    if (postId) {
+      const post = storage.getPostById(postId);
+      if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: finalUrl });
     }
-  },
-);
+    res.json({ success: true, data: { url: finalUrl, publicUrl } });
+  } catch (err) {
+    if (err instanceof Error && err.message === 'TOO_LARGE') {
+      return res.status(413).json({ success: false, error: 'Vidéo trop lourde (120 Mo max)' });
+    }
+    res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Enregistrement échoué' });
+  }
+});
 
 export default router;

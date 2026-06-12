@@ -218,6 +218,17 @@ describe('Upload de vidéo (média de post)', () => {
     expect(target.imageUrl).toBe(res.body.data.url);
   });
 
+  it('streame vers le disque avec plafond : TOO_LARGE nettoie le fichier partiel', async () => {
+    const { saveMediaStream } = await import('../src/services/mediaStore');
+    const { Readable } = await import('stream');
+    const fs = await import('fs');
+    const before = fs.readdirSync(process.env.UPLOADS_DIR ?? 'data/uploads').length;
+    await expect(
+      saveMediaStream(Readable.from([Buffer.alloc(2048, 1)]), 'mp4', 1024),
+    ).rejects.toThrow('TOO_LARGE');
+    expect(fs.readdirSync(process.env.UPLOADS_DIR ?? 'data/uploads').length).toBe(before);
+  });
+
   it('refuse un type non vidéo ou un corps vide', async () => {
     const wrongType = await request(app)
       .post('/api/content/video/upload').set(auth())
