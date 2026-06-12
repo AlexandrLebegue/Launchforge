@@ -117,7 +117,11 @@ export function PrivacyPage() {
       <h2>Vos droits</h2>
       <p>
         Vous disposez des droits d'accès, de rectification, d'effacement, de portabilité et
-        d'opposition sur vos données. Écrivez à{' '}
+        d'opposition sur vos données. <strong>L'effacement (art. 17) et la portabilité
+        (art. 20) sont en libre-service</strong> : vue Configuration → « Vos données (RGPD) » —
+        téléchargez l'intégralité de vos données en JSON, ou supprimez définitivement votre
+        compte et tout ce qui s'y rattache (y compris les comptes connectés via Composio),
+        avec effet immédiat. Pour les autres demandes, écrivez à{' '}
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> — réponse sous 30 jours.
         Vous pouvez aussi saisir la CNIL (cnil.fr).
       </p>

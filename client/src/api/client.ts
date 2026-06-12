@@ -149,6 +149,20 @@ export async function getMe(): Promise<ApiResponse<User>> {
   return request('/auth/me');
 }
 
+/** RGPD : télécharge toutes ses données (JSON) */
+export async function exportMyData(): Promise<Blob | null> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/auth/export`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  return res.ok ? res.blob() : null;
+}
+
+/** RGPD : suppression définitive du compte et de toutes les données */
+export async function deleteAccount(password: string): Promise<ApiResponse<{ deleted: boolean }>> {
+  return request('/auth/account', { method: 'DELETE', body: JSON.stringify({ password }) });
+}
+
 /** Demande de réinitialisation — réponse toujours générique côté serveur */
 export async function forgotPassword(email: string): Promise<ApiResponse<{ message: string }>> {
   return request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });

@@ -132,6 +132,23 @@ export async function disconnectToolkit(lfUserId: string, toolkit: string): Prom
 }
 
 /**
+ * RGPD : supprime chez Composio TOUS les comptes connectés de l'utilisateur.
+ * Uniquement pour une identité PROPRE (lf-<id>) — jamais pour l'identité
+ * legacy de l'env, partagée avec la boîte système de l'application.
+ */
+export async function disconnectAllToolkits(lfUserId: string): Promise<number> {
+  const ownIdentity = storage.getComposioUserId(lfUserId);
+  if (!ownIdentity || !process.env.COMPOSIO_API_KEY) return 0;
+
+  const list = await composioApi(`/connected_accounts?limit=100&user_ids=${encodeURIComponent(ownIdentity)}`);
+  const targets = (list?.items || []).filter((a: any) => a?.id && a?.user_id === ownIdentity);
+  for (const account of targets) {
+    await composioApi(`/connected_accounts/${account.id}`, { method: 'DELETE' }).catch(() => { /* best-effort */ });
+  }
+  return targets.length;
+}
+
+/**
  * Prépare la connexion d'un compte POUR un utilisateur LaunchForge donné et
  * retourne le lien d'autorisation OAuth à ouvrir dans son navigateur.
  */

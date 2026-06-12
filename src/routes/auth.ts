@@ -14,6 +14,7 @@ const loginLimiter    = authRateLimit({ scope: 'login',    windowMs: 10 * 60_000
 const registerLimiter = authRateLimit({ scope: 'register', windowMs: 60 * 60_000, max: 20 });
 const forgotLimiter   = authRateLimit({ scope: 'forgot',   windowMs: 15 * 60_000, max: 5 });
 const resetLimiter    = authRateLimit({ scope: 'reset',    windowMs: 15 * 60_000, max: 10 });
+const deleteLimiter   = authRateLimit({ scope: 'delete',   windowMs: 15 * 60_000, max: 5 });
 
 router.post('/register', registerLimiter, (req: Request, res: Response) => {
   try {
@@ -176,6 +177,52 @@ router.post('/reset-password', resetLimiter, (req: Request, res: Response) => {
   const authToken = signToken({ userId: user.id, email: user.email });
   const userData = storage.getUserById(user.id)!;
   res.json({ success: true, data: { user: userData, token: authToken } });
+});
+
+// ── GET /api/auth/export — RGPD art. 20 (portabilité) ───────────────────────
+// Toutes les données de l'utilisateur en un JSON téléchargeable.
+router.get('/export', requireAuth, (req: Request, res: Response) => {
+  const data = storage.exportUserData(req.user!.userId);
+  res.setHeader('Content-Disposition', 'attachment; filename="launchforge-mes-donnees.json"');
+  res.json(data);
+});
+
+// ── DELETE /api/auth/account — RGPD art. 17 (droit à l'effacement) ──────────
+// Suppression DÉFINITIVE de tout : compte, projets, posts, contacts,
+// connaissances, médias locaux, liaisons Telegram, comptes Composio (identité
+// propre uniquement). Re-authentification par mot de passe exigée.
+router.delete('/account', deleteLimiter, requireAuth, async (req: Request, res: Response) => {
+  const { password } = req.body as { password?: string };
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ success: false, error: 'Confirmez votre mot de passe pour supprimer le compte.' });
+  }
+  const me = storage.getUserById(req.user!.userId);
+  if (!me) return res.status(404).json({ success: false, error: 'Compte introuvable.' });
+  const withPassword = storage.getUserByEmail(me.email);
+  if (!withPassword || !verifyPassword(password, withPassword.password)) {
+    return res.status(401).json({ success: false, error: 'Mot de passe incorrect.' });
+  }
+
+  // 1. Services externes, best-effort (l'effacement local n'attend pas leur succès)
+  try {
+    const { removeUserBot } = await import('../services/telegramBot');
+    removeUserBot(me.id); // arrête le poller du bot personnel
+  } catch { /* best-effort */ }
+  let composioRemoved = 0;
+  try {
+    const { disconnectAllToolkits } = await import('../services/composioConnect');
+    composioRemoved = await disconnectAllToolkits(me.id); // identité propre uniquement
+  } catch { /* best-effort */ }
+
+  // 2. Effacement transactionnel de toutes les données + médias locaux
+  const mediaFiles = storage.deleteUserData(me.id);
+  try {
+    const { deleteMediaFile } = await import('../services/mediaStore');
+    for (const f of mediaFiles) deleteMediaFile(f);
+  } catch { /* best-effort */ }
+
+  console.log(`🗑️  RGPD : compte ${me.email} supprimé (${mediaFiles.length} média(s), ${composioRemoved} compte(s) Composio)`);
+  res.json({ success: true, data: { deleted: true } });
 });
 
 router.get('/me', requireAuth, (req: Request, res: Response) => {

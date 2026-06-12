@@ -62,6 +62,54 @@ export class Storage {
     getDb().prepare(`UPDATE users SET password = ? WHERE id = ?`).run(hashedPassword, userId);
   }
 
+  // ── RGPD : portabilité (art. 20) et effacement (art. 17) ─────────────────
+
+  /** Toutes les données de l'utilisateur, prêtes à télécharger (sans secrets) */
+  exportUserData(userId: string): Record<string, unknown> {
+    const db = getDb();
+    const all = (sql: string) => db.prepare(sql).all(userId);
+    return {
+      exportedAt: new Date().toISOString(),
+      user: this.getUserById(userId) ?? null,
+      plans: all(`SELECT * FROM plans WHERE userId = ?`),
+      posts: all(`SELECT * FROM posts WHERE userId = ?`),
+      knowledge: all(`SELECT * FROM knowledge WHERE userId = ?`),
+      contacts: all(`SELECT * FROM contacts WHERE userId = ?`),
+      agents: all(`SELECT id, name, platform, approval_mode, status, lastRunAt, createdAt FROM agents WHERE userId = ?`),
+      agentRuns: all(`SELECT r.* FROM agent_runs r JOIN agents a ON a.id = r.agentId WHERE a.userId = ?`),
+      decks: all(`SELECT * FROM decks WHERE userId = ?`),
+      onboardingSessions: all(`SELECT * FROM onboarding_sessions WHERE userId = ?`),
+      reminders: all(`SELECT * FROM reminders WHERE userId = ?`),
+      telegramLinks: all(`SELECT chatId, createdAt FROM telegram_links WHERE userId = ?`),
+      metricHistory: all(`SELECT * FROM metric_history WHERE userId = ?`),
+      feedback: all(`SELECT * FROM feedback WHERE userId = ?`),
+    };
+  }
+
+  /**
+   * Effacement COMPLET et transactionnel de toutes les données de
+   * l'utilisateur. Retourne les noms des fichiers médias locaux (/uploads)
+   * que ses posts référençaient, à supprimer du disque par l'appelant.
+   */
+  deleteUserData(userId: string): string[] {
+    const db = getDb();
+    const mediaFiles = (db.prepare(`SELECT imageUrl FROM posts WHERE userId = ? AND imageUrl LIKE '%/uploads/%'`)
+      .all(userId) as { imageUrl: string }[])
+      .map((r) => r.imageUrl.match(/\/uploads\/([\w.-]+)/)?.[1])
+      .filter((f): f is string => Boolean(f));
+
+    db.transaction(() => {
+      db.prepare(`DELETE FROM agent_runs WHERE agentId IN (SELECT id FROM agents WHERE userId = ?)`).run(userId);
+      for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'contacts',
+                           'telegram_links', 'reminders', 'decks', 'onboarding_sessions', 'plans']) {
+        db.prepare(`DELETE FROM ${table} WHERE userId = ?`).run(userId);
+      }
+      db.prepare(`DELETE FROM users WHERE id = ?`).run(userId);
+    })();
+
+    return [...new Set(mediaFiles)];
+  }
+
   // ── Réglages multi-utilisateur (identité Composio, bot Telegram) ─────────
 
   setComposioUserId(userId: string, composioUserId: string): void {
