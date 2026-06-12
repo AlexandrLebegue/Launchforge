@@ -477,6 +477,11 @@ export async function getApprovals(): Promise<ApiResponse<ApprovalItem[]>> {
   return request('/approvals');
 }
 
+/** Historique des validations : runs terminés avec le résultat exact de l'envoi */
+export async function getApprovalHistory(): Promise<ApiResponse<ApprovalItem[]>> {
+  return request('/approvals/history');
+}
+
 export async function approveRun(
   runId: string,
   content?: string

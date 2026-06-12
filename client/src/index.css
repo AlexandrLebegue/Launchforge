@@ -5153,3 +5153,57 @@ video.md-media { background: #000; }
 .publish-result-text { flex: 1; color: var(--color-text); font-weight: 500; }
 .publish-result a { font-weight: 700; white-space: nowrap; }
 .pe-save-btn { border: 1px solid var(--color-border); }
+
+/* Historique des validations (attestation des envois) */
+.history-section { margin-top: 36px; }
+.history-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+}
+.history-item summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  font-size: 0.84rem;
+}
+.history-item summary::-webkit-details-marker { display: none; }
+.history-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 3px;
+}
+.history-badge.done     { background: rgba(52, 211, 153, 0.12); color: var(--color-success); }
+.history-badge.failed   { background: rgba(248, 113, 113, 0.12); color: var(--color-error); }
+.history-badge.rejected { background: rgba(163, 156, 147, 0.14); color: var(--color-text-muted); }
+.history-what { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.history-what strong { font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-what em { font-style: normal; font-size: 0.72rem; color: var(--color-text-subtle); }
+.history-item summary a { font-size: 0.76rem; font-weight: 700; white-space: nowrap; }
+.history-date { font-size: 0.72rem; color: var(--color-text-subtle); white-space: nowrap; }
+.history-result {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--color-border-light);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}

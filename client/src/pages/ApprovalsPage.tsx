@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardCheck } from 'lucide-react';
-import { getApprovals, approveRun, rejectRun, ApprovalItem } from '../api/client';
+import { getApprovals, getApprovalHistory, approveRun, rejectRun, ApprovalItem } from '../api/client';
 
 const PLATFORM_ICONS: Record<string, string> = {
   reddit: '', twitter: '', linkedin: '', instagram: '',
@@ -17,11 +17,15 @@ interface CardState {
 
 export default function ApprovalsPage() {
   const [items,    setItems]    = useState<ApprovalItem[]>([]);
+  const [history,  setHistory]  = useState<ApprovalItem[]>([]);
   const [states,   setStates]   = useState<Record<string, CardState>>({});
   const [loading,  setLoading]  = useState(true);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    getApprovalHistory().then((r) => {
+      if (r.success && r.data) setHistory(r.data);
+    });
     const res = await getApprovals();
     if (res.success && res.data) {
       setItems(res.data);
@@ -154,6 +158,43 @@ export default function ApprovalsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* ── Historique : l'attestation de ce qui est réellement parti ── */}
+      {history.length > 0 && (
+        <div className="history-section">
+          <h2 className="history-title">Historique des envois</h2>
+          <p className="form-hint" style={{ marginBottom: 12 }}>
+            Le résultat exact renvoyé par la plateforme pour chaque contenu validé —
+            lien publié, raison d'échec ou motif de rejet.
+          </p>
+          <div className="history-list">
+            {history.map((run) => {
+              const url = run.result?.match(/https?:\/\/[^\s)\]»"']+/)?.[0];
+              const when = new Date(run.completedAt ?? run.startedAt).toLocaleString('fr-FR', {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+              });
+              return (
+                <details key={run.id} className={`history-item ${run.status}`}>
+                  <summary>
+                    <span className={`history-badge ${run.status}`}>
+                      {run.status === 'done' ? '✓ Envoyé' : run.status === 'failed' ? '✗ Échec' : 'Rejeté'}
+                    </span>
+                    <span className="history-what">
+                      <strong>{run.cardTitle}</strong>
+                      <em>{run.agentName} · {run.agentPlatform}</em>
+                    </span>
+                    {url && run.status === 'done' && (
+                      <a href={url} target="_blank" rel="noopener noreferrer"
+                         onClick={(e) => e.stopPropagation()}>Voir le post ↗</a>
+                    )}
+                    <span className="history-date">{when}</span>
+                  </summary>
+                  <pre className="history-result">{run.result || '(aucun détail)'}</pre>
+                </details>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

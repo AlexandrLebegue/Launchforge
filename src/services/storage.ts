@@ -974,10 +974,37 @@ export class Storage {
         `SELECT r.*, a.name AS agentName, a.platform AS agentPlatform
          FROM agent_runs r
          JOIN agents a ON a.id = r.agentId
-         WHERE a.userId = ? AND r.planId IS ? AND r.status = 'awaiting_approval'
+         WHERE a.userId = ?
+           AND (r.planId IS ? OR (? IS NULL AND r.planId = ''))
+           AND r.status = 'awaiting_approval'
          ORDER BY r.startedAt DESC`
       )
-      .all(userId, planId) as any[];
+      .all(userId, planId, planId) as any[];
+    return rows.map((r) => ({
+      ...this.rowToRun(r),
+      agentName: r.agentName,
+      agentPlatform: r.agentPlatform,
+    }));
+  }
+
+  /**
+   * Historique des validations du projet : runs terminés (envoyés, échoués,
+   * rejetés) avec le résultat exact de la publication — l'attestation de ce
+   * qui est réellement parti (ou pas).
+   */
+  getRunHistoryByPlan(userId: string, planId: string | null, limit = 30): (AgentRun & { agentName: string; agentPlatform: string })[] {
+    const rows = getDb()
+      .prepare(
+        `SELECT r.*, a.name AS agentName, a.platform AS agentPlatform
+         FROM agent_runs r
+         JOIN agents a ON a.id = r.agentId
+         WHERE a.userId = ?
+           AND (r.planId IS ? OR (? IS NULL AND r.planId = ''))
+           AND r.status IN ('done', 'failed', 'rejected')
+         ORDER BY COALESCE(r.completedAt, r.startedAt) DESC
+         LIMIT ?`
+      )
+      .all(userId, planId, planId, limit) as any[];
     return rows.map((r) => ({
       ...this.rowToRun(r),
       agentName: r.agentName,

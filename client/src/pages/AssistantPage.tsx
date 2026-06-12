@@ -6,17 +6,17 @@ const STORAGE_KEY = 'lf_assistant_chat';
 
 const WELCOME: PostChatMessage = {
   role: 'assistant',
-  text: 'Je suis ton **assistant LaunchForge** — le même que sur Telegram, avec tous les outils du projet.\n\nJe peux consulter l\'état de tes activités, rédiger et publier des posts, lire et envoyer des emails, gérer ton agenda Google Calendar, chercher sur le web et valider les contenus en attente. Que veut-on faire ?',
+  text: '👋 Je suis ton **assistant LaunchForge** — le même que sur Telegram, avec tous les outils du projet.\n\nJe peux consulter l\'état de tes activités, rédiger et publier des posts, lire et envoyer des emails, gérer ton agenda Google Calendar, chercher sur le web et valider les contenus en attente. Que veut-on faire ?',
 };
 
 /** Suggestions affichées au démarrage et sous le fil — groupées par usage */
-const SUGGESTIONS: { label: string; prompt: string }[] = [
-  { label: 'Où en est-on ?',          prompt: 'Fais-moi un point complet sur le projet : posts à venir, validations, leads.' },
-  { label: 'Rédiger un post',         prompt: 'Rédige un post LinkedIn sur notre actualité, en t\'appuyant sur une actu récente du secteur.' },
-  { label: 'Lire mes mails',          prompt: 'Lis mes derniers emails et dis-moi s\'il y a quelque chose d\'important.' },
-  { label: 'Mon agenda',              prompt: 'Qu\'est-ce que j\'ai dans mon agenda cette semaine ?' },
-  { label: 'Contenus à valider',      prompt: 'Montre-moi les contenus en attente de validation.' },
-  { label: 'Programmer un rappel',    prompt: 'Rappelle-moi demain à 9h de vérifier les métriques des posts.' },
+const SUGGESTIONS: { icon: string; label: string; prompt: string }[] = [
+  { icon: '📊', label: 'Où en est-on ?',          prompt: 'Fais-moi un point complet sur le projet : posts à venir, validations, leads.' },
+  { icon: '✍️', label: 'Rédiger un post',         prompt: 'Rédige un post LinkedIn sur notre actualité, en t\'appuyant sur une actu récente du secteur.' },
+  { icon: '📬', label: 'Lire mes mails',          prompt: 'Lis mes derniers emails et dis-moi s\'il y a quelque chose d\'important.' },
+  { icon: '🗓️', label: 'Mon agenda',              prompt: 'Qu\'est-ce que j\'ai dans mon agenda cette semaine ?' },
+  { icon: '✅', label: 'Contenus à valider',      prompt: 'Montre-moi les contenus en attente de validation.' },
+  { icon: '⏰', label: 'Programmer un rappel',    prompt: 'Rappelle-moi demain à 9h de vérifier les métriques des posts.' },
 ];
 
 
@@ -166,6 +166,7 @@ export default function AssistantPage() {
           <div className="assistant-suggestions">
             {SUGGESTIONS.map((s) => (
               <button key={s.label} className="assistant-suggestion" onClick={() => send(s.prompt)}>
+                <span className="assistant-suggestion-icon">{s.icon}</span>
                 <span>{s.label}</span>
               </button>
             ))}

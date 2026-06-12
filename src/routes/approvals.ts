@@ -40,6 +40,15 @@ router.get('/', (req: Request, res: Response) => {
   res.json({ success: true, data: items });
 });
 
+// ── GET /api/approvals/history — attestation des envois passés ───────────────
+// Runs terminés du projet avec leur résultat exact (lien publié, raison
+// d'échec, motif de rejet) — l'utilisateur n'a plus à faire confiance.
+router.get('/history', (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const items = storage.getRunHistoryByPlan(userId, storage.getActivePlanId(userId));
+  res.json({ success: true, data: items });
+});
+
 // ── POST /api/approvals/:runId/approve ───────────────────────────────────────
 // Valide le contenu (éventuellement édité par l'utilisateur) → publication
 router.post('/:runId/approve', async (req: Request, res: Response) => {

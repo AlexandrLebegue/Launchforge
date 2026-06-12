@@ -104,7 +104,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
       <div className="assistant-overlay" onClick={onClose} />
       <aside className="assistant-drawer">
         <div className="assistant-header">
-          <span className="assistant-title">Assistant de création</span>
+          <span className="assistant-title">💬 Assistant de création</span>
           <span className="form-hint-inline">cherche sur le web · enregistre dans le Hub</span>
           <button className="btn btn-ghost btn-sm" onClick={handleReset} title="Nouvelle conversation">↺</button>
           <button className="modal-close" onClick={onClose}>✕</button>
