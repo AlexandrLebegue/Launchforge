@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
-import { publishDirect, ToolExecutor } from '../src/services/composioDirect';
+import { publishDirect, sendEmailDirect, ToolExecutor } from '../src/services/composioDirect';
 import app from '../src/app';
 
 let userId: string;
@@ -121,6 +121,27 @@ describe('publishDirect — YouTube', () => {
     const { exec } = recorder({});
     const out = await publishDirect(userId, 'youtube', 'Texte', 'https://cdn.dev/image.png', '', exec);
     expect(out.result).toMatch(/^ECHEC:/);
+  });
+});
+
+describe('sendEmailDirect — Gmail', () => {
+  it('mappe destinataire/objet/corps sur GMAIL_SEND_EMAIL (boîte authentifiée)', async () => {
+    const { calls, exec } = recorder({ GMAIL_SEND_EMAIL: { id: 'msg-1' } });
+    const out = await sendEmailDirect(userId, 'lead@exemple.fr', 'Suite à votre commentaire', 'Bonjour…', exec);
+    expect(out.handled).toBe(true);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toEqual({
+      recipient_email: 'lead@exemple.fr',
+      subject: 'Suite à votre commentaire',
+      body: 'Bonjour…',
+      user_id: 'me',
+    });
+  });
+
+  it('rend la main à l\'opérateur IA si Gmail échoue (boîte Outlook, compte absent…)', async () => {
+    const { exec } = recorder({ GMAIL_SEND_EMAIL: new Error('No connected account found for gmail') });
+    const out = await sendEmailDirect(userId, 'lead@exemple.fr', 'Objet', 'Corps', exec);
+    expect(out.handled).toBe(false);
   });
 });
 

@@ -200,6 +200,14 @@ export async function sendEmailViaComposio(
   subject: string,
   body: string,
 ): Promise<string> {
+  // Voie directe (API Composio, sans appel modèle) : Gmail au schéma vérifié.
+  // Échec ou boîte non-Gmail → l'opérateur IA cherche le bon outil mail (MCP).
+  if (process.env.COMPOSIO_API_KEY) {
+    const { sendEmailDirect } = await import('./composioDirect');
+    const direct = await sendEmailDirect(userId, to, subject, body);
+    if (direct.handled) return direct.result!;
+  }
+
   const result = await runMcpTask(
     userId,
     MAIL_KEYWORDS,

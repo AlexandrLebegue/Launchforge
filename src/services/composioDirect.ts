@@ -58,6 +58,35 @@ const firstLine = (text: string, max = 95) =>
 const hashtags = (text: string) =>
   [...text.matchAll(/#([\p{L}0-9_]{2,30})/gu)].map((m) => m[1]).slice(0, 10);
 
+/**
+ * Envoi d'email DIRECT via GMAIL_SEND_EMAIL (schéma vérifié : recipient_email,
+ * subject, body, user_id='me'). Toute erreur rend la main à l'opérateur IA
+ * (handled=false) : contrairement à la publication, le repli a du sens ici —
+ * la boîte de l'utilisateur peut être Outlook ou autre, que l'opérateur MCP
+ * sait trouver.
+ */
+export async function sendEmailDirect(
+  userId: string,
+  to: string,
+  subject: string,
+  body: string,
+  exec: ToolExecutor = executeComposioTool,
+): Promise<DirectPublishResult> {
+  const uid = composioUserIdFor(userId);
+  if (!uid) return { handled: false };
+  try {
+    await exec(uid, 'GMAIL_SEND_EMAIL', {
+      recipient_email: to,
+      subject,
+      body,
+      user_id: 'me',
+    });
+    return { handled: true, result: `OK: email envoyé à ${to}` };
+  } catch {
+    return { handled: false }; // boîte non-Gmail, compte non connecté… → opérateur IA
+  }
+}
+
 export interface DirectPublishResult {
   /** false = pas de stratégie directe pour cette plateforme → opérateur IA */
   handled: boolean;
