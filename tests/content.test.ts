@@ -200,6 +200,44 @@ describe('Connexion de comptes (Configuration)', () => {
   });
 });
 
+describe('Publication immédiate (publish-now)', () => {
+  it('503 sans Composio, 400 si déjà publié', async () => {
+    delete process.env.COMPOSIO_MCP_URL;
+    delete process.env.COMPOSIO_API_KEY;
+    const draft = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'linkedin', title: 'À publier', content: 'Contenu',
+    });
+    const res = await request(app).post(`/api/posts/${draft.body.data.id}/publish-now`).set(auth());
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
+
+    const published = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'linkedin', title: 'Déjà fait', status: 'published',
+    });
+    const dup = await request(app).post(`/api/posts/${published.body.data.id}/publish-now`).set(auth());
+    expect(dup.status).toBe(400);
+  });
+
+  it('un ECHEC est renvoyé en 502 avec la raison, enregistrée sur le post', async () => {
+    // Instagram sans média : la garde ECHEC se déclenche AVANT tout appel réseau
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/composio/server/fake?user_id=test';
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    const insta = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'instagram', title: 'Sans image', content: 'Texte seul',
+    });
+    const res = await request(app).post(`/api/posts/${insta.body.data.id}/publish-now`).set(auth());
+    delete process.env.COMPOSIO_MCP_URL;
+    delete process.env.OPENROUTER_API_KEY;
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain('Instagram exige une image');
+    const { storage } = await import('../src/services/storage');
+    const fresh = storage.getPostById(insta.body.data.id)!;
+    expect(fresh.status).not.toBe('published');      // jamais marqué publié sur échec
+    expect(fresh.publishError).toContain('Instagram'); // raison visible dans le Hub
+  });
+});
+
 describe('Upload de vidéo (média de post)', () => {
   it('enregistre une vidéo envoyée en binaire et peut l\'attacher à un post', async () => {
     const post = await request(app).post('/api/posts').set(auth()).send({ platform: 'tiktok', title: 'Vidéo démo' });

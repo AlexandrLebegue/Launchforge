@@ -562,6 +562,13 @@ export async function deletePost(id: string): Promise<ApiResponse<null>> {
   return request(`/posts/${id}`, { method: 'DELETE' });
 }
 
+/** Publication immédiate et RÉELLE via Composio — renvoie le lien publié ou la raison d'échec */
+export async function publishPostNow(
+  id: string
+): Promise<ApiResponse<{ post: Post; next: Post | null; message: string }>> {
+  return request(`/posts/${id}/publish-now`, { method: 'POST' });
+}
+
 export async function publishPost(id: string): Promise<ApiResponse<{ post: Post; next: Post | null }>> {
   return request(`/posts/${id}/publish`, { method: 'POST' });
 }

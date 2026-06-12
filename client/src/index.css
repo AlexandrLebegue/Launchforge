@@ -5128,3 +5128,28 @@ video.md-media { background: #000; }
 }
 .lang-switch button:hover:not(.on) { color: var(--color-text); }
 .auth-lang { display: flex; justify-content: center; margin-bottom: 14px; }
+
+/* Résultat de publication immédiate (éditeur de post) */
+.publish-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.publish-result.ok {
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: var(--color-success);
+}
+.publish-result.ko {
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: var(--color-error);
+}
+.publish-result-text { flex: 1; color: var(--color-text); font-weight: 500; }
+.publish-result a { font-weight: 700; white-space: nowrap; }
+.pe-save-btn { border: 1px solid var(--color-border); }

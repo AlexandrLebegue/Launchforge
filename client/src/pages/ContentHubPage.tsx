@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare } from 'lucide-react';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
-  previewRecurrence, crosspostPost,
+  previewRecurrence, crosspostPost, publishPostNow,
   generateCalendar, getOverview,
   generatePostImage, uploadPostImage, uploadPostVideo, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   analyzePostPerf,
@@ -12,6 +12,7 @@ import {
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
 import PlatformIcon from '../components/PlatformIcon';
+import { Send } from 'lucide-react';
 import Markdown from '../components/Markdown';
 
 export const PLATFORMS: { value: string; label: string }[] = [
@@ -432,9 +433,12 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     }
   };
 
-  const handleSave = async (e?: FormEvent) => {
-    e?.preventDefault();
-    setSaving(true);
+  // État de la publication immédiate (résultat affiché dans le pied de modale)
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
+
+  /** Enregistre le post (création ou mise à jour) + déclinaisons. Retourne le post sauvé. */
+  const persist = async (): Promise<Post | null> => {
     setError('');
     const payload: Partial<Post> = {
       platform:    form.platform,
@@ -460,22 +464,58 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
       ? await updatePost(post.id, payload)
       : await createPost(payload as Partial<Post> & { platform: string });
     if (!res.success || !res.data) {
-      setSaving(false);
       setError(res.error || 'Enregistrement impossible.');
-      return;
+      return null;
     }
     // Déclinaison vers les autres plateformes sélectionnées (exemplaires liés)
     if (crossTargets.length > 0) {
       const cross = await crosspostPost(res.data.id, crossTargets, crossAdapt);
       if (!cross.success) {
-        setSaving(false);
         setError(`Post enregistré, mais déclinaison échouée : ${cross.error || 'erreur inconnue'}`);
-        return;
+        return null;
       }
       onCrossposted?.();
     }
+    return res.data;
+  };
+
+  const handleSave = async (e?: FormEvent) => {
+    e?.preventDefault();
+    setSaving(true);
+    const saved = await persist();
     setSaving(false);
-    onSaved(res.data);
+    if (saved) onSaved(saved);
+  };
+
+  /** Publication immédiate et RÉELLE : enregistre d'abord, publie via Composio,
+   *  puis affiche le résultat exact (lien publié ou raison de l'échec). */
+  const handlePublishNow = async () => {
+    setPublishing(true);
+    setPublishResult(null);
+    const saved = await persist();
+    if (!saved) { setPublishing(false); return; }
+
+    const res = await publishPostNow(saved.id);
+    setPublishing(false);
+    if (res.success && res.data) {
+      const url = res.data.post.externalUrl && /^https?:/i.test(res.data.post.externalUrl)
+        ? res.data.post.externalUrl : undefined;
+      setForm((f) => ({ ...f, status: 'published', externalUrl: res.data!.post.externalUrl ?? f.externalUrl }));
+      setPublishResult({
+        ok: true,
+        text: `Publié sur ${platformLabel(saved.platform)} — ${res.data.message}`,
+        url,
+      });
+      onCrossposted?.(); // recharge la liste du Hub sans fermer l'éditeur
+    } else {
+      setPublishResult({
+        ok: false,
+        text: res.error === 'COMPOSIO_NOT_CONFIGURED'
+          ? 'Composio n\'est pas configuré — connectez vos comptes dans Configuration pour publier depuis l\'app.'
+          : `Échec de la publication : ${res.error || 'erreur inconnue'}`,
+      });
+      onCrossposted?.();
+    }
   };
 
   // Aperçu : le média attaché peut être une image, un GIF animé ou une vidéo
@@ -885,14 +925,38 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             </div>
           </div>
 
+          {publishResult && (
+            <div className={`publish-result${publishResult.ok ? ' ok' : ' ko'}`} role="status">
+              <span>{publishResult.ok ? '✓' : '✗'}</span>
+              <span className="publish-result-text">{publishResult.text}</span>
+              {publishResult.url && (
+                <a href={publishResult.url} target="_blank" rel="noopener noreferrer">Voir le post ↗</a>
+              )}
+            </div>
+          )}
           <div className="modal-footer pe-footer">
             {error && <span className="chat-error pe-footer-error">{error}</span>}
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              {publishResult?.ok ? 'Fermer' : 'Annuler'}
+            </button>
+            <button type="submit" className="btn btn-ghost pe-save-btn" disabled={saving || publishing}>
               {saving
                 ? (crossTargets.length > 0 ? '⏳ Enregistrement + déclinaison…' : '⏳ Enregistrement…')
                 : crossTargets.length > 0 ? `Enregistrer sur ${selPlatforms.length} plateformes` : 'Enregistrer'}
             </button>
+            {form.status !== 'published' && (
+              <button
+                type="button"
+                className="btn btn-primary btn-primary-glow"
+                onClick={handlePublishNow}
+                disabled={publishing || saving || !form.content.trim()}
+                title={`Enregistre puis publie immédiatement sur ${platformLabel(form.platform)} via vos comptes connectés${crossTargets.length > 0 ? ' (les exemplaires des autres plateformes suivent leur propre planification)' : ''}`}
+              >
+                {publishing
+                  ? '⏳ Publication en cours…'
+                  : <><Send size={15} /> Publier maintenant sur {platformLabel(form.platform)}</>}
+              </button>
+            )}
           </div>
         </form>
       </div>

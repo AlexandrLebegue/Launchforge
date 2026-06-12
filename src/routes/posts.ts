@@ -7,8 +7,8 @@ import { v4 as uuid } from 'uuid';
 import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
-import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
-import { markPublished, generateOccurrenceContent, crosspostTo } from '../services/postPublisher';
+import { isComposioConfigured, syncMetricsViaComposio, publishViaComposio, extractPublishedRef } from '../services/composio';
+import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { analyzePost } from '../services/analytics';
 import { Post, PostStatus, Recurrence } from '../types';
@@ -230,6 +230,55 @@ router.post('/:id/recurrence/preview', async (req: Request, res: Response) => {
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Simulation échouée' });
   }
+});
+
+// ── POST /api/posts/:id/publish-now ──────────────────────────────────────────
+// Publication IMMÉDIATE et RÉELLE via Composio (voie directe quand le schéma
+// est connu, opérateur IA sinon) — contrairement à /publish qui ne fait que
+// marquer le post publié. Retourne le résultat exact (lien publié ou raison
+// de l'échec) pour un retour clair dans l'éditeur.
+router.post('/:id/publish-now', async (req: Request, res: Response) => {
+  const post = loadOwnedPost(req, res);
+  if (!post) return;
+  if (post.status === 'published') {
+    return res.status(400).json({ success: false, error: 'Ce post est déjà publié.' });
+  }
+  if (!isComposioConfigured() && !process.env.COMPOSIO_API_KEY) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+
+  let result: string;
+  try {
+    result = await publishViaComposio(req.user!.userId, post.platform, post.content, post.imageUrl, post.title);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Publication échouée';
+    if (msg === 'COMPOSIO_NOT_CONFIGURED' || msg === 'AI_NOT_CONFIGURED') {
+      return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+    }
+    storage.updatePost(post.id, { publishError: msg.slice(0, 500) });
+    return res.status(502).json({ success: false, error: msg });
+  }
+
+  if (!result.trim().toUpperCase().startsWith('OK')) {
+    const reason = result.replace(/^ECHEC:\s*/i, '').trim() || 'Publication refusée par la plateforme';
+    storage.updatePost(post.id, { publishError: reason.slice(0, 500) });
+    return res.status(502).json({ success: false, error: reason });
+  }
+
+  const { next } = markPublished(storage.getPostById(post.id)!);
+  const ref = extractPublishedRef(result);
+  if (ref) storage.updatePost(post.id, { externalUrl: ref });
+  cleanupPublishedVideo(storage.getPostById(post.id)!);
+  if (next) syncPostsToCalendarInBackground([next]);
+
+  res.json({
+    success: true,
+    data: {
+      post: storage.getPostById(post.id)!,
+      next,
+      message: result.replace(/^OK:\s*/i, '').trim(),
+    },
+  });
 });
 
 // ── POST /api/posts/:id/sync-metrics ─────────────────────────────────────────
