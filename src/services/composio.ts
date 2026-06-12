@@ -12,6 +12,7 @@
 import { chatComplete, ChatMessage, ToolDef, sanitizeJson, isAIConfigured } from './aiClient';
 import { McpSession, McpTool, isComposioConfigured } from './mcpClient';
 import { composioUserIdFor } from './composioConnect';
+import { publishDirect } from './composioDirect';
 
 export { isComposioConfigured };
 
@@ -187,6 +188,7 @@ export async function publishViaComposio(
   platform: string,
   content: string,
   imageUrl?: string | null,
+  title?: string,
 ): Promise<string> {
   // Garde-fou AVANT tout appel modèle : inutile de lancer une mission vouée
   // à l'échec (observé en usage réel sur Instagram sans image)
@@ -203,6 +205,13 @@ export async function publishViaComposio(
       return 'ECHEC: le média est hébergé localement (/uploads) — les plateformes ne peuvent pas le télécharger. Configurez APP_URL (URL publique du serveur) ou utilisez une URL de média publique.';
     }
     mediaUrl = `${appUrl}${mediaUrl}`;
+  }
+
+  // Publication DIRECTE (API Composio, déterministe, sans appel modèle) pour
+  // les plateformes au schéma vérifié — l'opérateur IA reste le repli des autres.
+  if (process.env.COMPOSIO_API_KEY) {
+    const direct = await publishDirect(userId, platform, content, mediaUrl, title ?? '');
+    if (direct.handled) return direct.result!;
   }
 
   const mediaIsVideo = mediaUrl ? /\.(mp4|webm|mov)(\?|#|$)/i.test(mediaUrl) : false;

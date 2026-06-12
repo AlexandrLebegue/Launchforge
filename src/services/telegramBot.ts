@@ -649,7 +649,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const post = findByShortId(posts, String(args.postId || ''));
       if (!post) return 'ERREUR : post introuvable (ou déjà publié).';
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — publication impossible depuis le chat, utilisez le copier-coller depuis l\'app.';
-      const result = await publishViaComposio(userId, post.platform, post.content, post.imageUrl);
+      const result = await publishViaComposio(userId, post.platform, post.content, post.imageUrl, post.title);
       if (result.trim().toUpperCase().startsWith('OK')) {
         markPublished(post);
         // URL/id du post créé enregistré pour la synchro des métriques
