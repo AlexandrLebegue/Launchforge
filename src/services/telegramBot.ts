@@ -17,7 +17,7 @@ import { chatComplete, ChatMessage, ToolDef, isAIConfigured } from './aiClient';
 import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
-import { markPublished, generateOccurrenceContent, crosspostTo } from './postPublisher';
+import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from './postPublisher';
 import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
@@ -655,6 +655,7 @@ export async function executeTool(userId: string, _chatId: string, name: string,
         // URL/id du post créé enregistré pour la synchro des métriques
         const ref = extractPublishedRef(result);
         if (ref) storage.updatePost(post.id, { externalUrl: ref });
+        cleanupPublishedVideo(storage.getPostById(post.id)!);
         return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}${ref ? `\n🔗 URL enregistrée — les métriques se synchroniseront automatiquement.` : ''}`;
       }
       return `Échec de publication : ${result.replace(/^ECHEC:\s*/i, '')}`;

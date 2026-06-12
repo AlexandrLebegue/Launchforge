@@ -4793,3 +4793,11 @@ video.md-media { background: #000; }
 
 /* Aperçu générique : badge dans l'en-tête */
 .pe-preview-platform { display: inline-flex; align-items: center; gap: 7px; }
+
+/* Lien vers le post publié (cartes du Hub) */
+.post-card-link {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+.post-card-link:hover { text-decoration: underline; }

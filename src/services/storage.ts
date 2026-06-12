@@ -562,6 +562,14 @@ export class Storage {
     return getDb().prepare(`SELECT * FROM posts WHERE id = ?`).get(id) as Post | undefined;
   }
 
+  /** Posts NON publiés (hors excludePostId) qui référencent encore ce fichier média */
+  countPendingPostsUsingMedia(fileName: string, excludePostId: string): number {
+    const row = getDb()
+      .prepare(`SELECT COUNT(*) AS n FROM posts WHERE id != ? AND status != 'published' AND imageUrl LIKE ?`)
+      .get(excludePostId, `%/uploads/${fileName}%`) as { n: number };
+    return row.n;
+  }
+
   /** Exemplaires d'un groupe multi-plateformes (même contenu, plateformes différentes) */
   getCrossPostGroup(crossPostId: string): Post[] {
     return getDb()

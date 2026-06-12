@@ -288,7 +288,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
 
     // Vidéo : envoi binaire brut, stockée sur le serveur (purge à 90 jours)
     if (file.type.startsWith('video/')) {
-      if (file.size > 100 * 1024 * 1024) { setImgError('Vidéo trop lourde (100 Mo max).'); return; }
+      if (file.size > 3 * 1024 * 1024 * 1024) { setImgError('Vidéo trop lourde (3 Go max).'); return; }
       setImgBusy(true);
       uploadPostVideo(file, post?.id).then((res) => {
         setImgBusy(false);
@@ -577,7 +577,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                     type="button" className="btn btn-ghost"
                     onClick={() => fileRef.current?.click()}
                     disabled={imgBusy}
-                    title="Téléverser une image (8 Mo max) ou une vidéo mp4/webm/mov (100 Mo max) depuis votre machine"
+                    title="Téléverser une image (8 Mo max) ou une vidéo mp4/webm/mov (3 Go max) — la vidéo est supprimée du serveur une fois publiée"
                   >
                     {imgBusy ? '⏳…' : 'Téléverser'}
                   </button>
@@ -588,6 +588,10 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                     onChange={handleUploadMedia}
                   />
                 </div>
+                <span className="form-hint-inline">
+                  Vidéos jusqu'à 3 Go : le serveur ne sert que de relais — la vidéo est supprimée
+                  automatiquement dès que la plateforme l'a récupérée, le post garde le lien publié.
+                </span>
               </section>
 
               {/* 3. Planification */}
@@ -655,6 +659,12 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                         <button type="button" className="btn btn-ghost" onClick={handleSync} disabled={syncing}>
                           {syncing ? '⏳ Synchro…' : 'Synchroniser'}
                         </button>
+                      )}
+                      {/^https?:\/\//i.test(form.externalUrl.trim()) && (
+                        <a className="btn btn-ghost" href={form.externalUrl.trim()} target="_blank" rel="noopener noreferrer"
+                           title="Ouvrir le post publié sur la plateforme">
+                          Ouvrir ↗
+                        </a>
                       )}
                     </div>
                     <span className="form-hint-inline">
@@ -1278,6 +1288,12 @@ export default function ContentHubPage() {
                         <span className="chip chip-error" title={p.publishError}>échec auto</span>
                       )}
                       {p.status === 'scheduled' && <span className="post-card-date">{fmtDate(p.scheduledAt)}</span>}
+                      {p.status === 'published' && p.externalUrl && /^https?:/i.test(p.externalUrl) && (
+                        <a className="post-card-link" href={p.externalUrl} target="_blank" rel="noopener noreferrer"
+                           onClick={(e) => e.stopPropagation()} title="Ouvrir le post publié sur la plateforme">
+                          Voir le post ↗
+                        </a>
+                      )}
                       {p.status === 'published' && (
                         <span className="post-card-metrics">
                           {fmtNum(p.impressions)} · {fmtNum(p.likes)}{rate !== null && ` · ${rate.toFixed(1)} %`}

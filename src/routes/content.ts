@@ -211,7 +211,9 @@ router.post('/image/upload', async (req: Request, res: Response) => {
 const VIDEO_TYPES: Record<string, string> = {
   'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
 };
-const VIDEO_MAX_BYTES = 120 * 1024 * 1024;
+// 3 Go : la vidéo n'est qu'un sas — supprimée automatiquement une fois
+// récupérée par la plateforme (cleanupPublishedVideo)
+const VIDEO_MAX_BYTES = 3 * 1024 * 1024 * 1024;
 
 router.post('/video/upload', async (req: Request, res: Response) => {
   const ext = VIDEO_TYPES[String(req.headers['content-type'] || '').split(';')[0]];
@@ -238,7 +240,7 @@ router.post('/video/upload', async (req: Request, res: Response) => {
     res.json({ success: true, data: { url: finalUrl, publicUrl } });
   } catch (err) {
     if (err instanceof Error && err.message === 'TOO_LARGE') {
-      return res.status(413).json({ success: false, error: 'Vidéo trop lourde (120 Mo max)' });
+      return res.status(413).json({ success: false, error: 'Vidéo trop lourde (3 Go max)' });
     }
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Enregistrement échoué' });
   }

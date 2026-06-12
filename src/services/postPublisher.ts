@@ -9,6 +9,7 @@ import { storage } from './storage';
 import { isAIConfigured } from './aiClient';
 import { generateContent, GeneratedContent } from './contentAssistant';
 import { upsertNewsArchive } from './analytics';
+import { deleteMediaFile } from './mediaStore';
 import { Post, Recurrence } from '../types';
 
 /** Prochaine occurrence d'un post récurrent */
@@ -71,6 +72,26 @@ export function regenerateOccurrenceInBackground(next: Post): void {
     .catch((err) => {
       console.error(`⚠️  Régénération IA de l'occurrence ${next.id} échouée (contenu précédent conservé) :`, err instanceof Error ? err.message : err);
     });
+}
+
+const LOCAL_VIDEO_RE = /\/uploads\/([\w.-]+\.(?:mp4|webm|mov))(?:\?|#|$)/i;
+
+/**
+ * Libère le disque après une publication RÉELLE (la plateforme a téléchargé
+ * la vidéo depuis notre URL) : supprime le fichier local et nettoie le champ
+ * média du post — l'utilisateur garde le lien publié (externalUrl).
+ * Garde-fou : le fichier est conservé tant qu'un autre exemplaire non publié
+ * (groupe multi-plateformes, série récurrente) s'appuie encore dessus.
+ * Permet d'accepter de très gros uploads (vidéos YouTube) sans remplir le VPS.
+ */
+export function cleanupPublishedVideo(post: Post): boolean {
+  const m = post.imageUrl?.match(LOCAL_VIDEO_RE);
+  if (!m) return false;
+  const fileName = m[1];
+  if (storage.countPendingPostsUsingMedia(fileName, post.id) > 0) return false;
+  deleteMediaFile(fileName);
+  storage.updatePost(post.id, { imageUrl: null });
+  return true;
 }
 
 const MAX_CROSSPOST_TARGETS = 6;

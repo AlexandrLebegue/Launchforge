@@ -14,7 +14,7 @@
 import { storage } from './storage';
 import { publishViaComposio, extractPublishedRef, isComposioConfigured } from './composio';
 import { isAIConfigured } from './aiClient';
-import { markPublished } from './postPublisher';
+import { markPublished, cleanupPublishedVideo } from './postPublisher';
 import { syncPostsToCalendarInBackground } from './calendarSync';
 
 const TICK_MS = 60_000;
@@ -54,6 +54,8 @@ export async function processDuePosts(
         // enregistré : la synchro des métriques n'a plus besoin de saisie manuelle
         const ref = extractPublishedRef(result);
         if (ref) storage.updatePost(fresh.id, { externalUrl: ref });
+        // La plateforme a récupéré la vidéo : on libère le disque du serveur
+        cleanupPublishedVideo(storage.getPostById(fresh.id)!);
         published += 1;
         // La prochaine occurrence d'un post récurrent hérite de l'auto-publish
         // et repart dans le calendrier personnel
