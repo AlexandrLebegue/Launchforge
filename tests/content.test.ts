@@ -200,6 +200,39 @@ describe('Connexion de comptes (Configuration)', () => {
   });
 });
 
+describe('Upload de vidéo (média de post)', () => {
+  it('enregistre une vidéo envoyée en binaire et peut l\'attacher à un post', async () => {
+    const post = await request(app).post('/api/posts').set(auth()).send({ platform: 'tiktok', title: 'Vidéo démo' });
+    const fakeVideo = Buffer.alloc(2048, 1);
+
+    const res = await request(app)
+      .post(`/api/content/video/upload?postId=${post.body.data.id}`)
+      .set(auth())
+      .set('Content-Type', 'video/mp4')
+      .send(fakeVideo);
+    expect(res.status).toBe(200);
+    expect(res.body.data.url).toMatch(/^\/uploads\/.+\.mp4$/);
+
+    const updated = await request(app).get('/api/posts').set(auth());
+    const target = updated.body.data.find((p: { id: string }) => p.id === post.body.data.id);
+    expect(target.imageUrl).toBe(res.body.data.url);
+  });
+
+  it('refuse un type non vidéo ou un corps vide', async () => {
+    const wrongType = await request(app)
+      .post('/api/content/video/upload').set(auth())
+      .set('Content-Type', 'application/pdf')
+      .send(Buffer.alloc(2048, 1));
+    expect(wrongType.status).toBe(400);
+
+    const empty = await request(app)
+      .post('/api/content/video/upload').set(auth())
+      .set('Content-Type', 'video/mp4')
+      .send(Buffer.alloc(10, 1));
+    expect(empty.status).toBe(400);
+  });
+});
+
 describe('Knowledge base', () => {
   let entryId: string;
 

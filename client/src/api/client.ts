@@ -788,6 +788,20 @@ export async function uploadPostImage(imageBase64: string, postId?: string): Pro
   return request('/content/image/upload', { method: 'POST', body: JSON.stringify({ imageBase64, postId }) });
 }
 
+/** Téléverse une vidéo de l'utilisateur (binaire brut — mp4/webm/mov, 100 Mo max) */
+export async function uploadPostVideo(file: File, postId?: string): Promise<ApiResponse<{ url: string; publicUrl: string | null }>> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/content/video/upload${postId ? `?postId=${encodeURIComponent(postId)}` : ''}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'video/mp4',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: file,
+  });
+  return res.json();
+}
+
 // ── Présentations (decks Marp) ────────────────────────────────────────────────
 
 export interface DeckSummary { id: string; title: string; createdAt: string }

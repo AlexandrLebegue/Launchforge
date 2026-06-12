@@ -6,7 +6,7 @@ import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   previewRecurrence, crosspostPost,
   generateCalendar, getOverview,
-  generatePostImage, uploadPostImage, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
+  generatePostImage, uploadPostImage, uploadPostVideo, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
   analyzePostPerf,
   Post, PostStatus, Recurrence,
 } from '../api/client';
@@ -280,12 +280,33 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     }
   };
 
-  const handleUploadImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadMedia = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
+    setImgError('');
+
+    // Vidéo : envoi binaire brut, stockée sur le serveur (purge à 90 jours)
+    if (file.type.startsWith('video/')) {
+      if (file.size > 100 * 1024 * 1024) { setImgError('Vidéo trop lourde (100 Mo max).'); return; }
+      setImgBusy(true);
+      uploadPostVideo(file, post?.id).then((res) => {
+        setImgBusy(false);
+        if (res.success && res.data) {
+          set('imageUrl', res.data.url);
+          if (!res.data.publicUrl) {
+            setImgError('Vidéo hébergée sur ce serveur — l\'aperçu fonctionne ; pour publier sur les plateformes, configurez APP_URL en production (URL publique).');
+          }
+        } else {
+          setImgError(res.error || 'Téléversement de la vidéo échoué.');
+        }
+      });
+      return;
+    }
+
+    // Image : base64 vers l'hébergement public
     if (file.size > 8 * 1024 * 1024) { setImgError('Image trop lourde (8 Mo max).'); return; }
     setImgBusy(true);
-    setImgError('');
     const reader = new FileReader();
     reader.onload = async () => {
       const res = await uploadPostImage(String(reader.result), post?.id);
@@ -295,7 +316,6 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     };
     reader.onerror = () => { setImgBusy(false); setImgError('Lecture du fichier impossible.'); };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
   const [useNews,    setUseNews]    = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -557,13 +577,15 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                     type="button" className="btn btn-ghost"
                     onClick={() => fileRef.current?.click()}
                     disabled={imgBusy}
-                    title="Téléverser une image depuis votre machine (hébergée publiquement)"
+                    title="Téléverser une image (8 Mo max) ou une vidéo mp4/webm/mov (100 Mo max) depuis votre machine"
                   >
-                    Téléverser
+                    {imgBusy ? '⏳…' : 'Téléverser'}
                   </button>
                   <input
-                    ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
-                    onChange={handleUploadImage}
+                    ref={fileRef} type="file"
+                    accept="image/*,video/mp4,video/webm,video/quicktime"
+                    style={{ display: 'none' }}
+                    onChange={handleUploadMedia}
                   />
                 </div>
               </section>
