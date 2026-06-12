@@ -62,6 +62,28 @@ async function composioApi(path: string, init?: RequestInit): Promise<any> {
   return body;
 }
 
+/** Champ d'identifiant exigé par un toolkit sans auth gérée (ex. X/Twitter) */
+export interface OwnAppField {
+  name: string;
+  description: string;
+}
+
+/**
+ * Le toolkit n'a pas d'auth gérée par Composio : l'utilisateur doit créer sa
+ * propre app développeur sur la plateforme et fournir ses identifiants.
+ * Portée jusqu'à l'UI (code + champs requis + URL de callback à déclarer).
+ */
+export class NeedsOwnAppError extends Error {
+  readonly code = 'NEEDS_OWN_APP';
+  constructor(
+    public readonly toolkit: string,
+    public readonly fields: OwnAppField[],
+    public readonly callbackUrl: string,
+  ) {
+    super(`${toolkit} n'a pas d'authentification gérée par Composio — fournissez les identifiants de votre propre app développeur`);
+  }
+}
+
 /** Config d'auth existante pour ce toolkit, sinon création (auth gérée Composio) */
 async function ensureAuthConfig(toolkit: string): Promise<string> {
   const list = await composioApi('/auth_configs?limit=100');
@@ -70,14 +92,22 @@ async function ensureAuthConfig(toolkit: string): Promise<string> {
   );
   if (existing?.id) return existing.id;
 
-  // Le toolkit doit proposer une auth gérée par Composio — sinon il faut
-  // créer sa propre app développeur (ex. X/Twitter, TikTok)
+  // Le toolkit doit proposer une auth gérée par Composio — sinon l'utilisateur
+  // fournit les identifiants de sa propre app développeur (ex. X/Twitter, TikTok)
   const tk = await composioApi(`/toolkits/${toolkit}`).catch(() => null);
   if (!tk) throw new Error(`La plateforme « ${toolkit} » n'existe pas chez Composio`);
   if (!Array.isArray(tk.composio_managed_auth_schemes) || tk.composio_managed_auth_schemes.length === 0) {
-    throw new Error(
-      `${toolkit} nécessite votre propre app développeur (OAuth non géré par Composio) — créez la config sur dashboard.composio.dev`
+    const details: any[] = Array.isArray(tk.auth_config_details) ? tk.auth_config_details : [];
+    const scheme = details.find((s: any) => s?.mode === 'OAUTH2') ?? details[0];
+    const creation = scheme?.fields?.auth_config_creation ?? {};
+    const fields: OwnAppField[] = (creation.required || [])
+      .map((f: any) => ({ name: String(f?.name ?? ''), description: String(f?.description ?? '') }))
+      .filter((f: OwnAppField) => f.name);
+    const callbackUrl = String(
+      (creation.optional || []).find((f: any) => f?.name === 'oauth_redirect_uri')?.default
+      ?? 'https://backend.composio.dev/api/v1/auth-apps/add',
     );
+    throw new NeedsOwnAppError(toolkit, fields, callbackUrl);
   }
 
   const created = await composioApi('/auth_configs', {
@@ -85,6 +115,33 @@ async function ensureAuthConfig(toolkit: string): Promise<string> {
     body: JSON.stringify({
       toolkit: { slug: toolkit },
       auth_config: { type: 'use_composio_managed_auth' },
+    }),
+  });
+  const id = created?.auth_config?.id || created?.id;
+  if (!id) throw new Error('Création de la configuration d\'authentification échouée');
+  return id;
+}
+
+/**
+ * Config d'auth à partir des identifiants de l'app développeur de
+ * l'utilisateur (toolkits sans auth gérée). Remplace toute config existante
+ * du toolkit : une config aux identifiants erronés bloquerait la reconnexion.
+ */
+export async function createCustomAuthConfig(
+  toolkit: string,
+  credentials: Record<string, string>,
+): Promise<string> {
+  const list = await composioApi('/auth_configs?limit=100');
+  for (const a of list?.items || []) {
+    if (a?.id && String(a?.toolkit?.slug).toLowerCase() === toolkit) {
+      await composioApi(`/auth_configs/${a.id}`, { method: 'DELETE' }).catch(() => { /* best-effort */ });
+    }
+  }
+  const created = await composioApi('/auth_configs', {
+    method: 'POST',
+    body: JSON.stringify({
+      toolkit: { slug: toolkit },
+      auth_config: { type: 'use_custom_auth', authScheme: 'OAUTH2', credentials },
     }),
   });
   const id = created?.auth_config?.id || created?.id;
@@ -151,14 +208,22 @@ export async function disconnectAllToolkits(lfUserId: string): Promise<number> {
 /**
  * Prépare la connexion d'un compte POUR un utilisateur LaunchForge donné et
  * retourne le lien d'autorisation OAuth à ouvrir dans son navigateur.
+ * `credentials` : identifiants de l'app développeur de l'utilisateur, pour
+ * les toolkits sans auth gérée par Composio (lève NeedsOwnAppError sinon).
  */
-export async function createConnectLink(lfUserId: string, toolkit: string): Promise<string> {
+export async function createConnectLink(
+  lfUserId: string,
+  toolkit: string,
+  credentials?: Record<string, string>,
+): Promise<string> {
   const userId = composioUserIdFor(lfUserId);
   if (!userId) {
     throw new Error('COMPOSIO_MCP_URL ne contient pas de user_id — impossible de rattacher le compte');
   }
 
-  const authConfigId = await ensureAuthConfig(toolkit);
+  const authConfigId = credentials && Object.keys(credentials).length > 0
+    ? await createCustomAuthConfig(toolkit, credentials)
+    : await ensureAuthConfig(toolkit);
   await ensureServerToolkit(toolkit, authConfigId);
 
   const account = await composioApi('/connected_accounts', {
