@@ -29,16 +29,25 @@
  *                  premier commentaire. L'API YouTube Data v3 n'expose pas
  *                  les « community posts » (limite Google) : seul l'upload
  *                  de vidéo existe.
+ *  - Facebook    : FACEBOOK_GET_USER_PAGES (première Page gérée, en cache —
+ *                  l'API Graph ne publie pas sur un profil personnel) puis
+ *                  CREATE_POST (texte) / CREATE_PHOTO_POST (url) /
+ *                  CREATE_VIDEO_POST (file_url)
+ *  - TikTok      : TIKTOK_PUBLISH_VIDEO (URL publique) + suivi
+ *                  FETCH_PUBLISH_STATUS, ou TIKTOK_POST_PHOTO (DIRECT_POST)
+ *                  pour une image
  *
  * Métriques (syncMetricsDirect) — lecture déterministe likes/commentaires/
  * vues par plateforme : TWITTER_POST_LOOKUP_BY_POST_ID (public_metrics),
- * YOUTUBE_VIDEO_DETAILS (statistics), REDDIT_RETRIEVE_POST_COMMENTS (score,
- * num_comments), INSTAGRAM_GET_POST_INSIGHTS (reach/likes/comments/shares),
- * LINKEDIN_LIST_REACTIONS (serveur MCP — l'API LinkedIn n'expose pas plus
- * pour un post personnel).
+ * YOUTUBE_VIDEO_DETAILS (statistics), REDDIT_RETRIEVE_SPECIFIC_COMMENT
+ * (score, num_comments via t3_<id>), INSTAGRAM_GET_POST_INSIGHTS
+ * (reach/likes/comments/shares), FACEBOOK_GET_POST (résumés likes/
+ * commentaires/partages), LINKEDIN_LIST_REACTIONS (serveur MCP — l'API
+ * LinkedIn n'expose pas plus pour un post personnel). TikTok reste sur
+ * l'opérateur IA (pas de lecture par identifiant de publication).
  *
- * Les autres plateformes (Facebook : page_id…) restent sur l'opérateur IA,
- * qui sait demander le contexte.
+ * Blog, newsletter, Product Hunt, Hacker News : pas d'API de publication
+ * exposée par Composio (HN et PH n'en ont pas d'officielle) → opérateur IA.
  */
 
 import { createHash } from 'crypto';
@@ -269,9 +278,10 @@ async function publishLinkedInViaProxy(accountId: string, author: string, commen
   return `ECHEC: LinkedIn a refusé la publication via le proxy — ${lastErr}`;
 }
 
-// Identités résolues une fois par utilisateur (URN LinkedIn, compte Instagram)
+// Identités résolues une fois par utilisateur (URN LinkedIn, compte Instagram, Page Facebook)
 const linkedinAuthorCache = new Map<string, string>();
 const instagramIdCache = new Map<string, string>();
+const facebookPageCache = new Map<string, { id: string; name: string }>();
 
 const firstLine = (text: string, max = 95) =>
   (text.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, max);
@@ -470,6 +480,74 @@ export async function publishDirect(
         return { handled: true, result: `OK: vidéo YouTube publiée${videoId ? ` https://youtu.be/${videoId}` : ''}` };
       }
 
+      case 'facebook': {
+        // L'API Graph ne publie que sur des PAGES (le profil personnel est fermé
+        // aux apps depuis 2018) : on résout la première page gérée, en cache
+        let page = facebookPageCache.get(uid);
+        if (!page) {
+          const pages = await exec(uid, 'FACEBOOK_GET_USER_PAGES', {});
+          const first = (pages?.data ?? pages?.pages ?? [])[0];
+          if (!first?.id) {
+            return { handled: true, result: 'ECHEC: aucune Page Facebook gérée par ce compte — l\'API Facebook ne permet de publier que sur une Page (pas sur un profil personnel). Créez une Page ou reconnectez un compte qui en gère une.' };
+          }
+          page = { id: String(first.id), name: String(first.name ?? 'Page') };
+          facebookPageCache.set(uid, page);
+        }
+        let data: any;
+        if (mediaUrl && mediaIsVideo) {
+          data = await exec(uid, 'FACEBOOK_CREATE_VIDEO_POST', {
+            page_id: page.id,
+            file_url: mediaUrl,
+            description: content,
+            title: (title || firstLine(content) || 'Vidéo').slice(0, 95),
+          });
+        } else if (mediaUrl) {
+          data = await exec(uid, 'FACEBOOK_CREATE_PHOTO_POST', { page_id: page.id, url: mediaUrl, message: content });
+        } else {
+          data = await exec(uid, 'FACEBOOK_CREATE_POST', { page_id: page.id, message: content });
+        }
+        const postId = data?.post_id ?? data?.id ?? data?.data?.post_id ?? data?.data?.id ?? '';
+        return { handled: true, result: `OK: post Facebook publié sur la page ${page.name}${postId ? ` https://www.facebook.com/${postId}` : ''}` };
+      }
+
+      case 'tiktok': {
+        if (!mediaUrl) return { handled: true, result: 'ECHEC: TikTok exige un média (vidéo, ou image pour un post photo).' };
+        if (mediaIsVideo) {
+          const data = await exec(uid, 'TIKTOK_PUBLISH_VIDEO', {
+            video_url: mediaUrl,
+            caption: content.slice(0, 2200),
+            privacy_level: 'PUBLIC_TO_EVERYONE',
+          });
+          const publishId = String(data?.publish_id ?? data?.data?.publish_id ?? '');
+          // TikTok télécharge puis traite la vidéo : on suit le statut de publication
+          if (publishId) {
+            for (let i = 0; i < 12; i++) {
+              await sleep(5000);
+              try {
+                const st = await exec(uid, 'TIKTOK_FETCH_PUBLISH_STATUS', { publish_id: publishId });
+                const code = String(st?.status ?? st?.data?.status ?? '');
+                if (code === 'PUBLISH_COMPLETE') return { handled: true, result: `OK: vidéo TikTok publiée (publication ${publishId})` };
+                if (code === 'FAILED') {
+                  const reason = st?.fail_reason ?? st?.data?.fail_reason ?? 'raison inconnue';
+                  return { handled: true, result: `ECHEC: TikTok a refusé la vidéo — ${reason}` };
+                }
+              } catch { break; /* statut indisponible : la vidéo est partie, TikTok finit le traitement */ }
+            }
+          }
+          return { handled: true, result: `OK: vidéo TikTok envoyée${publishId ? ` (publication ${publishId})` : ''} — traitement en cours côté TikTok` };
+        }
+        const data = await exec(uid, 'TIKTOK_POST_PHOTO', {
+          photo_images: [mediaUrl],
+          photo_cover_index: 0,
+          post_mode: 'DIRECT_POST',
+          privacy_level: 'PUBLIC_TO_EVERYONE',
+          title: (title || firstLine(content, 85) || 'Photo').slice(0, 85),
+          description: content.slice(0, 4000),
+        });
+        const publishId = String(data?.publish_id ?? data?.data?.publish_id ?? '');
+        return { handled: true, result: `OK: post photo TikTok publié${publishId ? ` (publication ${publishId})` : ''}` };
+      }
+
       case 'reddit': {
         // Le subreddit cible se déclare en mentionnant r/<nom> dans le titre ou le contenu
         const sub = `${title}\n${content}`.match(/(?:^|[\s("'«])r\/([A-Za-z0-9][A-Za-z0-9_]{1,20})/)?.[1];
@@ -637,6 +715,30 @@ export async function syncMetricsDirect(
             shares: val('shares'),
             clicks: 0,
             note: 'Instagram : « reach » utilisé comme impressions',
+          },
+        };
+      }
+
+      case 'facebook': {
+        // L'id complet d'un post de Page est pageId_postId
+        const postId = externalRef.match(/(\d{6,}_\d+)/)?.[1];
+        if (!postId) return { handled: false };
+        const data = await exec(uid, 'FACEBOOK_GET_POST', {
+          post_id: postId,
+          fields: 'id,shares,likes.summary(true),comments.summary(true)',
+        });
+        const d = data?.data ?? data;
+        if (!d?.id) return { handled: true, metrics: { found: false, note: 'Post Facebook introuvable dans la réponse' } };
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: 0,
+            likes: toNum(d?.likes?.summary?.total_count),
+            comments: toNum(d?.comments?.summary?.total_count),
+            shares: toNum(d?.shares?.count),
+            clicks: 0,
+            note: 'Facebook n\'expose pas les impressions d\'un post via ce point d\'accès',
           },
         };
       }

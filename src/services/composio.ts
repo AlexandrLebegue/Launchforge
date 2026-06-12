@@ -179,7 +179,7 @@ export function guardedReply(result: McpTaskResult): string {
 /** Plateformes qui refusent toute publication sans média */
 const MEDIA_REQUIRED: Record<string, string> = {
   instagram: 'Instagram exige une image — attachez un visuel au post (champ Image du Hub, ou donnez une URL d\'image à l\'assistant)',
-  tiktok:    'TikTok exige une vidéo — attachez l\'URL du média au post avant de publier',
+  tiktok:    'TikTok exige un média (vidéo, ou image pour un post photo) — attachez-le au post avant de publier',
   youtube:   'YouTube exige une vidéo — attachez l\'URL du média au post avant de publier',
 };
 

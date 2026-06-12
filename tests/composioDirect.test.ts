@@ -255,9 +255,9 @@ describe('sendEmailDirect — Gmail', () => {
 });
 
 describe('publishDirect — périmètre et erreurs', () => {
-  it('laisse Facebook et les autres à l\'opérateur IA', async () => {
+  it('laisse blog, newsletter et plateformes sans API à l\'opérateur IA', async () => {
     const { exec } = recorder({});
-    for (const platform of ['facebook', 'blog', 'newsletter']) {
+    for (const platform of ['blog', 'newsletter', 'producthunt', 'hackernews']) {
       expect((await publishDirect(userId, platform, 'Texte', null, '', exec)).handled).toBe(false);
     }
   });
@@ -376,5 +376,108 @@ describe('syncMetricsDirect — lecture déterministe des métriques', () => {
     const { exec } = recorder({});
     expect((await syncMetricsDirect(userId, 'twitter', 'pas-une-reference', exec)).handled).toBe(false);
     expect((await syncMetricsDirect(userId, 'facebook', 'https://facebook.com/x', exec)).handled).toBe(false);
+  });
+});
+
+describe('publishDirect — Facebook (Page)', () => {
+  it('texte : résout la première Page gérée (cache) puis CREATE_POST', async () => {
+    const { calls, exec } = recorder({
+      FACEBOOK_GET_USER_PAGES: { data: [{ id: '101010101010', name: 'LaunchForge' }] },
+      FACEBOOK_CREATE_POST: { id: '101010101010_777' },
+    });
+    const out = await publishDirect(userId, 'facebook', 'Mon annonce', null, '', exec);
+    expect(out.handled).toBe(true);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('LaunchForge');
+    expect(out.result).toContain('https://www.facebook.com/101010101010_777');
+    expect(calls.map((c) => c.slug)).toEqual(['FACEBOOK_GET_USER_PAGES', 'FACEBOOK_CREATE_POST']);
+    expect(calls[1].args).toEqual({ page_id: '101010101010', message: 'Mon annonce' });
+
+    // 2e publication : la Page vient du cache
+    const second = recorder({ FACEBOOK_CREATE_POST: { id: '101010101010_778' } });
+    await publishDirect(userId, 'facebook', 'Autre annonce', null, '', second.exec);
+    expect(second.calls.map((c) => c.slug)).toEqual(['FACEBOOK_CREATE_POST']);
+  });
+
+  it('image : CREATE_PHOTO_POST avec l\'URL publique', async () => {
+    const { calls, exec } = recorder({ FACEBOOK_CREATE_PHOTO_POST: { post_id: '101010101010_779' } });
+    const out = await publishDirect(userId, 'facebook', 'Légende', 'https://cdn.dev/visuel.png', '', exec);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toEqual({ page_id: '101010101010', url: 'https://cdn.dev/visuel.png', message: 'Légende' });
+  });
+
+  it('vidéo : CREATE_VIDEO_POST avec file_url, titre et description', async () => {
+    const { calls, exec } = recorder({ FACEBOOK_CREATE_VIDEO_POST: { id: '101010101010_780' } });
+    const out = await publishDirect(userId, 'facebook', 'La démo en vidéo', 'https://cdn.dev/demo.mp4', 'Démo produit', exec);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toEqual({
+      page_id: '101010101010', file_url: 'https://cdn.dev/demo.mp4',
+      description: 'La démo en vidéo', title: 'Démo produit',
+    });
+  });
+});
+
+describe('publishDirect — TikTok', () => {
+  it('vidéo : PUBLISH_VIDEO puis suivi du statut jusqu\'à PUBLISH_COMPLETE', async () => {
+    const { calls, exec } = recorder({
+      TIKTOK_PUBLISH_VIDEO: { publish_id: 'v_pub_42' },
+      TIKTOK_FETCH_PUBLISH_STATUS: { status: 'PUBLISH_COMPLETE' },
+    });
+    const out = await publishDirect(userId, 'tiktok', 'Ma vidéo #launchforge', 'https://cdn.dev/clip.mp4', '', exec);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('publiée');
+    expect(calls[0].args).toMatchObject({
+      video_url: 'https://cdn.dev/clip.mp4',
+      caption: 'Ma vidéo #launchforge',
+      privacy_level: 'PUBLIC_TO_EVERYONE',
+    });
+    expect(calls[1].args).toEqual({ publish_id: 'v_pub_42' });
+  }, 15000);
+
+  it('image : POST_PHOTO en DIRECT_POST', async () => {
+    const { calls, exec } = recorder({ TIKTOK_POST_PHOTO: { publish_id: 'p_pub_7' } });
+    const out = await publishDirect(userId, 'tiktok', 'Mon visuel', 'https://cdn.dev/visuel.webp', 'Titre', exec);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toMatchObject({
+      photo_images: ['https://cdn.dev/visuel.webp'],
+      photo_cover_index: 0,
+      post_mode: 'DIRECT_POST',
+      title: 'Titre',
+      description: 'Mon visuel',
+    });
+  });
+
+  it('refuse sans média', async () => {
+    const { calls, exec } = recorder({});
+    const out = await publishDirect(userId, 'tiktok', 'Texte seul', null, '', exec);
+    expect(out.result).toMatch(/^ECHEC:/);
+    expect(calls.length).toBe(0);
+  });
+
+  it('vidéo refusée par TikTok : ECHEC avec la raison', async () => {
+    const { exec } = recorder({
+      TIKTOK_PUBLISH_VIDEO: { publish_id: 'v_pub_43' },
+      TIKTOK_FETCH_PUBLISH_STATUS: { status: 'FAILED', fail_reason: 'video_too_long' },
+    });
+    const out = await publishDirect(userId, 'tiktok', 'Vidéo', 'https://cdn.dev/long.mp4', '', exec);
+    expect(out.result).toMatch(/^ECHEC:/);
+    expect(out.result).toContain('video_too_long');
+  }, 15000);
+});
+
+describe('syncMetricsDirect — Facebook', () => {
+  it('résumés likes/commentaires/partages via GET_POST (id pageId_postId)', async () => {
+    const { calls, exec } = recorder({
+      FACEBOOK_GET_POST: {
+        id: '101010101010_777',
+        likes: { summary: { total_count: 11 } },
+        comments: { summary: { total_count: 4 } },
+        shares: { count: 2 },
+      },
+    });
+    const out = await syncMetricsDirect(userId, 'facebook', 'https://www.facebook.com/101010101010_777', exec);
+    expect(out.handled).toBe(true);
+    expect(out.metrics).toMatchObject({ found: true, likes: 11, comments: 4, shares: 2 });
+    expect(calls[0].args).toMatchObject({ post_id: '101010101010_777' });
   });
 });
