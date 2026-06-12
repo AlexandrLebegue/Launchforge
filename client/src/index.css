@@ -691,10 +691,10 @@ form .btn { margin-top: 8px; }
 }
 
 .auth-page-logo {
-  text-align: center;
-  font-size: 2rem;
+  display: flex;
+  justify-content: center;
+  color: var(--color-primary);
   margin-bottom: 20px;
-  animation: floatSlow 4s ease-in-out infinite;
 }
 
 .auth-page h1 {
@@ -4482,3 +4482,18 @@ video.md-media { background: #000; }
   margin-bottom: 6px;
 }
 .platform-row.cross-best .platform-row-name { color: var(--color-primary); font-weight: 700; }
+
+
+/* Monogramme de projet (sélecteur de la sidebar) */
+.project-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 0.68rem;
+  font-weight: 700;
+}

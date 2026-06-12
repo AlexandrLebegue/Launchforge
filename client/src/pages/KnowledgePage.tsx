@@ -6,14 +6,14 @@ import {
 import ContactsPanel from '../components/ContactsPanel';
 
 const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint: string }[] = [
-  { value: 'company',  label: 'Entreprise',       icon: '🏢', hint: 'Histoire, mission, valeurs, équipe…' },
-  { value: 'product',  label: 'Produit / Service', icon: '📦', hint: 'Fonctionnalités, bénéfices, différenciateurs…' },
-  { value: 'audience', label: 'Audience',          icon: '🎯', hint: 'Personas, problèmes, objections fréquentes…' },
-  { value: 'tone',     label: 'Ton & style',       icon: '🎨', hint: 'Voix de marque, mots à utiliser/éviter…' },
-  { value: 'offers',   label: 'Offres & tarifs',   icon: '💰', hint: 'Plans, promos, garanties…' },
-  { value: 'learnings',label: 'Enseignements',     icon: '📈', hint: 'Tirés de vos résultats — alimentés par l\'analyse IA' },
-  { value: 'news',     label: 'Veille & actus',    icon: '📰', hint: 'Actus archivées par les séries récurrentes (opt-in) — éditables' },
-  { value: 'other',    label: 'Divers',            icon: '📌', hint: 'Tout le reste' },
+  { value: 'company',  label: 'Entreprise',       icon: '', hint: 'Histoire, mission, valeurs, équipe…' },
+  { value: 'product',  label: 'Produit / Service', icon: '', hint: 'Fonctionnalités, bénéfices, différenciateurs…' },
+  { value: 'audience', label: 'Audience',          icon: '', hint: 'Personas, problèmes, objections fréquentes…' },
+  { value: 'tone',     label: 'Ton & style',       icon: '', hint: 'Voix de marque, mots à utiliser/éviter…' },
+  { value: 'offers',   label: 'Offres & tarifs',   icon: '', hint: 'Plans, promos, garanties…' },
+  { value: 'learnings',label: 'Enseignements',     icon: '', hint: 'Tirés de vos résultats — alimentés par l\'analyse IA' },
+  { value: 'news',     label: 'Veille & actus',    icon: '', hint: 'Actus archivées par les séries récurrentes (opt-in) — éditables' },
+  { value: 'other',    label: 'Divers',            icon: '', hint: 'Tout le reste' },
 ];
 
 const catMeta = (c: KnowledgeCategory) => CATEGORIES.find((x) => x.value === c) ?? CATEGORIES[CATEGORIES.length - 1];
@@ -66,7 +66,7 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
               value={form.category}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as KnowledgeCategory }))}
             >
-              {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+              {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
             <span className="form-hint-inline">{catMeta(form.category).hint}</span>
           </label>
@@ -98,7 +98,7 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
           <div className="modal-footer">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? '⏳…' : '💾 Enregistrer'}
+              {saving ? '⏳…' : 'Enregistrer'}
             </button>
           </div>
         </form>
@@ -151,7 +151,7 @@ export default function KnowledgePage() {
     <div className="animate-fadeIn">
       <div className="dashboard-header">
         <div>
-          <h1>📚 Base de connaissances</h1>
+          <h1>Base de connaissances</h1>
           <p>
             {tab === 'knowledge'
               ? 'Tout ce que l\'IA doit savoir sur votre entreprise. Chaque fiche est injectée dans l\'assistant de contenu et les agents — écrivez une fois, réutilisé partout.'
@@ -165,8 +165,8 @@ export default function KnowledgePage() {
 
       {/* Onglets */}
       <div className="hub-tabs" style={{ marginTop: 4 }}>
-        <button className={`hub-tab${tab === 'knowledge' ? ' active' : ''}`} onClick={() => setTab('knowledge')}>📚 Fiches</button>
-        <button className={`hub-tab${tab === 'contacts' ? ' active' : ''}`} onClick={() => setTab('contacts')}>🤝 Contacts</button>
+        <button className={`hub-tab${tab === 'knowledge' ? ' active' : ''}`} onClick={() => setTab('knowledge')}>Fiches</button>
+        <button className={`hub-tab${tab === 'contacts' ? ' active' : ''}`} onClick={() => setTab('contacts')}>Contacts</button>
       </div>
 
       {tab === 'contacts' ? (
@@ -186,7 +186,7 @@ export default function KnowledgePage() {
               className={`knowledge-cat${catFilter === c.value ? ' active' : ''}`}
               onClick={() => setCatFilter(c.value)}
             >
-              {c.icon} {c.label}{count > 0 && <span className="knowledge-cat-count">{count}</span>}
+              {c.label}{count > 0 && <span className="knowledge-cat-count">{count}</span>}
             </button>
           );
         })}
@@ -196,13 +196,12 @@ export default function KnowledgePage() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="🔎 Rechercher…"
+          placeholder="Rechercher…"
         />
       </div>
 
       {filtered.length === 0 ? (
         <div className="plan-empty">
-          <span className="plan-empty-icon">📚</span>
           <h2>{entries.length === 0 ? 'Votre base est vide' : 'Aucune fiche ne correspond'}</h2>
           <p>
             Commencez par 3 fiches : votre proposition de valeur (Produit), votre client idéal (Audience)

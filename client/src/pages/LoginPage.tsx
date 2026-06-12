@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react';
+import { Flame } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { login, setToken, User } from '../api/client';
 
@@ -34,7 +35,7 @@ export default function LoginPage({ onLogin }: Props) {
   return (
     <div className="auth-wrapper">
       <div className="auth-page">
-        <div className="auth-page-logo">🚀</div>
+        <div className="auth-page-logo"><Flame size={30} /></div>
         <h1>Bon retour !</h1>
         <p>Connectez-vous à votre compte LaunchForge</p>
 

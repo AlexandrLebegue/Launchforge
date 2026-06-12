@@ -41,12 +41,12 @@ const profileLabels: { key: keyof OnboardingProfile; label: string }[] = [
 ];
 
 const SPLASH_STEPS = [
-  { at: 0,   icon: '🧠', text: 'Analyse de votre profil et de vos objectifs…' },
-  { at: 12,  icon: '🗺️', text: 'Construction du plan de lancement semaine par semaine…' },
-  { at: 45,  icon: '🎯', text: 'Sélection des communautés et angles de contenu…' },
-  { at: 75,  icon: '✍️', text: 'Rédaction de vos premières idées de posts…' },
-  { at: 110, icon: '🗓️', text: 'Datation des publications dans votre calendrier…' },
-  { at: 140, icon: '✨', text: 'Dernières touches — votre hub se remplit…' },
+  { at: 0,   icon: '', text: 'Analyse de votre profil et de vos objectifs…' },
+  { at: 12,  icon: '', text: 'Construction du plan de lancement semaine par semaine…' },
+  { at: 45,  icon: '', text: 'Sélection des communautés et angles de contenu…' },
+  { at: 75,  icon: '', text: 'Rédaction de vos premières idées de posts…' },
+  { at: 110, icon: '', text: 'Datation des publications dans votre calendrier…' },
+  { at: 140, icon: '', text: 'Dernières touches — votre hub se remplit…' },
 ];
 
 function GenerationSplash() {
@@ -62,7 +62,7 @@ function GenerationSplash() {
   return (
     <div className="gen-splash">
       <div className="gen-splash-rocket">
-        <span className="gen-splash-emoji">🚀</span>
+        <span className="gen-splash-emoji"></span>
         <span className="gen-splash-ring" />
         <span className="gen-splash-ring r2" />
         <span className="gen-splash-ring r3" />
@@ -170,7 +170,7 @@ export default function CreatePlanPage() {
       ...session,
       messages: [
         ...session.messages,
-        { role: 'user', text: text || `📎 ${docs.map((d) => d.name).join(', ')}` },
+        { role: 'user', text: text || `${docs.map((d) => d.name).join(', ')}` },
       ],
     });
 
@@ -246,7 +246,7 @@ export default function CreatePlanPage() {
 
   return (
     <div>
-      <div className="chat-page-title">🚀 Créer mon plan de promotion</div>
+      <div className="chat-page-title">Créer mon plan de promotion</div>
       <div className="chat-page-subtitle">
         L'assistant IA vous pose les bonnes questions et recherche lui-même les infos de votre entreprise
       </div>
@@ -265,7 +265,7 @@ export default function CreatePlanPage() {
                     </div>
                   )}
                   <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                    <div className="chat-avatar">{msg.role === 'assistant' ? '🤖' : '👤'}</div>
+                    <div className="chat-avatar">{msg.role === 'assistant' ? '' : ''}</div>
                     <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
                       <Markdown text={msg.text} />
                     </div>
@@ -283,7 +283,7 @@ export default function CreatePlanPage() {
 
               {sending && (
                 <div className="chat-msg chat-msg-bot">
-                  <div className="chat-avatar">🤖</div>
+                  <div className="chat-avatar"></div>
                   {streamText
                     ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
                     : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
@@ -293,7 +293,7 @@ export default function CreatePlanPage() {
               {completed && (
                 <div className="chat-generate-cta">
                   <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
-                    {generating ? '⏳ Génération en cours…' : '⚡ Générer mon plan de lancement'}
+                    {generating ? '⏳ Génération en cours…' : 'Générer mon plan de lancement'}
                   </button>
                   <button className="btn" onClick={restart} disabled={generating}>
                     ↺ Recommencer
@@ -310,7 +310,7 @@ export default function CreatePlanPage() {
               <div className="chat-attachments">
                 {pendingDocs.map((d, i) => (
                   <span key={i} className="chat-attachment-chip">
-                    📎 {d.name}
+                    {d.name}
                     <button
                       type="button"
                       onClick={() => setPendingDocs(pendingDocs.filter((_, j) => j !== i))}
@@ -337,7 +337,7 @@ export default function CreatePlanPage() {
                   title="Joindre un document (pdf, txt, md, csv, json, html)"
                   onClick={() => fileRef.current?.click()}
                   disabled={sending}
-                >📎</button>
+                ></button>
                 <input
                   type="text"
                   value={input}
@@ -432,7 +432,7 @@ function ManualFallbackForm() {
 
   return (
     <div className="manual-form-wrap">
-      <div className="chat-page-title">🚀 Créer mon plan de promotion</div>
+      <div className="chat-page-title">Créer mon plan de promotion</div>
       <div className="alert-warning">
         L'assistant IA n'est pas configuré sur ce serveur (variable <code>OPENROUTER_API_KEY</code> manquante).
         Remplissez le formulaire pour générer un plan basé sur nos modèles.
@@ -463,7 +463,7 @@ function ManualFallbackForm() {
         </label>
         {error && <div className="chat-error">{error}</div>}
         <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? '⏳ Génération…' : '⚡ Générer mon plan'}
+          {busy ? '⏳ Génération…' : 'Générer mon plan'}
         </button>
       </form>
     </div>

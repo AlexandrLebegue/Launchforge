@@ -7,13 +7,6 @@ import {
 import { User, setToken, getOverview, activatePlan, ProjectSummary } from '../api/client';
 import LogoEmbers from './LogoEmbers';
 
-const nicheEmojis: Record<string, string> = {
-  saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
-  marketplace: '🏪', fintech: '💳', health: '🏥',
-  education: '🎓', ecommerce: '🛒', content: '✍️',
-  'local-business': '🏠', services: '🧰', other: '🚀',
-};
-
 interface Props {
   user: User;
   onLogout: () => void;
@@ -152,7 +145,7 @@ export default function Layout({ user, onLogout }: Props) {
                 onClick={() => setPickerOpen((o) => !o)}
                 title="Projet de travail courant — cliquer pour changer de projet"
               >
-                <span className="layout-nav-icon">{nicheEmojis[activeProject.niche] ?? '🚀'}</span>
+                <span className="layout-nav-icon project-initial">{activeProject.productName.charAt(0).toUpperCase()}</span>
                 <span className="layout-project-name">{activeProject.productName}</span>
                 <span className="layout-project-dot" title="Projet actif" />
                 <span className="layout-project-chevron">{pickerOpen ? '▴' : '▾'}</span>
@@ -167,7 +160,7 @@ export default function Layout({ user, onLogout }: Props) {
                       onClick={() => handleSelectProject(plan)}
                       title={plan.active ? 'Projet actif — tableau de bord' : 'Basculer sur ce projet'}
                     >
-                      <span className="layout-nav-icon">{nicheEmojis[plan.niche] ?? '🚀'}</span>
+                      <span className="layout-nav-icon project-initial">{plan.productName.charAt(0).toUpperCase()}</span>
                       <span className="layout-project-name">{plan.productName}</span>
                       {switching === plan.id
                         ? <span className="layout-project-dot loading">⏳</span>

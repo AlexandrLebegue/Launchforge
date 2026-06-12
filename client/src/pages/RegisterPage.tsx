@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react';
+import { Flame } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { register, setToken, User } from '../api/client';
 
@@ -35,7 +36,7 @@ export default function RegisterPage({ onRegister }: Props) {
   return (
     <div className="auth-wrapper">
       <div className="auth-page">
-        <div className="auth-page-logo">🚀</div>
+        <div className="auth-page-logo"><Flame size={30} /></div>
         <h1>Créer un compte</h1>
         <p>Votre hub de promotion, prêt en quelques secondes</p>
 

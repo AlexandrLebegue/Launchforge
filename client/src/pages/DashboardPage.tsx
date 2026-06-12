@@ -2,13 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getOverview, getPlan, Overview, LaunchPlan } from '../api/client';
 
-const nicheEmojis: Record<string, string> = {
-  saas: '☁️', ai: '🤖', devtool: '🛠️', nocode: '🧩',
-  marketplace: '🏪', fintech: '💳', health: '🏥',
-  education: '🎓', ecommerce: '🛒', content: '✍️',
-  'local-business': '🏠', services: '🧰', other: '🚀',
-};
-
 /**
  * Tableau de bord = vue d'ensemble du projet courant, directement.
  * Pas d'onglets ni de page intermédiaire : l'essentiel du projet actif
@@ -47,15 +40,14 @@ export default function DashboardPage() {
     return (
       <div className="animate-fadeIn">
         <div className="plan-empty">
-          <span className="plan-empty-icon">🚀</span>
-          <h2>Aucun projet</h2>
+                    <h2>Aucun projet</h2>
           <p>L'assistant IA vous pose quelques questions, recherche votre entreprise, et génère votre plan d'action.</p>
           <Link
             to="/new"
             className="btn btn-primary btn-primary-glow btn-lg"
             style={{ display: 'inline-flex' }}
           >
-            ✨ Créer mon premier projet
+            Créer mon premier projet
           </Link>
         </div>
         {error && <div className="error-banner">{error}</div>}
@@ -64,7 +56,6 @@ export default function DashboardPage() {
   }
 
   const { posts, approvals } = overview!;
-  const emoji = nicheEmojis[project.niche] ?? '🚀';
   const input = plan?.input;
 
   return (
@@ -72,7 +63,7 @@ export default function DashboardPage() {
       {/* En-tête : le projet courant */}
       <div className="dashboard-header">
         <div>
-          <h1>{emoji} {project.productName}</h1>
+          <h1>{project.productName}</h1>
           <div className="plan-meta">
             <span className="niche-badge">{project.niche}</span>
             <span className="plan-meta-dot" />
@@ -95,8 +86,7 @@ export default function DashboardPage() {
       {/* Validations en attente — action prioritaire */}
       {approvals > 0 && (
         <Link to="/approvals" className="approval-banner animate-fadeInUp">
-          <span className="approval-banner-icon">✋</span>
-          <span>
+                    <span>
             <strong>{approvals} contenu{approvals > 1 ? 's' : ''}</strong> proposé{approvals > 1 ? 's' : ''} par
             l'IA attend{approvals > 1 ? 'ent' : ''} votre validation
           </span>
@@ -112,7 +102,6 @@ export default function DashboardPage() {
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
         >
-          <span className="stat-card-icon">🗓️</span>
           <div className="stat-card-value">{posts.scheduled}</div>
           <div className="stat-card-label">Posts programmés</div>
         </div>
@@ -122,12 +111,10 @@ export default function DashboardPage() {
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/content')}
         >
-          <span className="stat-card-icon">✏️</span>
           <div className="stat-card-value">{posts.drafts}</div>
           <div className="stat-card-label">Brouillons & idées</div>
         </div>
         <div className="stat-card animate-fadeInUp stagger-3">
-          <span className="stat-card-icon">✅</span>
           <div className="stat-card-value">{posts.published}</div>
           <div className="stat-card-label">Posts publiés</div>
         </div>
@@ -137,7 +124,6 @@ export default function DashboardPage() {
           role="button" tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/approvals')}
         >
-          <span className="stat-card-icon">✋</span>
           <div className="stat-card-value" style={approvals > 0 ? { color: '#f59e0b' } : undefined}>{approvals}</div>
           <div className="stat-card-label">À valider</div>
         </div>
@@ -145,7 +131,7 @@ export default function DashboardPage() {
 
       {/* Prochain post */}
       <div className="card animate-fadeInUp stagger-2" style={{ marginBottom: 20 }}>
-        <div className="card-header">📣 Prochaine publication</div>
+        <div className="card-header">Prochaine publication</div>
         <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
           {posts.next
             ? <>« {posts.next.title || posts.next.platform} » sur <strong style={{ color: 'var(--color-text)' }}>{posts.next.platform}</strong> le {new Date(posts.next.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
@@ -159,7 +145,7 @@ export default function DashboardPage() {
           {/* Objectifs */}
           {input.goals?.length > 0 && (
             <div className="plan-section card animate-fadeInUp stagger-3">
-              <div className="card-header">🎯 Objectifs</div>
+              <div className="card-header">Objectifs</div>
               <ul className="weekly-actions-list">
                 {input.goals.map((g, i) => <li key={i}>{g}</li>)}
               </ul>
@@ -169,7 +155,7 @@ export default function DashboardPage() {
           {/* Description */}
           {input.description && (
             <div className="card animate-fadeInUp stagger-4">
-              <div className="card-header">📖 Description</div>
+              <div className="card-header">Description</div>
               <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
                 {input.description}
               </p>
@@ -179,7 +165,7 @@ export default function DashboardPage() {
           {/* Phases de lancement */}
           {(plan?.launch_sequencing || []).length > 0 && (
             <div className="card animate-fadeInUp stagger-5">
-              <div className="card-header">🚀 Phases de lancement</div>
+              <div className="card-header">Phases de lancement</div>
               {plan!.launch_sequencing.map((ls, i) => (
                 <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < plan!.launch_sequencing.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>

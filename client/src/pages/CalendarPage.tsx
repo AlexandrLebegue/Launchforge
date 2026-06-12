@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getPosts, syncAllToCalendar, getOverview, Post } from '../api/client';
-import { PostEditor, STATUS_META, platformIcon, platformLabel } from './ContentHubPage';
+import { PostEditor, STATUS_META, platformLabel } from './ContentHubPage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vue Calendrier — grille mensuelle façon Outlook (page dédiée)
@@ -68,7 +68,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
           <span><i className="cal-dot published" /> publié</span>
         </div>
         <button type="button" className="btn btn-ghost" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
-          {syncing ? '⏳ Synchronisation…' : '🗓️ Synchroniser Google Calendar'}
+          {syncing ? '⏳ Synchronisation…' : 'Synchroniser Google Calendar'}
         </button>
       </div>
 
@@ -108,7 +108,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
                   <span className="cal-chip-time">
                     {new Date(p.scheduledAt ?? p.publishedAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  {platformIcon(p.platform)} {p.title || platformLabel(p.platform)}
+                  {p.title || platformLabel(p.platform)}
                 </button>
               ))}
               {items.length > 3 && !expanded && (
@@ -126,7 +126,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
         })}
       </div>
       <p className="form-hint" style={{ marginTop: 8 }}>
-        💡 Cliquez sur un jour vide pour créer un post pré-daté, sur un chip pour l'ouvrir.
+        Cliquez sur un jour vide pour créer un post pré-daté, sur un chip pour l'ouvrir.
       </p>
     </div>
   );
@@ -171,13 +171,13 @@ export default function CalendarPage() {
     setSyncing(false);
     if (res.success && res.data) {
       setFeedback(res.data.synced > 0
-        ? `🗓️ ${res.data.synced} post(s) ajoutés à votre calendrier personnel.`
-        : `🗓️ ${res.data.message || 'Tout est déjà synchronisé.'}`);
+        ? `${res.data.synced} post(s) ajoutés à votre calendrier personnel.`
+        : `${res.data.message || 'Tout est déjà synchronisé.'}`);
       load();
     } else {
       setFeedback(res.error === 'COMPOSIO_NOT_CONFIGURED'
-        ? '⚠️ Connectez Google Calendar sur Composio (vue Configuration) pour synchroniser votre agenda.'
-        : `⚠️ ${res.error || 'La synchronisation a échoué.'}`);
+        ? 'Connectez Google Calendar sur Composio (vue Configuration) pour synchroniser votre agenda.'
+        : `${res.error || 'La synchronisation a échoué.'}`);
     }
   };
 
@@ -187,9 +187,9 @@ export default function CalendarPage() {
     <div className="animate-fadeIn">
       <div className="dashboard-header">
         <div>
-          <h1>🗓️ Calendrier</h1>
+          <h1>Calendrier</h1>
           <p>
-            {activeProject && <span className="chip chip-project">🎯 Projet : {activeProject}</span>}
+            {activeProject && <span className="chip chip-project">Projet : {activeProject}</span>}
             {' '}Votre planning éditorial — programmé, brouillons et publications passées.
           </p>
         </div>

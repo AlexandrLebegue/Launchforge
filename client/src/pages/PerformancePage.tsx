@@ -5,7 +5,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { getPerformance, getCampaignReport, getPosts, PerformanceSeries, Post } from '../api/client';
-import { platformIcon, platformLabel, engagementRate } from './ContentHubPage';
+import { platformLabel, engagementRate } from './ContentHubPage';
 import Markdown from '../components/Markdown';
 
 const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0', '')}k` : String(n));
@@ -89,14 +89,13 @@ export default function PerformancePage() {
     <div className="animate-fadeIn">
       <div className="dashboard-header">
         <div>
-          <h1>📈 Performances</h1>
+          <h1>Performances</h1>
           <p>Vos chiffres dans le temps, l'analyse IA, et ce qu'il faut en faire — pour le projet actif.</p>
         </div>
       </div>
 
       {!hasData ? (
         <div className="plan-empty">
-          <span className="plan-empty-icon">📈</span>
           <h2>Pas encore de données</h2>
           <p>Publiez des posts (et laissez la synchro des métriques travailler, ou saisissez-les) — les courbes apparaîtront ici.</p>
         </div>
@@ -104,7 +103,7 @@ export default function PerformancePage() {
         <div className="analytics-wrap">
           {/* ── Évolution hebdomadaire ── */}
           <div className="card">
-            <div className="card-header">📊 Vues & likes par semaine de publication</div>
+            <div className="card-header">Vues & likes par semaine de publication</div>
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={weekly} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
                 <CartesianGrid stroke={C.grid} vertical={false} />
@@ -113,8 +112,8 @@ export default function PerformancePage() {
                 <YAxis yAxisId="likes" orientation="right" tick={{ fill: C.text, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={fmtNum} />
                 <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#fff' }} />
                 <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
-                <Bar yAxisId="imp" dataKey="impressions" name="👁️ Vues" fill={C.impressions} fillOpacity={0.75} radius={[2, 2, 0, 0]} maxBarSize={34} />
-                <Line yAxisId="likes" type="monotone" dataKey="likes" name="❤️ Likes" stroke={C.likes} strokeWidth={2.5} dot={{ r: 3 }} />
+                <Bar yAxisId="imp" dataKey="impressions" name="Vues" fill={C.impressions} fillOpacity={0.75} radius={[2, 2, 0, 0]} maxBarSize={34} />
+                <Line yAxisId="likes" type="monotone" dataKey="likes" name="Likes" stroke={C.likes} strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
             <p className="form-hint">Chaque barre agrège les métriques des posts publiés cette semaine-là.</p>
@@ -122,7 +121,7 @@ export default function PerformancePage() {
 
           {/* ── Progression relative ── */}
           <div className="card">
-            <div className="card-header">🚀 Progression relative (% vs semaine précédente)</div>
+            <div className="card-header">Progression relative (% vs semaine précédente)</div>
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={weekly} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
                 <CartesianGrid stroke={C.grid} vertical={false} />
@@ -140,7 +139,7 @@ export default function PerformancePage() {
           {/* ── Courbe temporelle réelle (snapshots de synchro) ── */}
           {series?.hasHistory ? (
             <div className="card">
-              <div className="card-header">⏱️ Croissance cumulée (instantanés de synchro)</div>
+              <div className="card-header">⏱ Croissance cumulée (instantanés de synchro)</div>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={daily} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
                   <defs>
@@ -154,14 +153,14 @@ export default function PerformancePage() {
                   <YAxis tick={{ fill: C.text, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={fmtNum} />
                   <Tooltip contentStyle={tooltipStyle} labelStyle={{ color: '#fff' }} />
                   <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
-                  <Area type="monotone" dataKey="impressions" name="👁️ Vues cumulées" stroke={C.impressions} fill="url(#gImp)" strokeWidth={2.5} />
-                  <Line type="monotone" dataKey="likes" name="❤️ Likes cumulés" stroke={C.likes} strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="impressions" name="Vues cumulées" stroke={C.impressions} fill="url(#gImp)" strokeWidth={2.5} />
+                  <Line type="monotone" dataKey="likes" name="Likes cumulés" stroke={C.likes} strokeWidth={2} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           ) : (
             <p className="form-hint">
-              ⏱️ La courbe de croissance jour par jour apparaîtra dès que la synchro des métriques aura
+              ⏱ La courbe de croissance jour par jour apparaîtra dès que la synchro des métriques aura
               accumulé quelques instantanés (chaque synchro — automatique ou manuelle — en enregistre un).
             </p>
           )}
@@ -172,9 +171,9 @@ export default function PerformancePage() {
           {/* ── Meilleur post ── */}
           {bestPost && (
             <div className="best-post-card" onClick={() => navigate(`/content?edit=${bestPost.id}`)}>
-              <span className="best-post-label">🏆 Meilleur post</span>
-              <span className="best-post-title">{platformIcon(bestPost.platform)} {bestPost.title || '(sans titre)'}</span>
-              <span className="best-post-rate">📈 {engagementRate(bestPost)!.toFixed(1)} % d'engagement</span>
+              <span className="best-post-label">Meilleur post</span>
+              <span className="best-post-title">{bestPost.title || '(sans titre)'}</span>
+              <span className="best-post-rate">{engagementRate(bestPost)!.toFixed(1)} % d'engagement</span>
             </div>
           )}
 
@@ -186,12 +185,12 @@ export default function PerformancePage() {
               const maxImpressions = byPlatform[0][1].impressions || 1;
               return (
                 <div key={platform} className="platform-row">
-                  <span className="platform-row-name">{platformIcon(platform)} {platformLabel(platform)}</span>
+                  <span className="platform-row-name">{platformLabel(platform)}</span>
                   <div className="platform-row-bar">
                     <div className="platform-row-fill" style={{ width: `${Math.max(4, (s.impressions / maxImpressions) * 100)}%` }} />
                   </div>
                   <span className="platform-row-stats">
-                    {s.posts} post{s.posts > 1 ? 's' : ''} · 👁️ {fmtNum(s.impressions)} · 📈 {rate.toFixed(1)} %
+                    {s.posts} post{s.posts > 1 ? 's' : ''} · {fmtNum(s.impressions)} · {rate.toFixed(1)} %
                   </span>
                 </div>
               );
@@ -201,7 +200,7 @@ export default function PerformancePage() {
           {/* ── Multi-plateformes : même contenu, plateformes comparées ── */}
           {crossGroups.length > 0 && (
             <div className="card">
-              <div className="card-header">📡 Même contenu, plusieurs plateformes</div>
+              <div className="card-header">Impact d'un même post par plateforme</div>
               <p className="form-hint" style={{ marginBottom: 12 }}>
                 La comparaison la plus fiable qui soit : seul le canal change. La plateforme
                 gagnante de chaque groupe est mise en avant.
@@ -216,14 +215,14 @@ export default function PerformancePage() {
                       <div key={p.id} className={`platform-row${best ? ' cross-best' : ''}`}
                            onClick={() => navigate(`/content?edit=${p.id}`)} style={{ cursor: 'pointer' }}>
                         <span className="platform-row-name">
-                          {best ? '🏆 ' : ''}{platformIcon(p.platform)} {platformLabel(p.platform)}
+                          {best ? '' : ''}{platformLabel(p.platform)}
                         </span>
                         <div className="platform-row-bar">
                           <div className="platform-row-fill"
                                style={{ width: `${Math.max(4, (p.impressions / (group.maxImpressions || 1)) * 100)}%` }} />
                         </div>
                         <span className="platform-row-stats">
-                          👁️ {fmtNum(p.impressions)} · ❤️ {fmtNum(p.likes)} · 📈 {rate !== null ? `${rate.toFixed(1)} %` : '—'}
+                          {fmtNum(p.impressions)} · {fmtNum(p.likes)} · {rate !== null ? `${rate.toFixed(1)} %` : '—'}
                         </span>
                       </div>
                     );
@@ -238,7 +237,7 @@ export default function PerformancePage() {
             <div className="card-header">Détail des posts publiés</div>
             <div className="analytics-table">
               <div className="analytics-row analytics-head">
-                <span>Post</span><span>👁️</span><span>❤️</span><span>💬</span><span>🔁</span><span>🔗</span><span>📈</span>
+                <span>Post</span><span></span><span></span><span></span><span></span><span></span><span></span>
               </div>
               {[...published]
                 .sort((a, b) => (engagementRate(b) ?? -1) - (engagementRate(a) ?? -1))
@@ -246,7 +245,7 @@ export default function PerformancePage() {
                   const rate = engagementRate(p);
                   return (
                     <div key={p.id} className="analytics-row" onClick={() => navigate(`/content?edit=${p.id}`)}>
-                      <span className="analytics-post">{platformIcon(p.platform)} {p.title || '(sans titre)'}</span>
+                      <span className="analytics-post">{platformLabel(p.platform)} · {p.title || '(sans titre)'}</span>
                       <span>{fmtNum(p.impressions)}</span>
                       <span>{fmtNum(p.likes)}</span>
                       <span>{fmtNum(p.comments)}</span>
@@ -260,7 +259,7 @@ export default function PerformancePage() {
                 })}
             </div>
             <p className="form-hint" style={{ marginTop: 10 }}>
-              💡 Cliquez sur un post pour l'ouvrir (et lancer son analyse IA). Un engagement ≥ 3 % est bon sur la plupart des plateformes.
+              Cliquez sur un post pour l'ouvrir (et lancer son analyse IA). Un engagement ≥ 3 % est bon sur la plupart des plateformes.
             </p>
           </div>
         </div>
@@ -287,9 +286,9 @@ function CampaignReportCard() {
   return (
     <div className="card">
       <div className="config-card-head">
-        <span className="config-card-title">🗞️ Rapport de campagne</span>
+        <span className="config-card-title">Rapport de campagne</span>
         <button type="button" className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={generate} disabled={busy}>
-          {busy ? '⏳ Analyse…' : report ? '↺ Actualiser' : '✨ Générer le rapport'}
+          {busy ? '⏳ Analyse…' : report ? '↺ Actualiser' : 'Générer le rapport'}
         </button>
       </div>
       {!report && !busy && (

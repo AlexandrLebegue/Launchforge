@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react';
+import { Flame } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { resetPassword, setToken, User } from '../api/client';
 
@@ -38,7 +39,7 @@ export default function ResetPasswordPage({ onLogin }: Props) {
   return (
     <div className="auth-wrapper">
       <div className="auth-page">
-        <div className="auth-page-logo">🔑</div>
+        <div className="auth-page-logo"><Flame size={30} /></div>
         <h1>Nouveau mot de passe</h1>
         <p>Choisissez le nouveau mot de passe de votre compte</p>
 

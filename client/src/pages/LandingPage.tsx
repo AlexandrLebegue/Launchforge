@@ -105,7 +105,7 @@ function HeroMock() {
           <div className="hero-mock-feed-item">
             <span className="hero-mock-feed-icon ok"><Send size={14} /></span>
             <span><strong>Publié</strong> sur LinkedIn + X</span>
-            <span className="hero-mock-feed-badge">⚡ auto</span>
+            <span className="hero-mock-feed-badge">auto</span>
           </div>
           <div className="hero-mock-feed-item">
             <span className="hero-mock-feed-icon"><Target size={14} /></span>

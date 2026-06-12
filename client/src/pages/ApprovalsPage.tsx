@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { getApprovals, approveRun, rejectRun, ApprovalItem } from '../api/client';
 
 const PLATFORM_ICONS: Record<string, string> = {
-  reddit: '🟠', twitter: '🐦', linkedin: '💼', instagram: '📸',
-  producthunt: '🐱', hackernews: '🟧', indiehackers: '🔨',
-  discord: '💬', slack: '💛', github: '🐙',
+  reddit: '', twitter: '', linkedin: '', instagram: '',
+  producthunt: '', hackernews: '', indiehackers: '',
+  discord: '', slack: '', github: '',
 };
 
 interface CardState {
@@ -48,7 +48,7 @@ export default function ApprovalsPage() {
     const res = await approveRun(item.id, edited);
     if (res.success) {
       setItems((prev) => prev.filter((i) => i.id !== item.id));
-      setFeedback(`✅ « ${item.cardTitle} » validé et traité.`);
+      setFeedback(`« ${item.cardTitle} » validé et traité.`);
     } else {
       setCard(item.id, { busy: null, error: res.error || 'La validation a échoué — réessayez.' });
     }
@@ -60,7 +60,7 @@ export default function ApprovalsPage() {
     const res = await rejectRun(item.id, reason || undefined);
     if (res.success) {
       setItems((prev) => prev.filter((i) => i.id !== item.id));
-      setFeedback(`🚫 « ${item.cardTitle} » rejeté.`);
+      setFeedback(`« ${item.cardTitle} » rejeté.`);
     } else {
       setCard(item.id, { busy: null, error: res.error || 'Le rejet a échoué — réessayez.' });
     }
@@ -72,7 +72,7 @@ export default function ApprovalsPage() {
     <div className="animate-fadeIn">
       <div className="dashboard-header">
         <div>
-          <h1>✋ Validations</h1>
+          <h1>Validations</h1>
           <p>
             {items.length === 0
               ? 'Aucune demande en attente — les agents en mode validation déposeront leurs contenus ici.'
@@ -92,14 +92,13 @@ export default function ApprovalsPage() {
 
       {items.length === 0 ? (
         <div className="plan-empty">
-          <span className="plan-empty-icon">✅</span>
           <h2>Tout est à jour</h2>
           <p>
             Quand un agent en mode « validation » prépare un contenu, il apparaît ici
             pour relecture avant publication. Les agents en mode « auto » publient directement.
           </p>
           <Link to="/agents" className="btn btn-primary" style={{ display: 'inline-flex' }}>
-            🤖 Gérer mes agents
+            Gérer mes agents
           </Link>
         </div>
       ) : (
@@ -111,7 +110,7 @@ export default function ApprovalsPage() {
               <div key={item.id} className="approval-card animate-fadeInUp">
                 <div className="approval-card-header">
                   <span className="approval-agent">
-                    {PLATFORM_ICONS[item.agentPlatform] ?? '🤖'} {item.agentName}
+                    {PLATFORM_ICONS[item.agentPlatform] ?? ''} {item.agentName}
                   </span>
                   <span className="approval-task">{item.cardTitle}</span>
                   <span className="approval-date">
@@ -120,7 +119,7 @@ export default function ApprovalsPage() {
                     })}
                   </span>
                   {!item.planId && (
-                    <span className="chip" title="Tâche lancée depuis Telegram">💬 Telegram</span>
+                    <span className="chip" title="Tâche lancée depuis Telegram">Telegram</span>
                   )}
                 </div>
 
@@ -131,7 +130,7 @@ export default function ApprovalsPage() {
                   rows={Math.min(14, Math.max(5, state.content.split('\n').length + 1))}
                   disabled={state.busy !== null}
                 />
-                {edited && <div className="approval-edited-hint">✏️ Contenu modifié — la version éditée sera publiée</div>}
+                {edited && <div className="approval-edited-hint">Contenu modifié — la version éditée sera publiée</div>}
                 {state.error && <div className="chat-error">{state.error}</div>}
 
                 <div className="approval-actions">
@@ -140,14 +139,14 @@ export default function ApprovalsPage() {
                     onClick={() => handleApprove(item)}
                     disabled={state.busy !== null || !state.content.trim()}
                   >
-                    {state.busy === 'approve' ? '⏳ Publication…' : '✅ Valider et publier'}
+                    {state.busy === 'approve' ? '⏳ Publication…' : 'Valider et publier'}
                   </button>
                   <button
                     className="btn btn-ghost btn-danger"
                     onClick={() => handleReject(item)}
                     disabled={state.busy !== null}
                   >
-                    {state.busy === 'reject' ? '⏳…' : '🚫 Rejeter'}
+                    {state.busy === 'reject' ? '⏳…' : 'Rejeter'}
                   </button>
                 </div>
               </div>

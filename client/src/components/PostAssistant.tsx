@@ -6,7 +6,7 @@ const STORAGE_KEY = 'lf_post_chat';
 
 const WELCOME: PostChatMessage = {
   role: 'assistant',
-  text: '👋 Je suis ton assistant de création de posts. Dis-moi ce que tu veux publier — je peux chercher des actus et des chiffres sur le web, proposer des angles, rédiger, et enregistrer le post dans ton Hub quand il te plaît.\n\nExemples : « Un post LinkedIn sur notre nouvelle fonctionnalité », « Trouve une actu de mon secteur et fais un post dessus », « 3 idées de threads X ».',
+  text: 'Je suis ton assistant de création de posts. Dis-moi ce que tu veux publier — je peux chercher des actus et des chiffres sur le web, proposer des angles, rédiger, et enregistrer le post dans ton Hub quand il te plaît.\n\nExemples : « Un post LinkedIn sur notre nouvelle fonctionnalité », « Trouve une actu de mon secteur et fais un post dessus », « 3 idées de threads X ».',
 };
 
 
@@ -104,7 +104,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
       <div className="assistant-overlay" onClick={onClose} />
       <aside className="assistant-drawer">
         <div className="assistant-header">
-          <span className="assistant-title">💬 Assistant de création</span>
+          <span className="assistant-title">Assistant de création</span>
           <span className="form-hint-inline">cherche sur le web · enregistre dans le Hub</span>
           <button className="btn btn-ghost btn-sm" onClick={handleReset} title="Nouvelle conversation">↺</button>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -119,7 +119,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
                 </div>
               )}
               <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                <div className="chat-avatar">{msg.role === 'assistant' ? '✨' : '👤'}</div>
+                <div className="chat-avatar">{msg.role === 'assistant' ? '' : ''}</div>
                 <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
                   <Markdown text={msg.text} />
                 </div>
@@ -134,7 +134,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
           )}
           {sending && (
             <div className="chat-msg chat-msg-bot">
-              <div className="chat-avatar">✨</div>
+              <div className="chat-avatar"></div>
               {streamText
                 ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
                 : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
@@ -146,7 +146,7 @@ export default function PostAssistant({ open, onClose, onPostsSaved }: Props) {
 
         {savedFlash && (
           <div className="approval-feedback" style={{ margin: '0 0 8px' }}>
-            ✅ « {savedFlash} » enregistré dans le Hub
+            « {savedFlash} » enregistré dans le Hub
           </div>
         )}
         {error && <div className="chat-error" style={{ margin: '0 0 8px' }}>{error}</div>}

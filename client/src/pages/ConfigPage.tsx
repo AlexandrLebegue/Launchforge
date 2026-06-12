@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
+  Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
+  MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot,
+} from 'lucide-react';
+import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
   setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
   setMarpTheme, customizeMarpTheme, themePreviewUrl,
@@ -14,10 +18,11 @@ const SYNC_INTERVALS = [
   { value: 1440, label: 'Une fois par jour' },
 ];
 
-const TOOLKIT_ICONS: Record<string, string> = {
-  linkedin: '💼', twitter: '🐦', instagram: '📸', facebook: '📘',
-  gmail: '✉️', googlecalendar: '🗓️', reddit: '🟠',
-  youtube: '▶️', discord: '🎮', slack: '💬', github: '🐙',
+const TOOLKIT_ICONS: Record<string, React.ReactNode> = {
+  linkedin: <Briefcase size={18} />, twitter: <MessageCircle size={18} />, instagram: <Camera size={18} />,
+  facebook: <Users size={18} />, gmail: <Mail size={18} />, googlecalendar: <CalendarDays size={18} />,
+  reddit: <MessagesSquare size={18} />, youtube: <Play size={18} />, discord: <Gamepad2 size={18} />,
+  slack: <Hash size={18} />, github: <GitBranch size={18} />,
 };
 
 export default function ConfigPage() {
@@ -192,7 +197,7 @@ export default function ConfigPage() {
     <div className="animate-fadeIn">
       <div className="dashboard-header">
         <div>
-          <h1>⚙️ Configuration</h1>
+          <h1>Configuration</h1>
           <p>L'état de vos connexions — ce qui est fonctionnel, et où connecter le reste.</p>
         </div>
       </div>
@@ -201,10 +206,10 @@ export default function ConfigPage() {
         {/* ── IA ── */}
         <div className="card config-card">
           <div className="config-card-head">
-            <span className="config-card-title">🧠 Intelligence artificielle</span>
+            <span className="config-card-title">Intelligence artificielle</span>
             {status.ai.configured
-              ? <span className="config-badge ok">✅ Fonctionnelle</span>
-              : <span className="config-badge ko">⚠️ Non configurée</span>}
+              ? <span className="config-badge ok">Fonctionnelle</span>
+              : <span className="config-badge ko">Non configurée</span>}
           </div>
           {status.ai.configured ? (
             <p className="config-desc">
@@ -222,7 +227,7 @@ export default function ConfigPage() {
         {/* ── Pipeline de publication ── */}
         <div className="card config-card">
           <div className="config-card-head">
-            <span className="config-card-title">🚦 Publication des contenus IA</span>
+            <span className="config-card-title">Publication des contenus IA</span>
           </div>
           <p className="config-desc">
             Quand l'IA rédige un contenu (tâche Kanban, demande Telegram), il est :
@@ -235,7 +240,7 @@ export default function ConfigPage() {
               onClick={() => handleMode('manual')}
               disabled={savingMode}
             >
-              <span className="approval-mode-title">✋ Soumis à votre validation</span>
+              <span className="approval-mode-title">Soumis à votre validation</span>
               <span className="approval-mode-desc">Chaque contenu attend votre relecture dans Validations (recommandé)</span>
             </button>
             <button
@@ -244,7 +249,7 @@ export default function ConfigPage() {
               onClick={() => handleMode('auto')}
               disabled={savingMode}
             >
-              <span className="approval-mode-title">⚡ Publié directement</span>
+              <span className="approval-mode-title">Publié directement</span>
               <span className="approval-mode-desc">Sans confirmation — réservé aux comptes de confiance</span>
             </button>
           </div>
@@ -253,9 +258,9 @@ export default function ConfigPage() {
         {/* ── Synchro automatique des métriques ── */}
         <div className="card config-card">
           <div className="config-card-head">
-            <span className="config-card-title">📈 Synchro des métriques</span>
+            <span className="config-card-title">Synchro des métriques</span>
             {status.metricsSync.intervalMinutes > 0
-              ? <span className="config-badge ok">✅ Active</span>
+              ? <span className="config-badge ok">Active</span>
               : <span className="config-badge warn">Désactivée</span>}
           </div>
           <p className="config-desc">
@@ -288,12 +293,12 @@ export default function ConfigPage() {
         {/* ── Thème des présentations (Marp) ── */}
         <div className="card config-card">
           <div className="config-card-head">
-            <span className="config-card-title">🎞️ Thème des présentations</span>
+            <span className="config-card-title">Thème des présentations</span>
             <a
               className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
               href={themePreviewUrl()} target="_blank" rel="noopener noreferrer"
             >
-              👁️ Aperçu
+              Aperçu
             </a>
           </div>
           <p className="config-desc">
@@ -314,7 +319,7 @@ export default function ConfigPage() {
             </select>
           </label>
           <label className="form-label-block" style={{ marginTop: 8 }}>
-            ✨ Créer mon thème avec l'IA
+            Créer mon thème avec l'IA
             <div className="ai-assist-row">
               <input
                 className="form-input"
@@ -324,7 +329,7 @@ export default function ConfigPage() {
                 disabled={themeBusy}
               />
               <button type="button" className="btn btn-primary" onClick={handleCustomizeTheme} disabled={themeBusy || !themePrompt.trim()}>
-                {themeBusy ? '⏳…' : '✨ Générer'}
+                {themeBusy ? '⏳…' : 'Générer'}
               </button>
             </div>
             <span className="form-hint-inline">
@@ -337,10 +342,10 @@ export default function ConfigPage() {
         {/* ── Composio ── */}
         <div className="card config-card config-card-wide">
           <div className="config-card-head">
-            <span className="config-card-title">🔌 Connexions plateformes (Composio)</span>
+            <span className="config-card-title">Connexions plateformes (Composio)</span>
             {status.composio.configured
-              ? <span className="config-badge ok">✅ {connectedCount} connectée{connectedCount > 1 ? 's' : ''}</span>
-              : <span className="config-badge ko">⚠️ Non configuré</span>}
+              ? <span className="config-badge ok">{connectedCount} connectée{connectedCount > 1 ? 's' : ''}</span>
+              : <span className="config-badge ko">Non configuré</span>}
             <a
               className="btn btn-primary btn-sm"
               style={{ marginLeft: 'auto' }}
@@ -359,13 +364,13 @@ export default function ConfigPage() {
           <div className="config-toolkits">
             {status.composio.toolkits.map((t) => (
               <div key={t.slug} className={`config-toolkit${t.connected ? ' on' : ''}`}>
-                <span className="config-toolkit-icon">{TOOLKIT_ICONS[t.slug] ?? '🔧'}</span>
+                <span className="config-toolkit-icon">{TOOLKIT_ICONS[t.slug] ?? <Plug size={18} />}</span>
                 <span className="config-toolkit-main">
                   <span className="config-toolkit-name">{t.name}</span>
                   <span className="config-toolkit-cap">{t.capability}</span>
                   {connectErrors[t.slug] && (
                     <span className="config-toolkit-cap" style={{ color: 'var(--color-danger, #f87171)' }}>
-                      ⚠️ {connectErrors[t.slug]}
+                      {connectErrors[t.slug]}
                     </span>
                   )}
                 </span>
@@ -399,7 +404,7 @@ export default function ConfigPage() {
                     disabled={connecting === t.slug || !status.composio.configured}
                     title="Génère le lien d'autorisation et l'ouvre dans un nouvel onglet"
                   >
-                    {connecting === t.slug ? '⏳…' : '🔗 Connecter'}
+                    {connecting === t.slug ? '⏳…' : 'Connecter'}
                   </button>
                 )}
               </div>
@@ -415,11 +420,11 @@ export default function ConfigPage() {
         {/* ── Telegram ── */}
         <div className="card config-card">
           <div className="config-card-head">
-            <span className="config-card-title">💬 Bot Telegram</span>
+            <span className="config-card-title">Bot Telegram</span>
             {!status.telegram.configured
-              ? <span className="config-badge ko">⚠️ Non configuré</span>
+              ? <span className="config-badge ko">Non configuré</span>
               : status.telegram.linked
-                ? <span className="config-badge ok">✅ Compte lié</span>
+                ? <span className="config-badge ok">Compte lié</span>
                 : <span className="config-badge warn">À lier</span>}
           </div>
           <p className="config-desc">
@@ -430,7 +435,7 @@ export default function ConfigPage() {
           {/* Bot personnel : chaque utilisateur branche le sien */}
           {status.telegram.ownBot ? (
             <div className="config-toolkit on" style={{ marginBottom: 10 }}>
-              <span className="config-toolkit-icon">🤖</span>
+              <span className="config-toolkit-icon"><Bot size={18} /></span>
               <span className="config-toolkit-main">
                 <span className="config-toolkit-name">Votre bot {status.telegram.botUsername}</span>
                 <span className="config-toolkit-cap">Écrivez-lui /start sur Telegram — la liaison est automatique.</span>
@@ -469,7 +474,7 @@ export default function ConfigPage() {
               </>
             ) : (
               <button className="btn btn-ghost" onClick={handleTelegramCode}>
-                🔗 {status.telegram.linked ? 'Lier un autre chat' : 'Générer le code de liaison'}
+                {status.telegram.linked ? 'Lier un autre chat' : 'Générer le code de liaison'}
               </button>
             )
           )}

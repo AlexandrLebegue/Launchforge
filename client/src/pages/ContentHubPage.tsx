@@ -11,29 +11,28 @@ import {
 import PostAssistant from '../components/PostAssistant';
 import Markdown from '../components/Markdown';
 
-export const PLATFORMS: { value: string; label: string; icon: string }[] = [
-  { value: 'linkedin',     label: 'LinkedIn',      icon: '💼' },
-  { value: 'twitter',      label: 'X / Twitter',   icon: '🐦' },
-  { value: 'instagram',    label: 'Instagram',     icon: '📸' },
-  { value: 'facebook',     label: 'Facebook',      icon: '📘' },
-  { value: 'tiktok',       label: 'TikTok',        icon: '🎬' },
-  { value: 'youtube',      label: 'YouTube',       icon: '▶️' },
-  { value: 'reddit',       label: 'Reddit',        icon: '🟠' },
-  { value: 'blog',         label: 'Blog / SEO',    icon: '📝' },
-  { value: 'newsletter',   label: 'Newsletter',    icon: '✉️' },
-  { value: 'producthunt',  label: 'Product Hunt',  icon: '🐱' },
-  { value: 'hackernews',   label: 'Hacker News',   icon: '🟧' },
-  { value: 'indiehackers', label: 'Indie Hackers', icon: '🔨' },
+export const PLATFORMS: { value: string; label: string }[] = [
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'twitter', label: 'X / Twitter' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'reddit', label: 'Reddit' },
+  { value: 'blog', label: 'Blog / SEO' },
+  { value: 'newsletter', label: 'Newsletter' },
+  { value: 'producthunt', label: 'Product Hunt' },
+  { value: 'hackernews', label: 'Hacker News' },
+  { value: 'indiehackers', label: 'Indie Hackers' },
 ];
 
-export const platformIcon  = (p: string) => PLATFORMS.find((x) => x.value === p)?.icon ?? '📣';
 export const platformLabel = (p: string) => PLATFORMS.find((x) => x.value === p)?.label ?? p;
 
 export const STATUS_META: Record<PostStatus, { label: string; cls: string }> = {
-  idea:      { label: '💡 Idée',       cls: 'post-status-idea' },
-  draft:     { label: '✏️ Brouillon',  cls: 'post-status-draft' },
-  scheduled: { label: '🗓️ Programmé', cls: 'post-status-scheduled' },
-  published: { label: '✅ Publié',     cls: 'post-status-published' },
+  idea:      { label: 'Idée',       cls: 'post-status-idea' },
+  draft:     { label: 'Brouillon',  cls: 'post-status-draft' },
+  scheduled: { label: 'Programmé', cls: 'post-status-scheduled' },
+  published: { label: 'Publié',     cls: 'post-status-published' },
 };
 
 const RECURRENCE_LABELS: Record<Recurrence, string> = {
@@ -204,7 +203,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     setAnalyzing(false);
     if (res.success && res.data) {
       setAnalysis(res.data.analysis + (res.data.learnings.length
-        ? `\n\n---\n📚 **${res.data.learnings.length} enseignement(s) ajouté(s) à la base de connaissances** — les prochaines générations en tiendront compte.`
+        ? `\n\n---\n**${res.data.learnings.length} enseignement(s) ajouté(s) à la base de connaissances** — les prochaines générations en tiendront compte.`
         : ''));
     } else {
       setError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Analyse échouée.');
@@ -258,7 +257,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
         impressions: p.impressions, likes: p.likes, comments: p.comments,
         shares: p.shares, clicks: p.clicks,
       }));
-      setSyncNote(`✅ Métriques synchronisées${res.data.note ? ` — ${res.data.note}` : ''}`);
+      setSyncNote(`Métriques synchronisées${res.data.note ? ` — ${res.data.note}` : ''}`);
     } else {
       setError(res.error === 'COMPOSIO_NOT_CONFIGURED'
         ? 'Composio non configuré (COMPOSIO_MCP_URL) — connectez vos comptes sur dashboard.composio.dev et renseignez l\'URL MCP côté serveur.'
@@ -298,7 +297,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
       setError(res.error || 'Enregistrement impossible.');
       return;
     }
-    // Déclinaison vers les plateformes cochées (exemplaires liés, groupe 📡)
+    // Déclinaison vers les plateformes cochées (exemplaires liés, groupe )
     if (crossPlatforms.size > 0) {
       const cross = await crosspostPost(res.data.id, [...crossPlatforms], crossAdapt);
       if (!cross.success) {
@@ -325,16 +324,16 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             <label className="form-label-block">
               Plateforme
               <select value={form.platform} onChange={(e) => set('platform', e.target.value)} className="form-input">
-                {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.icon} {p.label}</option>)}
+                {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </label>
             <label className="form-label-block">
               Statut
               <select value={form.status} onChange={(e) => set('status', e.target.value as PostStatus)} className="form-input">
-                <option value="idea">💡 Idée</option>
-                <option value="draft">✏️ Brouillon</option>
-                <option value="scheduled">🗓️ Programmé</option>
-                <option value="published">✅ Publié</option>
+                <option value="idea">Idée</option>
+                <option value="draft">Brouillon</option>
+                <option value="scheduled">Programmé</option>
+                <option value="published">Publié</option>
               </select>
             </label>
           </div>
@@ -346,7 +345,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
 
           {/* Assistant IA */}
           <div className="ai-assist-box">
-            <div className="ai-assist-header">✨ Assistant IA <span className="form-hint-inline">— s'appuie sur votre <Link to="/knowledge">base de connaissances</Link></span></div>
+            <div className="ai-assist-header">Assistant IA <span className="form-hint-inline">— s'appuie sur votre <Link to="/knowledge">base de connaissances</Link></span></div>
             <div className="ai-assist-row">
               <input
                 className="form-input"
@@ -356,17 +355,17 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 disabled={generating}
               />
               <button type="button" className="btn btn-primary" onClick={() => handleGenerate(false)} disabled={generating}>
-                {generating ? '⏳…' : '✨ Générer'}
+                {generating ? '⏳…' : 'Générer'}
               </button>
               {form.content.trim() && (
                 <button type="button" className="btn btn-ghost" onClick={() => handleGenerate(true)} disabled={generating}>
-                  🪄 Améliorer
+                  Améliorer
                 </button>
               )}
             </div>
             <label className="ai-news-toggle">
               <input type="checkbox" checked={useNews} onChange={(e) => setUseNews(e.target.checked)} />
-              📰 S'appuyer sur les actus du web (recherche en direct sur le sujet)
+              S'appuyer sur les actus du web (recherche en direct sur le sujet)
             </label>
           </div>
 
@@ -383,7 +382,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           </label>
 
           <label className="form-label-block">
-            🖼️ Image du post <span className="form-hint-inline">(jointe à la publication — obligatoire pour Instagram)</span>
+            Image du post <span className="form-hint-inline">(jointe à la publication — obligatoire pour Instagram)</span>
             <div className="ai-assist-row">
               <input
                 className="form-input"
@@ -397,7 +396,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 disabled={imgBusy}
                 title="Téléverser une image depuis votre machine (hébergée publiquement)"
               >
-                📤 Upload
+                Upload
               </button>
               <input
                 ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -409,11 +408,11 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 className="form-input"
                 value={imgPrompt}
                 onChange={(e) => setImgPrompt(e.target.value)}
-                placeholder="🎨 Ou décrivez le visuel à générer par l'IA (~0,04 $)…"
+                placeholder="Ou décrivez le visuel à générer par l'IA (~0,04 $)…"
                 disabled={imgBusy}
               />
               <button type="button" className="btn btn-primary" onClick={handleGenerateImage} disabled={imgBusy || !imgPrompt.trim()}>
-                {imgBusy ? '⏳…' : '🎨 Générer'}
+                {imgBusy ? '⏳…' : 'Générer'}
               </button>
             </div>
             {decks.length > 0 && (
@@ -424,12 +423,12 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                   onChange={(e) => setSelectedDeck(e.target.value)}
                   disabled={imgBusy}
                 >
-                  <option value="">🎞️ Ou utilisez une présentation (onglet Slides)…</option>
+                  <option value="">Ou utilisez une présentation (onglet Slides)…</option>
                   {decks.map((d) => <option key={d.id} value={d.id}>{d.title}</option>)}
                 </select>
                 <button type="button" className="btn btn-ghost" onClick={handleDeckGif} disabled={imgBusy || !selectedDeck}
                         title="Transforme la présentation en GIF animé (fondus) et l'attache au post">
-                  {imgBusy ? '⏳…' : '🎬 GIF animé'}
+                  {imgBusy ? '⏳…' : 'GIF animé'}
                 </button>
               </div>
             )}
@@ -465,7 +464,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
 
           {/* Déclinaison multi-plateformes : un exemplaire indépendant par plateforme */}
           <div className="form-label-block">
-            📡 Publier aussi sur d'autres plateformes
+            Publier aussi sur d'autres plateformes
             {post?.crossPostId && (
               <span className="form-hint-inline"> — ce post fait déjà partie d'un groupe multi-plateformes</span>
             )}
@@ -477,7 +476,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                   className={`knowledge-cat${crossPlatforms.has(p.value) ? ' active' : ''}`}
                   onClick={() => toggleCross(p.value)}
                 >
-                  {p.icon} {p.label}
+                  {p.label}
                 </button>
               ))}
             </div>
@@ -485,7 +484,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               <>
                 <label className="ai-news-toggle" style={{ marginTop: 8 }}>
                   <input type="checkbox" checked={crossAdapt} onChange={(e) => setCrossAdapt(e.target.checked)} />
-                  🪄 Adapter le contenu aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
+                  Adapter le contenu aux codes de chaque plateforme par l'IA (sinon copie telle quelle)
                 </label>
                 <span className="form-hint-inline">
                   À l'enregistrement, un exemplaire indépendant est créé par plateforme (même date,
@@ -499,10 +498,10 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           {/* Série récurrente : pilotage de l'IA + mode simulé */}
           {form.recurrence !== 'none' && (
             <div className="recur-panel">
-              <div className="ai-assist-header">🔁 Série récurrente — pilotage de l'IA</div>
+              <div className="ai-assist-header">Série récurrente — pilotage de l'IA</div>
 
               <label className="form-label-block" style={{ marginTop: 8 }}>
-                🪄 Instruction de régénération <span className="form-hint-inline">(le sujet, l'angle, ce que l'IA doit chercher)</span>
+                Instruction de régénération <span className="form-hint-inline">(le sujet, l'angle, ce que l'IA doit chercher)</span>
                 <textarea
                   className="form-input"
                   value={form.recurrenceBrief}
@@ -521,18 +520,18 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 <label className="recur-toggle">
                   <input type="checkbox" checked={form.recurrenceUseKnowledge}
                          onChange={(e) => set('recurrenceUseKnowledge', e.target.checked)} />
-                  📚 S'appuyer sur la <Link to="/knowledge">base de connaissances</Link>
+                  S'appuyer sur la <Link to="/knowledge">base de connaissances</Link>
                 </label>
                 <label className="recur-toggle">
                   <input type="checkbox" checked={form.recurrenceUseNews}
                          onChange={(e) => set('recurrenceUseNews', e.target.checked)} />
-                  📰 Rechercher les actualités du web sur le sujet
+                  Rechercher les actualités du web sur le sujet
                 </label>
                 {form.recurrenceUseNews && (
                   <label className="recur-toggle">
                     <input type="checkbox" checked={form.recurrenceUpdateKb}
                            onChange={(e) => set('recurrenceUpdateKb', e.target.checked)} />
-                    📥 Archiver les actus utilisées dans la fiche « 📰 Veille » de la base de connaissances
+                    Archiver les actus utilisées dans la fiche « Veille » de la base de connaissances
                   </label>
                 )}
               </div>
@@ -544,7 +543,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                         title={!post ? 'Enregistrez d\'abord le post pour pouvoir simuler'
                           : !form.recurrenceBrief.trim() ? 'Renseignez l\'instruction de régénération'
                           : 'Génère la prochaine occurrence avec ces réglages — rien n\'est enregistré'}>
-                  {simBusy ? '⏳ Simulation…' : '🧪 Simuler la prochaine occurrence'}
+                  {simBusy ? '⏳ Simulation…' : 'Simuler la prochaine occurrence'}
                 </button>
                 {!post && <span className="form-hint-inline">Enregistrez d'abord le post pour simuler.</span>}
               </div>
@@ -552,11 +551,11 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               {simResult && (
                 <div className="recur-sim-result">
                   <div className="recur-sim-head">
-                    <span>🧪 Aperçu — <strong>{simResult.title}</strong></span>
+                    <span>Aperçu — <strong>{simResult.title}</strong></span>
                     <button type="button" className="btn btn-ghost btn-sm"
                             onClick={() => { set('title', simResult.title); set('content', simResult.content); setSimResult(null); }}
                             title="Remplace le titre et le contenu du post par cette simulation">
-                      ✍️ Utiliser ce contenu
+                      Utiliser ce contenu
                     </button>
                   </div>
                   <div className="recur-sim-body"><Markdown text={simResult.content} /></div>
@@ -575,7 +574,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                 onChange={(e) => set('autoPublish', e.target.checked)}
               />
               <span className="autopublish-text">
-                <span className="autopublish-title">⚡ Publication automatique</span>
+                <span className="autopublish-title">Publication automatique</span>
                 <span className="form-hint-inline">
                   Le worker publie ce post tout seul à l'heure programmée via vos comptes Composio —
                   vérifiez le contenu avant d'activer. Sans cette option, vous publiez manuellement.
@@ -585,7 +584,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           )}
           {post?.publishError && (
             <div className="chat-error">
-              ⚠️ La publication automatique a échoué : {post.publishError} — corrigez puis réactivez l'option, ou publiez manuellement.
+              La publication automatique a échoué : {post.publishError} — corrigez puis réactivez l'option, ou publiez manuellement.
             </div>
           )}
 
@@ -593,10 +592,10 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           {post && form.status === 'published' && (
             <div className="ai-assist-box">
               <div className="ai-assist-header">
-                🔎 Analyse de performance
+                Analyse de performance
                 <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
                         onClick={handleAnalyze} disabled={analyzing}>
-                  {analyzing ? '⏳ Analyse…' : analysis ? '↺ Re-analyser' : '🔎 Analyser ce post'}
+                  {analyzing ? '⏳ Analyse…' : analysis ? '↺ Re-analyser' : 'Analyser ce post'}
                 </button>
               </div>
               {analysis && (
@@ -611,7 +610,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           {form.status === 'published' && (
             <div className="metrics-section">
               <label className="form-label-block">
-                🔗 URL du post publié
+                URL du post publié
                 <div className="ai-assist-row">
                   <input
                     className="form-input"
@@ -621,7 +620,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                   />
                   {post && (
                     <button type="button" className="btn btn-ghost" onClick={handleSync} disabled={syncing}>
-                      {syncing ? '⏳ Synchro…' : '🔄 Synchroniser via Composio'}
+                      {syncing ? '⏳ Synchro…' : 'Synchroniser via Composio'}
                     </button>
                   )}
                 </div>
@@ -632,8 +631,8 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               {syncNote && <div className="approval-feedback" style={{ marginBottom: 0 }}>{syncNote}</div>}
               <div className="metrics-grid">
                 {([
-                  ['impressions', '👁️ Impressions'], ['likes', '❤️ Likes'], ['comments', '💬 Commentaires'],
-                  ['shares', '🔁 Partages'], ['clicks', '🔗 Clics'],
+                  ['impressions', 'Impressions'], ['likes', 'Likes'], ['comments', 'Commentaires'],
+                  ['shares', 'Partages'], ['clicks', 'Clics'],
                 ] as const).map(([key, label]) => (
                   <label key={key} className="form-label-block">
                     {label}
@@ -655,7 +654,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             <button type="submit" className="btn btn-primary" disabled={saving}>
               {saving
                 ? (crossPlatforms.size > 0 ? '⏳ Enregistrement + déclinaison…' : '⏳ Enregistrement…')
-                : crossPlatforms.size > 0 ? `💾 Enregistrer + décliner (${crossPlatforms.size})` : '💾 Enregistrer'}
+                : crossPlatforms.size > 0 ? `Enregistrer + décliner (${crossPlatforms.size})` : 'Enregistrer'}
             </button>
           </div>
         </form>
@@ -716,7 +715,7 @@ function CalendarModal({ onClose, onGenerated }: {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>🗓️ Générer mon calendrier</h2>
+          <h2>Générer mon calendrier</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -757,7 +756,7 @@ function CalendarModal({ onClose, onGenerated }: {
                   className={`knowledge-cat${platforms.has(p) ? ' active' : ''}`}
                   onClick={() => togglePlatform(p)}
                 >
-                  {platformIcon(p)} {platformLabel(p)}
+                  {platformLabel(p)}
                 </button>
               ))}
             </div>
@@ -768,7 +767,7 @@ function CalendarModal({ onClose, onGenerated }: {
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Annuler</button>
             <button className="btn btn-primary" onClick={generate} disabled={busy}>
-              {busy ? '⏳ Rédaction de vos posts… (≈ 1 min)' : `✨ Générer ${Math.min(weeks * postsPerWeek, 20)} posts`}
+              {busy ? '⏳ Rédaction de vos posts… (≈ 1 min)' : `Générer ${Math.min(weeks * postsPerWeek, 20)} posts`}
             </button>
           </div>
         </div>
@@ -799,8 +798,8 @@ export default function ContentHubPage() {
     const drafts = searchParams.get('drafts');
     if (drafts !== null) {
       setFeedback(Number(drafts) > 0
-        ? `🎉 Votre plan est prêt — et ${drafts} idées de posts ont été rédigées et datées par l'IA (statut Brouillon). Relisez-les, ajustez, puis programmez-les.`
-        : '🎉 Votre plan est prêt ! Générez votre calendrier de contenu avec le bouton ci-dessus.');
+        ? `Votre plan est prêt — et ${drafts} idées de posts ont été rédigées et datées par l'IA (statut Brouillon). Relisez-les, ajustez, puis programmez-les.`
+        : 'Votre plan est prêt ! Générez votre calendrier de contenu avec le bouton ci-dessus.');
       setSearchParams({}, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -914,18 +913,18 @@ export default function ContentHubPage() {
     <div className="animate-fadeIn">
       <div className="dashboard-header">
         <div>
-          <h1>📣 Hub de contenu</h1>
+          <h1>Hub de contenu</h1>
           <p>
-            {activeProject && <span className="chip chip-project">🎯 Projet : {activeProject.name}</span>}
+            {activeProject && <span className="chip chip-project">Projet : {activeProject.name}</span>}
             {' '}Planifiez, rédigez avec l'IA, publiez et suivez les performances.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={() => setShowAssistant(true)} title="Chat IA : idées, recherche web, rédaction, enregistrement direct">
-            💬 Assistant
+            Assistant
           </button>
           <button className="btn btn-ghost" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
-            🗓️ Générer mon calendrier
+            Générer mon calendrier
           </button>
           <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouveau post</button>
         </div>
@@ -937,30 +936,29 @@ export default function ContentHubPage() {
 
       {/* Stats */}
       <div className="dashboard-stats">
-        <div className="stat-card"><span className="stat-card-icon">🗓️</span><div className="stat-card-value">{totals.scheduled}</div><div className="stat-card-label">Programmés</div></div>
-        <div className="stat-card"><span className="stat-card-icon">✅</span><div className="stat-card-value">{totals.published}</div><div className="stat-card-label">Publiés</div></div>
-        <div className="stat-card"><span className="stat-card-icon">👁️</span><div className="stat-card-value">{fmtNum(totals.impressions)}</div><div className="stat-card-label">Impressions</div></div>
-        <div className="stat-card"><span className="stat-card-icon">📈</span><div className="stat-card-value">{totals.engagement !== null ? `${totals.engagement.toFixed(1)} %` : '—'}</div><div className="stat-card-label">Engagement moyen</div></div>
+        <div className="stat-card"><div className="stat-card-value">{totals.scheduled}</div><div className="stat-card-label">Programmés</div></div>
+        <div className="stat-card"><div className="stat-card-value">{totals.published}</div><div className="stat-card-label">Publiés</div></div>
+        <div className="stat-card"><div className="stat-card-value">{fmtNum(totals.impressions)}</div><div className="stat-card-label">Impressions</div></div>
+        <div className="stat-card"><div className="stat-card-value">{totals.engagement !== null ? `${totals.engagement.toFixed(1)} %` : '—'}</div><div className="stat-card-label">Engagement moyen</div></div>
       </div>
 
       {/* À publier prochainement */}
       {upcoming.length > 0 && (
         <div className="upcoming-strip">
-          <div className="upcoming-title">⏭️ Prochaines publications</div>
+          <div className="upcoming-title">⏭ Prochaines publications</div>
           {upcoming.map((p) => {
             const overdue = new Date(p.scheduledAt!).getTime() < now;
             return (
               <div key={p.id} className={`upcoming-item${overdue ? ' overdue' : ''}`}>
-                <span className="upcoming-icon">{platformIcon(p.platform)}</span>
                 <span className="upcoming-name" onClick={() => setEditing(p)}>{p.title || platformLabel(p.platform)}</span>
-                {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
-                {p.recurrence !== 'none' && p.recurrenceBrief && <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">🪄 IA</span>}
-                {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">⚡ auto</span>}
-                {Boolean(p.calendarSynced) && <span title="Ajouté à votre calendrier personnel">🗓️</span>}
+                {p.recurrence !== 'none' && <span className="chip chip-recur">{RECURRENCE_LABELS[p.recurrence]}</span>}
+                {p.recurrence !== 'none' && p.recurrenceBrief && <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">IA</span>}
+                {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">auto</span>}
+                {Boolean(p.calendarSynced) && <span title="Ajouté à votre calendrier personnel"></span>}
                 <span className={`upcoming-date${overdue ? ' overdue' : ''}`}>
-                  {overdue ? '⚠️ En retard — ' : ''}{fmtDate(p.scheduledAt)}
+                  {overdue ? 'En retard — ' : ''}{fmtDate(p.scheduledAt)}
                 </span>
-                <button className="btn btn-sm btn-primary" onClick={() => handlePublish(p)}>✅ Marquer publié</button>
+                <button className="btn btn-sm btn-primary" onClick={() => handlePublish(p)}>Marquer publié</button>
               </div>
             );
           })}
@@ -970,22 +968,21 @@ export default function ContentHubPage() {
       {/* Séries récurrentes : la machine à contenu qui tourne toute seule */}
       {recurringSeries.length > 0 && (
         <div className="upcoming-strip recur-strip">
-          <div className="upcoming-title">🔁 Séries récurrentes</div>
+          <div className="upcoming-title">Séries récurrentes</div>
           {recurringSeries.map(({ post: p, publishedCount }) => (
             <div key={p.id} className="upcoming-item">
-              <span className="upcoming-icon">{platformIcon(p.platform)}</span>
               <span className="upcoming-name" onClick={() => setEditing(p)}>{p.title || platformLabel(p.platform)}</span>
-              <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>
-              {p.recurrenceBrief && <span className="chip chip-recur" title={`Régénérée par l'IA : ${p.recurrenceBrief}`}>🪄 IA</span>}
-              {Boolean(p.recurrenceUseNews) && <span className="chip chip-recur" title="S'appuie sur les actualités du web">📰 actus</span>}
-              {!p.recurrenceUseKnowledge && <span className="chip chip-recur" title="Base de connaissances désactivée pour cette série">📚 off</span>}
-              {Boolean(p.recurrenceUpdateKb) && <span className="chip chip-recur" title="Archive les actus utilisées dans la fiche Veille">📥 veille</span>}
-              {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">⚡ auto</span>}
+              <span className="chip chip-recur">{RECURRENCE_LABELS[p.recurrence]}</span>
+              {p.recurrenceBrief && <span className="chip chip-recur" title={`Régénérée par l'IA : ${p.recurrenceBrief}`}>IA</span>}
+              {Boolean(p.recurrenceUseNews) && <span className="chip chip-recur" title="S'appuie sur les actualités du web">actus</span>}
+              {!p.recurrenceUseKnowledge && <span className="chip chip-recur" title="Base de connaissances désactivée pour cette série">off</span>}
+              {Boolean(p.recurrenceUpdateKb) && <span className="chip chip-recur" title="Archive les actus utilisées dans la fiche Veille">veille</span>}
+              {Boolean(p.autoPublish) && <span className="chip chip-auto" title="Publication automatique activée">auto</span>}
               {publishedCount > 0 && <span className="form-hint-inline">{publishedCount} publiée{publishedCount > 1 ? 's' : ''}</span>}
               <span className="upcoming-date">
-                {p.status === 'scheduled' ? `prochaine : ${fmtDate(p.scheduledAt)}` : '✏️ brouillon'}
+                {p.status === 'scheduled' ? `prochaine : ${fmtDate(p.scheduledAt)}` : 'brouillon'}
               </span>
-              <button className="btn btn-sm btn-ghost" onClick={() => setEditing(p)}>⚙️ Gérer</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => setEditing(p)}>Gérer</button>
             </div>
           ))}
         </div>
@@ -993,8 +990,8 @@ export default function ContentHubPage() {
 
       {/* Tabs */}
       <div className="hub-tabs">
-        <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>📝 Posts</button>
-        <button className={`hub-tab${tab === 'decks' ? ' active' : ''}`} onClick={() => setTab('decks')}>🎞️ Slides</button>
+        <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>Posts</button>
+        <button className={`hub-tab${tab === 'decks' ? ' active' : ''}`} onClick={() => setTab('decks')}>Slides</button>
       </div>
 
       {tab === 'decks' ? (
@@ -1003,24 +1000,23 @@ export default function ContentHubPage() {
         <>
           {/* Filtres */}
           <div className="kanban-toolbar">
-            <input className="kanban-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔎 Rechercher un post…" />
+            <input className="kanban-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un post…" />
             <select className="kanban-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="all">Tous les statuts</option>
-              <option value="idea">💡 Idées</option>
-              <option value="draft">✏️ Brouillons</option>
-              <option value="scheduled">🗓️ Programmés</option>
-              <option value="published">✅ Publiés</option>
+              <option value="idea">Idées</option>
+              <option value="draft">Brouillons</option>
+              <option value="scheduled">Programmés</option>
+              <option value="published">Publiés</option>
             </select>
             <select className="kanban-select" value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
               <option value="all">Toutes plateformes</option>
-              {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.icon} {p.label}</option>)}
+              {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
           </div>
 
           {filtered.length === 0 ? (
             <div className="plan-empty">
-              <span className="plan-empty-icon">📣</span>
-              <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
+                            <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
               <p>Créez votre premier post — l'assistant IA le rédige à partir de votre base de connaissances.</p>
               <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
                 ＋ Créer un post
@@ -1033,28 +1029,28 @@ export default function ContentHubPage() {
                 return (
                   <div key={p.id} className="post-card" onClick={() => setEditing(p)}>
                     <div className="post-card-top">
-                      <span className="post-platform">{platformIcon(p.platform)} {platformLabel(p.platform)}</span>
+                      <span className="post-platform">{platformLabel(p.platform)}</span>
                       <span className={`post-status ${STATUS_META[p.status].cls}`}>{STATUS_META[p.status].label}</span>
                       <button className="kanban-delete" title="Supprimer" onClick={(e) => { e.stopPropagation(); handleDelete(p); }}>×</button>
                     </div>
                     <div className="post-card-title">{p.title || '(sans titre)'}</div>
                     {p.content && <div className="post-card-excerpt">{p.content.slice(0, 140)}{p.content.length > 140 ? '…' : ''}</div>}
                     <div className="post-card-footer">
-                      {p.crossPostId && <span className="chip chip-recur" title="Même contenu décliné sur plusieurs plateformes — performances comparées dans la vue Performances">📡 multi</span>}
-                      {p.recurrence !== 'none' && <span className="chip chip-recur">🔁 {RECURRENCE_LABELS[p.recurrence]}</span>}
+                      {p.crossPostId && <span className="chip chip-recur" title="Même contenu décliné sur plusieurs plateformes — performances comparées dans la vue Performances">multi</span>}
+                      {p.recurrence !== 'none' && <span className="chip chip-recur">{RECURRENCE_LABELS[p.recurrence]}</span>}
                       {p.recurrence !== 'none' && p.recurrenceBrief && (
-                        <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">🪄 IA</span>
+                        <span className="chip chip-recur" title="Chaque occurrence est régénérée par l'IA à partir de votre instruction">IA</span>
                       )}
                       {Boolean(p.autoPublish) && p.status === 'scheduled' && (
-                        <span className="chip chip-auto" title="Sera publié automatiquement à l'heure programmée">⚡ auto</span>
+                        <span className="chip chip-auto" title="Sera publié automatiquement à l'heure programmée">auto</span>
                       )}
                       {p.publishError && (
-                        <span className="chip chip-error" title={p.publishError}>⚠️ échec auto</span>
+                        <span className="chip chip-error" title={p.publishError}>échec auto</span>
                       )}
-                      {p.status === 'scheduled' && <span className="post-card-date">🗓️ {fmtDate(p.scheduledAt)}</span>}
+                      {p.status === 'scheduled' && <span className="post-card-date">{fmtDate(p.scheduledAt)}</span>}
                       {p.status === 'published' && (
                         <span className="post-card-metrics">
-                          👁️ {fmtNum(p.impressions)} · ❤️ {fmtNum(p.likes)}{rate !== null && ` · 📈 ${rate.toFixed(1)} %`}
+                          {fmtNum(p.impressions)} · {fmtNum(p.likes)}{rate !== null && ` · ${rate.toFixed(1)} %`}
                         </span>
                       )}
                       {p.status === 'scheduled' && (
@@ -1084,12 +1080,12 @@ export default function ContentHubPage() {
           className="assistant-fab"
           onClick={() => setShowAssistant(true)}
           title="Assistant de création de posts"
-        >💬</button>
+        >Assistant</button>
       )}
       <PostAssistant
         open={showAssistant}
         onClose={() => setShowAssistant(false)}
-        onPostsSaved={() => { load(); setFeedback('✨ L\'assistant a enregistré un post — il est dans la liste ci-dessous.'); }}
+        onPostsSaved={() => { load(); setFeedback('L\'assistant a enregistré un post — il est dans la liste ci-dessous.'); }}
       />
       {showCalendar && (
         <CalendarModal
@@ -1098,7 +1094,7 @@ export default function ContentHubPage() {
             setShowCalendar(false);
             setAllPosts((prev) => [...created, ...prev]);
             setTab('posts');
-            setFeedback(`✅ ${created.length} posts rédigés et programmés — relisez-les dans la liste ci-dessous avant publication.`);
+            setFeedback(`${created.length} posts rédigés et programmés — relisez-les dans la liste ci-dessous avant publication.`);
           }}
         />
       )}
@@ -1166,7 +1162,7 @@ function DecksPanel() {
   return (
     <div className="animate-fadeIn">
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-header">🎞️ Nouvelle présentation</div>
+        <div className="card-header">Nouvelle présentation</div>
         <p className="form-hint" style={{ marginBottom: 10 }}>
           Pitch deck, carrousel LinkedIn, slides produit — rédigée par l'IA avec votre
           thème (réglable dans <Link to="/config">Configuration</Link>). Mode Présenter
@@ -1184,7 +1180,7 @@ function DecksPanel() {
             {[5, 8, 10, 12, 15].map((n) => <option key={n} value={n}>{n} slides</option>)}
           </select>
           <button type="submit" className="btn btn-primary" disabled={busy || !brief.trim()}>
-            {busy ? '⏳ Génération…' : '✨ Générer'}
+            {busy ? '⏳ Génération…' : 'Générer'}
           </button>
         </form>
         {error && <div className="chat-error" style={{ marginTop: 8 }}>{error}</div>}
@@ -1194,7 +1190,7 @@ function DecksPanel() {
         <div className="loading">⏳ Chargement…</div>
       ) : decks.length === 0 ? (
         <div className="posts-empty">
-          <span style={{ fontSize: '2rem' }}>🎞️</span>
+          <span style={{ fontSize: '2rem' }}></span>
           <p>Aucune présentation pour ce projet — décrivez la première ci-dessus,
           ou demandez à l'assistant : « fais-moi un pitch deck de 8 slides ».</p>
         </div>
@@ -1203,7 +1199,7 @@ function DecksPanel() {
           {decks.map((d) => (
             <div key={d.id} className="post-card">
               <div className="post-card-main">
-                <div className="post-card-title">🎞️ {d.title}</div>
+                <div className="post-card-title">{d.title}</div>
                 <div className="post-card-footer">
                   <span className="form-hint-inline">
                     créé le {new Date(d.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -1212,7 +1208,7 @@ function DecksPanel() {
               </div>
               <div className="post-card-actions">
                 <a className="btn btn-primary btn-sm" href={deckHtmlUrl(d.id)} target="_blank" rel="noopener noreferrer">
-                  ▶️ Présenter
+                  ▶ Présenter
                 </a>
                 <button
                   type="button"
@@ -1221,7 +1217,7 @@ function DecksPanel() {
                   disabled={rendering !== null}
                   title="GIF animé avec fondus — hébergé publiquement, attachable à un post (Instagram inclus)"
                 >
-                  {rendering === `${d.id}:gif` ? '⏳ Rendu…' : '🎬 GIF'}
+                  {rendering === `${d.id}:gif` ? '⏳ Rendu…' : 'GIF'}
                 </button>
                 <button
                   type="button"
@@ -1230,12 +1226,12 @@ function DecksPanel() {
                   disabled={rendering !== null}
                   title="Vidéo MP4 (meilleure qualité — nécessite ffmpeg sur le serveur)"
                 >
-                  {rendering === `${d.id}:mp4` ? '⏳ Rendu…' : '🎥 MP4'}
+                  {rendering === `${d.id}:mp4` ? '⏳ Rendu…' : 'MP4'}
                 </button>
                 <a className="btn btn-ghost btn-sm" href={deckMarkdownUrl(d.id)} title="Source Marp (réutilisable avec Marp CLI pour un export PPTX)">
-                  ⬇️ .md
+                  .md
                 </a>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDelete(d.id)} title="Supprimer">🗑️</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDelete(d.id)} title="Supprimer">✕</button>
               </div>
               {(renders[`${d.id}:gif`] || renders[`${d.id}:mp4`]) && (
                 <div className="deck-render-preview">
@@ -1243,12 +1239,12 @@ function DecksPanel() {
                     <div className="deck-render-item">
                       <img src={renders[`${d.id}:gif`].url} alt="GIF du deck" />
                       <div className="deck-render-links">
-                        <a href={renders[`${d.id}:gif`].url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">⬇️ Télécharger</a>
+                        <a href={renders[`${d.id}:gif`].url} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">Télécharger</a>
                         {renders[`${d.id}:gif`].publicUrl && (
                           <button type="button" className="btn btn-ghost btn-sm"
                             onClick={() => navigator.clipboard.writeText(renders[`${d.id}:gif`].publicUrl!)}
                             title="URL publique — collable dans le champ Image d'un post">
-                            📋 Copier l'URL publique
+                            Copier l'URL publique
                           </button>
                         )}
                       </div>
@@ -1258,7 +1254,7 @@ function DecksPanel() {
                     <div className="deck-render-item">
                       <video src={renders[`${d.id}:mp4`].url} controls loop muted playsInline />
                       <div className="deck-render-links">
-                        <a href={renders[`${d.id}:mp4`].url} download className="btn btn-ghost btn-sm">⬇️ Télécharger le MP4</a>
+                        <a href={renders[`${d.id}:mp4`].url} download className="btn btn-ghost btn-sm">Télécharger le MP4</a>
                       </div>
                     </div>
                   )}

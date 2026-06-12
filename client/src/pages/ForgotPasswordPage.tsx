@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react';
+import { Flame } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { forgotPassword } from '../api/client';
 
@@ -21,7 +22,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="auth-wrapper">
       <div className="auth-page">
-        <div className="auth-page-logo">🔑</div>
+        <div className="auth-page-logo"><Flame size={30} /></div>
         <h1>Mot de passe oublié</h1>
         <p>Recevez un lien de réinitialisation par email</p>
 
@@ -29,7 +30,7 @@ export default function ForgotPasswordPage() {
 
         {sent ? (
           <div className="approval-feedback">
-            📬 Si un compte existe pour <strong>{email}</strong>, un lien de réinitialisation
+            Si un compte existe pour <strong>{email}</strong>, un lien de réinitialisation
             (valable 30 minutes) vient d'être envoyé. Pensez à vérifier les spams.
           </div>
         ) : (
@@ -51,7 +52,7 @@ export default function ForgotPasswordPage() {
               disabled={busy}
               style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
             >
-              {busy ? '⏳ Envoi…' : '📬 Envoyer le lien'}
+              {busy ? '⏳ Envoi…' : 'Envoyer le lien'}
             </button>
           </form>
         )}

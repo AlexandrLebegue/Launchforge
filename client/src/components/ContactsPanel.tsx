@@ -4,12 +4,12 @@ import {
   analyzeLeads, scanInbox, scanPost, getPosts, draftContactEmail, sendContactEmail,
   Contact, ContactType, LeadCandidate, Post,
 } from '../api/client';
-import { platformIcon, platformLabel } from '../pages/ContentHubPage';
+import { platformLabel } from '../pages/ContentHubPage';
 
 const TYPE_META: Record<ContactType, { label: string; icon: string; cls: string }> = {
-  prospect: { label: 'Prospect',   icon: '🎯', cls: 'contact-type-prospect' },
-  client:   { label: 'Client',     icon: '⭐', cls: 'contact-type-client' },
-  partner:  { label: 'Partenaire', icon: '🤝', cls: 'contact-type-partner' },
+  prospect: { label: 'Prospect',   icon: '', cls: 'contact-type-prospect' },
+  client:   { label: 'Client',     icon: '', cls: 'contact-type-client' },
+  partner:  { label: 'Partenaire', icon: '', cls: 'contact-type-partner' },
 };
 
 function scoreColor(score: number): string {
@@ -74,9 +74,9 @@ function ContactEditor({ contact, onClose, onSaved }: {
             </label>
             <label className="form-label-block">Type
               <select className="form-input" value={form.type} onChange={(e) => set('type', e.target.value as ContactType)}>
-                <option value="prospect">🎯 Prospect</option>
-                <option value="client">⭐ Client</option>
-                <option value="partner">🤝 Partenaire</option>
+                <option value="prospect">Prospect</option>
+                <option value="client">Client</option>
+                <option value="partner">Partenaire</option>
               </select>
             </label>
           </div>
@@ -100,7 +100,7 @@ function ContactEditor({ contact, onClose, onSaved }: {
           {error && <div className="chat-error">{error}</div>}
           <div className="modal-footer">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? '⏳…' : '💾 Enregistrer'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? '⏳…' : 'Enregistrer'}</button>
           </div>
         </form>
       </div>
@@ -115,9 +115,9 @@ function ContactEditor({ contact, onClose, onSaved }: {
 type AnalyzeMode = 'paste' | 'inbox' | 'post';
 
 const MODAL_TITLES: Record<AnalyzeMode, string> = {
-  paste: '🧠 Analyser des messages',
-  inbox: '📥 Scan de la boîte mail',
-  post:  '💬 Réactions d\'un post',
+  paste: 'Analyser des messages',
+  inbox: 'Scan de la boîte mail',
+  post:  'Réactions d\'un post',
 };
 
 function AnalyzeModal({ mode, onClose, onImported }: {
@@ -257,12 +257,11 @@ function AnalyzeModal({ mode, onClose, onImported }: {
                   <div className="candidate-list">
                     {posts.map((p) => (
                       <button key={p.id} type="button" className="candidate-row post-pick" onClick={() => scanSelectedPost(p)}>
-                        <span style={{ fontSize: '1.1rem' }}>{platformIcon(p.platform)}</span>
-                        <span className="candidate-main">
+                                                <span className="candidate-main">
                           <span className="candidate-name">{p.title || '(sans titre)'}</span>
                           <span className="candidate-summary">
                             {platformLabel(p.platform)} · publié le {p.publishedAt ? new Date(p.publishedAt).toLocaleDateString('fr-FR') : '—'}
-                            {' · '}❤️ {p.likes} · 💬 {p.comments}
+                            {' · '}{p.likes} likes · {p.comments} commentaires
                           </span>
                         </span>
                         <span style={{ marginLeft: 'auto', color: 'var(--color-text-muted)' }}>Scanner →</span>
@@ -284,14 +283,14 @@ function AnalyzeModal({ mode, onClose, onImported }: {
                 <textarea
                   className="form-input post-content-area" rows={10}
                   value={text} onChange={(e) => setText(e.target.value)}
-                  placeholder={'Collez ici les commentaires de vos posts, vos DMs ou des emails…\n\nex.\nMarie Dupont : Super outil ! Vous avez une offre équipe ? On est 12 chez Acme.\nPaul Martin : 👍\nJulie (julie@start.io) : Possible d\'avoir une démo cette semaine ?'}
+                  placeholder={'Collez ici les commentaires de vos posts, vos DMs ou des emails…\n\nex.\nMarie Dupont : Super outil ! Vous avez une offre équipe ? On est 12 chez Acme.\nPaul Martin : \nJulie (julie@start.io) : Possible d\'avoir une démo cette semaine ?'}
                 />
               </label>
               {error && <div className="chat-error">{error}</div>}
               <div className="modal-footer">
                 <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
                 <button className="btn btn-primary" onClick={analyze} disabled={busy}>
-                  {busy ? '⏳ Analyse en cours…' : '🧠 Détecter les leads'}
+                  {busy ? '⏳ Analyse en cours…' : 'Détecter les leads'}
                 </button>
               </div>
             </div>
@@ -385,7 +384,7 @@ function EmailModal({ contact, onClose, onSent }: {
     const res = await sendContactEmail(contact.id, subject.trim(), body.trim());
     setSending(false);
     if (res.success && res.data) {
-      setFeedback(`✅ Email envoyé à ${contact.email} — ${res.data.result}`);
+      setFeedback(`Email envoyé à ${contact.email} — ${res.data.result}`);
       onSent(res.data.contact);
     } else {
       setError(res.error === 'COMPOSIO_NOT_CONFIGURED'
@@ -398,7 +397,7 @@ function EmailModal({ contact, onClose, onSent }: {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box modal-box-lg" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>✉️ Email à {contact.name}</h2>
+          <h2>Email à {contact.name}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -408,7 +407,7 @@ function EmailModal({ contact, onClose, onSent }: {
           )}
 
           <div className="ai-assist-box">
-            <div className="ai-assist-header">✨ Brouillon par l'IA <span className="form-hint-inline">— personnalisé avec sa fiche, vos connaissances et vos échanges</span></div>
+            <div className="ai-assist-header">Brouillon par l'IA <span className="form-hint-inline">— personnalisé avec sa fiche, vos connaissances et vos échanges</span></div>
             <div className="ai-assist-row">
               <input
                 className="form-input"
@@ -418,7 +417,7 @@ function EmailModal({ contact, onClose, onSent }: {
                 disabled={drafting}
               />
               <button type="button" className="btn btn-primary" onClick={draft} disabled={drafting}>
-                {drafting ? '⏳…' : '✨ Rédiger'}
+                {drafting ? '⏳…' : 'Rédiger'}
               </button>
             </div>
           </div>
@@ -440,7 +439,7 @@ function EmailModal({ contact, onClose, onSent }: {
               onClick={send}
               disabled={sending || !contact.email || !subject.trim() || !body.trim()}
             >
-              {sending ? '⏳ Envoi…' : `📤 Envoyer depuis ma boîte mail`}
+              {sending ? '⏳ Envoi…' : `Envoyer depuis ma boîte mail`}
             </button>
           </div>
         </div>
@@ -501,40 +500,39 @@ export default function ContactsPanel() {
       <div className="contacts-toolbar">
         <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Contact</button>
         <button className="btn btn-ghost" onClick={() => setAnalyzing('paste')} title="Collez des commentaires/messages — l'IA détecte et score les leads">
-          🧠 Analyser des messages
+          Analyser des messages
         </button>
         <button className="btn btn-ghost" onClick={() => setAnalyzing('post')} title="Analyse les likes et commentaires d'un de vos posts publiés via Composio">
-          💬 Réactions d'un post
+          Réactions d'un post
         </button>
         <button className="btn btn-ghost" onClick={() => setAnalyzing('inbox')} title="Lit votre boîte de réception via Composio et détecte les leads">
-          📥 Scanner ma boîte mail
+          Scanner ma boîte mail
         </button>
-        <span className="contacts-hot">{hot > 0 ? `🔥 ${hot} lead${hot > 1 ? 's' : ''} chaud${hot > 1 ? 's' : ''}` : ''}</span>
+        <span className="contacts-hot">{hot > 0 ? `${hot} lead${hot > 1 ? 's' : ''} chaud${hot > 1 ? 's' : ''}` : ''}</span>
         <select className="kanban-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} style={{ marginLeft: 'auto' }}>
           <option value="all">Tous les types</option>
-          <option value="prospect">🎯 Prospects</option>
-          <option value="client">⭐ Clients</option>
-          <option value="partner">🤝 Partenaires</option>
+          <option value="prospect">Prospects</option>
+          <option value="client">Clients</option>
+          <option value="partner">Partenaires</option>
         </select>
         <input
           className="kanban-search" style={{ flex: '0 1 200px' }}
           type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="🔎 Rechercher…"
+          placeholder="Rechercher…"
         />
       </div>
 
       {filtered.length === 0 ? (
         <div className="plan-empty">
-          <span className="plan-empty-icon">🤝</span>
-          <h2>{contacts.length === 0 ? 'Aucun contact pour l\'instant' : 'Aucun contact ne correspond'}</h2>
+                    <h2>{contacts.length === 0 ? 'Aucun contact pour l\'instant' : 'Aucun contact ne correspond'}</h2>
           <p>
             Collez des messages, scannez les likes et commentaires d'un post, ou votre boîte mail :
             l'IA détecte les personnes les plus intéressées et les score de 0 à 100.
           </p>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={() => setAnalyzing('paste')}>🧠 Analyser des messages</button>
-            <button className="btn btn-ghost" onClick={() => setAnalyzing('post')}>💬 Réactions d'un post</button>
-            <button className="btn btn-ghost" onClick={() => setAnalyzing('inbox')}>📥 Scanner ma boîte mail</button>
+            <button className="btn btn-primary" onClick={() => setAnalyzing('paste')}>Analyser des messages</button>
+            <button className="btn btn-ghost" onClick={() => setAnalyzing('post')}>Réactions d'un post</button>
+            <button className="btn btn-ghost" onClick={() => setAnalyzing('inbox')}>Scanner ma boîte mail</button>
           </div>
         </div>
       ) : (
@@ -562,8 +560,8 @@ export default function ContactsPanel() {
                     {c.company && <span className="contact-company">{c.company}</span>}
                   </div>
                   <div className="contact-meta">
-                    {c.email && <span>✉️ {c.email}</span>}
-                    {c.source && <span>📍 {c.source}</span>}
+                    {c.email && <span>{c.email}</span>}
+                    {c.source && <span>{c.source}</span>}
                   </div>
                   {c.interestSummary && <div className="contact-summary">{c.interestSummary}</div>}
                 </div>
@@ -573,7 +571,7 @@ export default function ContactsPanel() {
                     onClick={() => setEmailing(c)}
                     disabled={!c.email}
                     title={c.email ? `Écrire à ${c.email}` : 'Pas d\'email — complétez la fiche'}
-                  >✉️ Email</button>
+                  >Email</button>
                   <button className="kanban-delete" title="Supprimer" onClick={() => handleDelete(c)}>×</button>
                 </div>
               </div>
