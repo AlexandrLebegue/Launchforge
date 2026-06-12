@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react';
 import { Flame } from 'lucide-react';
+import { useLang, LangSwitch } from '../i18n';
 import { Link, useNavigate } from 'react-router-dom';
 import { login, setToken, User } from '../api/client';
 
@@ -7,7 +8,14 @@ interface Props {
   onLogin: (user: User) => void;
 }
 
+const T = {
+  fr: { title: 'Bon retour !', sub: 'Connectez-vous à votre compte LaunchForge', email: 'Email', pwd: 'Mot de passe', submit: '→ Se connecter', busy: '⏳ Connexion…', forgot: 'Mot de passe oublié ?', noAccount: 'Pas encore de compte ?', create: 'Créez-en un gratuitement', err: 'Connexion impossible' },
+  en: { title: 'Welcome back!', sub: 'Sign in to your LaunchForge account', email: 'Email', pwd: 'Password', submit: '→ Sign in', busy: '⏳ Signing in…', forgot: 'Forgot your password?', noAccount: 'No account yet?', create: 'Create one for free', err: 'Could not sign in' },
+};
+
 export default function LoginPage({ onLogin }: Props) {
+  const { lang } = useLang();
+  const t = T[lang];
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState('');
@@ -23,7 +31,7 @@ export default function LoginPage({ onLogin }: Props) {
     setBusy(false);
 
     if (!res.success || !res.data) {
-      setError(res.error || 'Connexion impossible');
+      setError(res.error || t.err);
       return;
     }
 
@@ -35,15 +43,16 @@ export default function LoginPage({ onLogin }: Props) {
   return (
     <div className="auth-wrapper">
       <div className="auth-page">
+        <div className="auth-lang"><LangSwitch /></div>
         <div className="auth-page-logo"><Flame size={30} /></div>
-        <h1>Bon retour !</h1>
-        <p>Connectez-vous à votre compte LaunchForge</p>
+        <h1>{t.title}</h1>
+        <p>{t.sub}</p>
 
         {error && <div className="error">{error}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label>{t.email}</label>
             <input
               type="email"
               value={email}
@@ -54,7 +63,7 @@ export default function LoginPage({ onLogin }: Props) {
             />
           </div>
           <div className="form-group">
-            <label>Mot de passe</label>
+            <label>{t.pwd}</label>
             <input
               type="password"
               value={password}
@@ -70,16 +79,16 @@ export default function LoginPage({ onLogin }: Props) {
             disabled={busy}
             style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
           >
-            {busy ? '⏳ Connexion…' : '→ Se connecter'}
+            {busy ? t.busy : t.submit}
           </button>
         </form>
 
         <div className="footer-link">
-          <Link to="/forgot-password">Mot de passe oublié ?</Link>
+          <Link to="/forgot-password">{t.forgot}</Link>
         </div>
         <div className="footer-link">
-          Pas encore de compte ?{' '}
-          <Link to="/register">Créez-en un gratuitement</Link>
+          {t.noAccount}{' '}
+          <Link to="/register">{t.create}</Link>
         </div>
       </div>
     </div>

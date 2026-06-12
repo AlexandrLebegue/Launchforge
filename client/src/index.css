@@ -5101,3 +5101,30 @@ video.md-media { background: #000; }
   .field-ember { opacity: 0.25; }
   .hero-coals { opacity: 0.8; }
 }
+
+/* Sélecteur de langue (pages publiques) */
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 2px;
+}
+.lang-switch button {
+  border: none;
+  background: transparent;
+  color: var(--color-text-subtle);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 2px;
+  transition: var(--transition-fast);
+}
+.lang-switch button.on {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+.lang-switch button:hover:not(.on) { color: var(--color-text); }
+.auth-lang { display: flex; justify-content: center; margin-bottom: 14px; }
