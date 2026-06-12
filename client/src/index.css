@@ -4770,3 +4770,26 @@ video.md-media { background: #000; }
 .pv-reddit-body { font-size: 0.78rem; color: #333; }
 .pv-actionbar-reddit { justify-content: flex-start; gap: 16px; font-size: 0.7rem; }
 .pv-votes { font-weight: 800; }
+
+/* YouTube — page vidéo sombre */
+.pv-youtube { background: #0f0f0f; color: #f1f1f1; border: 1px solid #272727; padding-bottom: 12px; }
+.pv-yt-thumb .pv-media { max-height: none; aspect-ratio: 16 / 9; }
+.pv-yt-placeholder {
+  aspect-ratio: 16 / 9;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  background: #1c1c1c; color: #717171; font-size: 0.78rem;
+}
+.pv-yt-placeholder span { font-size: 1.6rem; color: #444; }
+.pv-yt-title { padding: 10px 13px 6px; font-size: 0.9rem; font-weight: 700; line-height: 1.35; }
+.pv-yt-channel { display: flex; align-items: center; gap: 9px; padding: 2px 13px 8px; }
+.pv-yt-channel .pv-id em { color: #aaa; opacity: 1; }
+.pv-yt-subscribe {
+  margin-left: auto;
+  background: #f1f1f1; color: #0f0f0f;
+  font-size: 0.7rem; font-weight: 700;
+  padding: 5px 12px; border-radius: 999px;
+}
+.pv-yt-desc { color: #aaa; font-size: 0.76rem; max-height: 120px; }
+
+/* Aperçu générique : badge dans l'en-tête */
+.pe-preview-platform { display: inline-flex; align-items: center; gap: 7px; }

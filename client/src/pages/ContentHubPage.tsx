@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare } from 'lucide-react';
 import {
@@ -158,14 +159,39 @@ function PlatformPreview({ platform, title, content, mediaUrl, mediaIsVideo }: P
     );
   }
 
-  // Autres plateformes : carte générique
+  if (platform === 'youtube') {
+    const lines = text.split('\n');
+    const vTitle = title.trim() || lines[0] || '';
+    const desc = (title.trim() ? text : lines.slice(1).join('\n').trim());
+    return (
+      <div className="pv pv-youtube">
+        {media
+          ? <div className="pv-yt-thumb">{media}</div>
+          : <div className="pv-yt-thumb pv-yt-placeholder"><span>▶</span>Ajoutez une vidéo ou une vignette</div>}
+        <div className="pv-yt-title">{vTitle || empty}</div>
+        <div className="pv-yt-channel">
+          <span className="pv-avatar" style={{ background: '#FF0000', width: 26, height: 26, fontSize: '0.7rem' }}>V</span>
+          <span className="pv-id">
+            <strong>Votre chaîne</strong>
+            <em>1,2 k abonnés</em>
+          </span>
+          <span className="pv-yt-subscribe">S'abonner</span>
+        </div>
+        {desc && <div className="pv-text pv-yt-desc"><Markdown text={desc} /></div>}
+      </div>
+    );
+  }
+
+  // Autres plateformes : carte générique (badge + texte + média)
   return (
     <div className="pe-preview-card">
       <div className="pe-preview-head">
-        <span className="pe-preview-platform">{platformLabel(platform)}</span>
+        <span className="pe-preview-platform">
+          <PlatformIcon platform={platform} size={15} /> {platformLabel(platform)}
+        </span>
       </div>
       <div className="pe-preview-body">{text ? <Markdown text={text} /> : empty}</div>
-      {media}
+      {media && <div className="pe-preview-media-wrap">{media}</div>}
     </div>
   );
 }
@@ -436,7 +462,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
   const mediaUrl = form.imageUrl.trim();
   const mediaIsVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(mediaUrl);
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box modal-box-xl" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -838,7 +864,8 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -890,7 +917,7 @@ function CalendarModal({ onClose, onGenerated }: {
     }
   };
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -951,7 +978,8 @@ function CalendarModal({ onClose, onGenerated }: {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
