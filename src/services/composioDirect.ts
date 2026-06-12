@@ -6,13 +6,14 @@
  *  - X/Twitter   : TWITTER_CREATION_OF_A_POST (texte ; le toolkit n'expose
  *                  pas d'upload de média → média signalé comme non joint)
  *  - LinkedIn    : LINKEDIN_GET_MY_INFO (URN auteur, mis en cache) puis
- *                  LINKEDIN_CREATE_LINKED_IN_POST (texte ; pas de média
- *                  exposé par le toolkit). Ce toolkit REST épingle une
- *                  version d'API LinkedIn périmée (NONEXISTENT_VERSION) :
- *                  en secours, on appelle le serveur MCP Composio qui, lui,
- *                  expose l'outil legacy LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE
- *                  (API v2/ugcPosts non versionnée, fonctionnelle) — toujours
- *                  en déterministe : tools/call direct, aucun modèle.
+ *                  LINKEDIN_CREATE_LINKED_IN_POST en version d'outil 'latest'
+ *                  — la version épinglée par défaut sur le projet date de
+ *                  2024 et son en-tête LinkedIn-Version est désactivé
+ *                  (NONEXISTENT_VERSION). Si l'erreur revient malgré tout :
+ *                  secours via le serveur MCP Composio qui expose l'outil
+ *                  legacy LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE (v2/ugcPosts
+ *                  non versionnée) — toujours en déterministe (tools/call
+ *                  direct, aucun modèle) ; clé proxy en dernier recours.
  *  - Instagram   : INSTAGRAM_GET_USER_INFO (compte, mis en cache) puis
  *                  CREATE_MEDIA_CONTAINER (image_url/video_url public) —
  *                  attente du traitement pour la vidéo — puis CREATE_POST
@@ -32,16 +33,18 @@ export type ToolExecutor = (
   composioUserId: string,
   slug: string,
   args: Record<string, unknown>,
+  /** Version de l'outil Composio ('latest', '20260424_00'…) — défaut : version épinglée du projet */
+  version?: string,
 ) => Promise<any>;
 
 /** Exécute un outil Composio pour une identité donnée (API REST, pas de modèle) */
-export const executeComposioTool: ToolExecutor = async (composioUserId, slug, args) => {
+export const executeComposioTool: ToolExecutor = async (composioUserId, slug, args, version) => {
   const key = process.env.COMPOSIO_API_KEY;
   if (!key) throw new Error('COMPOSIO_NOT_CONFIGURED');
   const res = await fetch(`${COMPOSIO_API}/tools/execute/${slug}`, {
     method: 'POST',
     headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: composioUserId, arguments: args }),
+    body: JSON.stringify({ user_id: composioUserId, arguments: args, ...(version ? { version } : {}) }),
     signal: AbortSignal.timeout(180_000), // l'upload YouTube peut être long
   });
   const body: any = await res.json().catch(() => null);
@@ -282,12 +285,14 @@ export async function publishDirect(
         }
 
         try {
+          // version 'latest' : la version de l'outil épinglée par défaut sur le
+          // projet date de 2024 et déclenche NONEXISTENT_VERSION côté LinkedIn
           const data = await exec(uid, 'LINKEDIN_CREATE_LINKED_IN_POST', {
             author,
             commentary: content,
             visibility: 'PUBLIC',
             lifecycleState: 'PUBLISHED',
-          });
+          }, 'latest');
           const urn = data?.share_id ?? data?.id ?? data?.urn ?? '';
           return { handled: true, result: `OK: post LinkedIn publié${urn ? ` ${urn}` : ''}${note}` };
         } catch (err) {

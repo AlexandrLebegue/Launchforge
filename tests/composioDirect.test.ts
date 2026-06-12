@@ -22,9 +22,9 @@ beforeAll(async () => {
 });
 
 function recorder(responses: Record<string, unknown>) {
-  const calls: { slug: string; args: Record<string, unknown> }[] = [];
-  const exec: ToolExecutor = async (_uid, slug, args) => {
-    calls.push({ slug, args });
+  const calls: { slug: string; args: Record<string, unknown>; version?: string }[] = [];
+  const exec: ToolExecutor = async (_uid, slug, args, version) => {
+    calls.push({ slug, args, version });
     if (!(slug in responses)) throw new Error(`outil inattendu : ${slug}`);
     const r = responses[slug];
     if (r instanceof Error) throw r;
@@ -59,6 +59,8 @@ describe('publishDirect — LinkedIn', () => {
       author: 'urn:li:person:abc123', commentary: 'Mon post',
       visibility: 'PUBLIC', lifecycleState: 'PUBLISHED',
     });
+    // la version d'outil par défaut du projet est périmée (NONEXISTENT_VERSION)
+    expect(calls[1].version).toBe('latest');
 
     // 2e publication : l'URN vient du cache, plus d'appel GET_MY_INFO
     const second = recorder({ LINKEDIN_CREATE_LINKED_IN_POST: { id: 'urn:li:share:1000' } });
