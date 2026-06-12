@@ -4862,9 +4862,12 @@ video.md-media { background: #000; }
   padding-bottom: 74px;
 }
 .loop-step-wrap { display: flex; align-items: center; flex: 1; min-width: 0; }
+/* Les wraps avec connecteur reçoivent sa largeur en plus : toutes les cartes font la même largeur */
+.loop-step-wrap:has(> .loop-link) { flex-basis: 26px; }
 .loop-step {
   position: relative;
   flex: 1;
+  align-self: stretch;
   background: var(--color-surface-solid);
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -4916,6 +4919,7 @@ video.md-media { background: #000; }
 @media (max-width: 920px) {
   .loop-flow { flex-direction: column; gap: 10px; padding-bottom: 16px; }
   .loop-step-wrap { flex-direction: column; }
+  .loop-step-wrap:has(> .loop-link) { flex-basis: auto; }
   .loop-link { width: 2px; height: 18px; margin: 4px 0; }
   .loop-return, .loop-return-label { display: none; }
 }
