@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -86,6 +86,60 @@ const STEPS = [
   { num: '02', title: 'Recevez plan et calendrier', desc: 'Plan de lancement semaine par semaine et premiers posts rédigés, datés, prêts à relire.' },
   { num: '03', title: 'Publiez et apprenez', desc: 'Publication automatique ou validée, métriques relevées, leads détectés — et l\'IA s\'améliore avec vos résultats.' },
 ];
+
+const FAQ = [
+  {
+    q: 'Combien ça coûte ?',
+    a: 'Rien pendant la bêta — pas de carte bancaire demandée. Un tarif simple sera annoncé à la sortie de bêta, et les premiers utilisateurs seront prévenus avant tout changement.',
+  },
+  {
+    q: 'L\'IA peut-elle publier sans mon accord ?',
+    a: 'Non. La publication automatique est un réglage opt-in, post par post. Par défaut, tout contenu attend votre validation — dans l\'app ou directement depuis Telegram.',
+  },
+  {
+    q: 'Comment mes comptes sociaux sont-ils connectés ?',
+    a: 'Par OAuth via Composio : vous autorisez chaque plateforme dans une fenêtre officielle (LinkedIn, Google…), et vous pouvez révoquer chaque connexion en un clic depuis la Configuration. LaunchForge ne voit jamais vos mots de passe.',
+  },
+  {
+    q: 'Et mes données ?',
+    a: 'Export complet en JSON et suppression définitive du compte en libre-service (RGPD art. 17 et 20), depuis la vue Configuration. Pas de cookies tiers, pas de revente de données.',
+  },
+  {
+    q: 'Quelles plateformes sont couvertes ?',
+    a: 'Publication automatique sur LinkedIn, X, Instagram et YouTube ; Reddit, Facebook et les autres via l\'assistant. Plus la détection de leads (commentaires + boîte mail) et la synchro Google Calendar.',
+  },
+];
+
+/** Braises ambiantes du héro — paramètres aléatoires stables par montage */
+function EmberField({ count = 16 }: { count?: number }) {
+  const embers = useMemo(() =>
+    Array.from({ length: count }, (_, i) => ({
+      id: i,
+      left: 4 + Math.random() * 92,
+      size: 2 + Math.round(Math.random() * 3),
+      dur: 7 + Math.random() * 9,
+      delay: Math.random() * 12,
+      drift: -28 + Math.random() * 56,
+    })), [count]);
+  return (
+    <div className="ember-field" aria-hidden="true">
+      {embers.map((e) => (
+        <span
+          key={e.id}
+          className="field-ember"
+          style={{
+            left: `${e.left}%`,
+            width: e.size,
+            height: e.size,
+            animationDuration: `${e.dur}s`,
+            animationDelay: `${e.delay}s`,
+            ['--drift' as string]: `${e.drift}px`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Héro animé : le produit au travail, en boucle (GSAP)
@@ -198,6 +252,12 @@ export default function LandingPage() {
         });
       });
 
+      // ── Barre de progression : la braise monte avec la lecture ──
+      gsap.to('.scroll-ember', {
+        scaleX: 1, ease: 'none',
+        scrollTrigger: { trigger: document.body, start: 'top top', end: 'bottom bottom', scrub: 0.4 },
+      });
+
       // ── Captures : parallaxe douce au scroll ──
       gsap.utils.toArray<HTMLElement>('.shot-frame').forEach((el) => {
         gsap.fromTo(el, { y: 36 }, {
@@ -212,6 +272,7 @@ export default function LandingPage() {
 
   return (
     <div className="landing" ref={rootRef}>
+      <div className="scroll-ember" aria-hidden="true" />
       {/* ── Nav ── */}
       <header className="landing-nav">
         <div className="landing-nav-inner">
@@ -224,6 +285,7 @@ export default function LandingPage() {
             <a href="#boucle">La boucle</a>
             <a href="#produit">Le produit</a>
             <a href="#how">Comment ça marche</a>
+            <a href="#faq">FAQ</a>
             <Link to="/login" className="btn btn-ghost btn-sm">Se connecter</Link>
             <Link to="/register" className="btn btn-primary btn-sm">Commencer</Link>
           </nav>
@@ -233,6 +295,8 @@ export default function LandingPage() {
       {/* ── Héro ── */}
       <section className="landing-hero">
         <div className="landing-hero-bg" />
+        <EmberField />
+        <div className="hero-coals" aria-hidden="true" />
         <div className="landing-hero-content">
           <h1 className="gs-up">
             Forgez la <span className="hero-serif gradient-text">traction</span>
@@ -351,6 +415,22 @@ export default function LandingPage() {
                   <p>{s.desc}</p>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section className="landing-section gs-section" id="faq">
+        <div className="landing-section-inner" style={{ maxWidth: 720 }}>
+          <h2 className="landing-section-title gs-reveal">Questions directes, réponses directes</h2>
+          <div className="ember-line gs-reveal" />
+          <div className="faq-list" style={{ marginTop: 40 }}>
+            {FAQ.map((f) => (
+              <details key={f.q} className="faq-item gs-reveal">
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
             ))}
           </div>
         </div>
