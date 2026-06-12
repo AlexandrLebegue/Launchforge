@@ -194,8 +194,27 @@ export async function publishViaComposio(
     return `ECHEC: ${MEDIA_REQUIRED[platform]}`;
   }
 
-  const mediaInstruction = imageUrl
-    ? `\nUne image est jointe au post : passe son URL dans le paramètre média approprié de l'outil de publication (image_url, media_url, photo…). Si l'outil de publication choisi n'accepte aucun média, publie le texte et signale-le dans ta réponse.`
+  // Les plateformes récupèrent le média par son URL : elle doit être PUBLIQUE.
+  // Un média servi par l'app (/uploads/…) n'est résolvable qu'avec APP_URL.
+  let mediaUrl = imageUrl ?? null;
+  if (mediaUrl && mediaUrl.startsWith('/')) {
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    if (!appUrl) {
+      return 'ECHEC: le média est hébergé localement (/uploads) — les plateformes ne peuvent pas le télécharger. Configurez APP_URL (URL publique du serveur) ou utilisez une URL de média publique.';
+    }
+    mediaUrl = `${appUrl}${mediaUrl}`;
+  }
+
+  const mediaIsVideo = mediaUrl ? /\.(mp4|webm|mov)(\?|#|$)/i.test(mediaUrl) : false;
+  const mediaRequired = Boolean(MEDIA_REQUIRED[platform]);
+  const mediaInstruction = mediaUrl
+    ? (mediaIsVideo
+      ? `\nUne VIDÉO est jointe au post : passe son URL dans le paramètre vidéo/média approprié (video_url, media_url, video…) et privilégie l'outil de publication qui accepte la vidéo (vidéo, reel, upload). ${mediaRequired
+        ? 'Cette plateforme EXIGE le média : si aucun outil n\'accepte la vidéo, réponds ECHEC (ne publie pas le texte seul).'
+        : 'Si aucun outil de cette plateforme n\'accepte de vidéo, publie le texte et signale clairement que la vidéo n\'a pas pu être jointe.'}`
+      : `\nUne image est jointe au post : passe son URL dans le paramètre média approprié de l'outil de publication (image_url, media_url, photo…). ${mediaRequired
+        ? 'Cette plateforme EXIGE le média : si aucun outil n\'accepte d\'image, réponds ECHEC (ne publie pas le texte seul).'
+        : 'Si l\'outil de publication choisi n\'accepte aucun média, publie le texte et signale-le dans ta réponse.'}`)
     : '';
   const result = await runMcpTask(
     userId,
@@ -205,8 +224,8 @@ Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil
 Si la publication réussit, réponds en une phrase avec le résultat, préfixée par "OK:". Si la réponse de l'outil contient l'URL ou l'identifiant du post créé, inclus-le TEL QUEL dans ta phrase (il sera enregistré pour la synchro des métriques).
 Si aucun outil ne permet de publier sur ${platform} ou si la publication échoue, réponds préfixé par "ECHEC:" avec la raison.
 IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, pas de markdown.`,
-    `Publie ce contenu sur ${platform} :\n\n${content}${imageUrl ? `\n\n--- Image à joindre (paramètre média de l'outil) ---\n${imageUrl}` : ''}`,
-    ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit', 'media', 'photo'],
+    `Publie ce contenu sur ${platform} :\n\n${content}${mediaUrl ? `\n\n--- ${mediaIsVideo ? 'Vidéo' : 'Image'} à joindre (paramètre média de l'outil) ---\n${mediaUrl}` : ''}`,
+    ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit', 'media', 'photo', 'video', 'reel', 'upload'],
   );
   return guardedReply(result);
 }

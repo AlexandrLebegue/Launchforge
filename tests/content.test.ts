@@ -233,6 +233,31 @@ describe('Upload de vidéo (média de post)', () => {
   });
 });
 
+describe('Publication avec média (garde-fous sans appel modèle)', () => {
+  it('refuse une URL de média locale sans APP_URL, la résout avec', async () => {
+    const { publishViaComposio } = await import('../src/services/composio');
+    delete process.env.APP_URL;
+    const local = await publishViaComposio('user-x', 'linkedin', 'Texte', '/uploads/demo.mp4');
+    expect(local).toMatch(/^ECHEC:/);
+    expect(local).toContain('APP_URL');
+    // Avec APP_URL l'URL devient publique → la garde passe et on échoue PLUS
+    // LOIN (absence de configuration Composio), pas sur l'URL
+    process.env.APP_URL = 'https://launchforge.example';
+    const resolved = await publishViaComposio('user-x', 'linkedin', 'Texte', '/uploads/demo.mp4')
+      .catch((err: Error) => err.message);
+    delete process.env.APP_URL;
+    expect(resolved).toBe('COMPOSIO_NOT_CONFIGURED');
+  });
+
+  it('bloque toujours les plateformes à média obligatoire sans média', async () => {
+    const { publishViaComposio } = await import('../src/services/composio');
+    for (const platform of ['instagram', 'tiktok', 'youtube']) {
+      const out = await publishViaComposio('user-x', platform, 'Texte sans média');
+      expect(out).toMatch(/^ECHEC:/);
+    }
+  });
+});
+
 describe('Knowledge base', () => {
   let entryId: string;
 
