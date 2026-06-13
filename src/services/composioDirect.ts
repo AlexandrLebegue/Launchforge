@@ -300,6 +300,14 @@ export interface DirectPublishResult {
   result?: string; // contrat « OK: … » / « ECHEC: … »
 }
 
+/** Nom lisible des plateformes publiées en direct (pour les messages d'erreur) */
+const PLATFORM_LABELS: Record<string, string> = {
+  twitter: 'X / Twitter',
+  linkedin: 'LinkedIn',
+  instagram: 'Instagram',
+  youtube: 'YouTube',
+};
+
 /**
  * Tente la publication déterministe. Toute erreur d'outil devient un
  * « ECHEC: raison » propre (pas de repli IA : mêmes comptes, même mur).
@@ -459,6 +467,12 @@ export async function publishDirect(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'erreur inconnue';
     if (msg === 'COMPOSIO_NOT_CONFIGURED') return { handled: false };
+    // Compte non rattaché chez Composio : message actionnable plutôt que
+    // l'erreur brute (qui expose l'identifiant interne lf-… sans aider).
+    if (/no connected account/i.test(msg)) {
+      const label = PLATFORM_LABELS[platform] ?? platform;
+      return { handled: true, result: `ECHEC: aucun compte ${label} connecté — rattachez-le dans Configuration avant de publier.` };
+    }
     return { handled: true, result: `ECHEC: ${msg}` };
   }
 }
