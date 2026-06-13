@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { generateImage, uploadPublicImage, isImageGenConfigured } from '../services/imageGen';
+import { generateImage, hostImage, isImageGenConfigured } from '../services/imageGen';
 import { saveMediaStream, deleteMediaFile } from '../services/mediaStore';
 import { storage } from '../services/storage';
 import { generateCampaignReport, computePerformanceSeries } from '../services/analytics';
@@ -169,12 +169,12 @@ router.post('/image', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'brief is required' });
   }
   try {
-    const { url } = await generateImage(req.user!.userId, brief.trim().slice(0, 600));
+    const { url, public: isPublic } = await generateImage(req.user!.userId, brief.trim().slice(0, 600));
     if (postId) {
       const post = storage.getPostById(postId);
       if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: url });
     }
-    res.json({ success: true, data: { url } });
+    res.json({ success: true, data: { url, publicUrl: isPublic ? url : null } });
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération échouée' });
   }
@@ -190,14 +190,17 @@ router.post('/image/upload', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Image trop lourde (8 Mo max)' });
   }
   try {
-    // Accepte un data-URL ou du base64 brut
+    // Accepte un data-URL ou du base64 brut ; déduit l'extension du préfixe
     const b64 = imageBase64.startsWith('data:') ? imageBase64.slice(imageBase64.indexOf(',') + 1) : imageBase64;
-    const url = await uploadPublicImage(b64);
+    const mime = imageBase64.startsWith('data:') ? imageBase64.slice(5, imageBase64.indexOf(';')) : '';
+    const ext = mime.split('/')[1]?.replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png';
+    // hostImage ne bloque jamais : repli local si freeimage.host échoue
+    const { url, public: isPublic } = await hostImage(b64, ext);
     if (postId) {
       const post = storage.getPostById(postId);
       if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: url });
     }
-    res.json({ success: true, data: { url } });
+    res.json({ success: true, data: { url, publicUrl: isPublic ? url : null } });
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Hébergement échoué' });
   }

@@ -55,6 +55,7 @@ const TOOLS: ToolDef[] = [
         content: { type: 'string', description: 'Le contenu complet, prêt à publier' },
         scheduledAt: { type: 'string', description: 'Date/heure ISO 8601 si l\'utilisateur a demandé une programmation, sinon omettre' },
         imageUrl: { type: 'string', description: 'URL du visuel si l\'utilisateur en a fourni un' },
+        subreddit: { type: 'string', description: 'OBLIGATOIRE si platform="reddit" : le subreddit cible sans le préfixe « r/ » (ex. "SaaS"). Demande-le à l\'utilisateur s\'il manque.' },
       },
       required: ['platform', 'title', 'content'],
     },
@@ -115,6 +116,9 @@ async function executeTool(userId: string, name: string, args: any): Promise<{ o
       publishedAt: null,
       externalUrl: null,
       imageUrl: typeof args.imageUrl === 'string' && args.imageUrl.trim() ? args.imageUrl.trim() : null,
+      subreddit: typeof args.subreddit === 'string' && args.subreddit.trim()
+        ? args.subreddit.trim().replace(/^\/?r\//i, '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 50) || null
+        : null,
       recurrence: 'none',
       recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0, crossPostId: null,
       autoPublish: 0,

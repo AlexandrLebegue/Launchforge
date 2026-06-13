@@ -34,6 +34,14 @@ function sanitizeMetric(value: unknown): number | undefined {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
 }
 
+/** Normalise un subreddit : retire le préfixe « r/ », ne garde que les
+ *  caractères valides (lettres, chiffres, _). null si vide. */
+function normalizeSubreddit(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const cleaned = value.trim().replace(/^\/?r\//i, '').replace(/[^A-Za-z0-9_]/g, '');
+  return cleaned ? cleaned.slice(0, 50) : null;
+}
+
 // ── GET /api/posts ───────────────────────────────────────────────────────────
 // Le Hub de contenu est propre au projet actif
 router.get('/', (req: Request, res: Response) => {
@@ -61,6 +69,7 @@ router.post('/', (req: Request, res: Response) => {
     publishedAt: null,
     externalUrl: typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null,
     imageUrl:    typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null,
+    subreddit:   normalizeSubreddit(body.subreddit),
     recurrence:  RECURRENCES.includes(body.recurrence as Recurrence) ? (body.recurrence as Recurrence) : 'none',
     recurrenceBrief: typeof body.recurrenceBrief === 'string' && body.recurrenceBrief.trim() ? body.recurrenceBrief.trim().slice(0, 600) : null,
     seriesId:    null,
@@ -104,6 +113,7 @@ router.patch('/:id', (req: Request, res: Response) => {
   if (body.imageUrl !== undefined) {
     patch.imageUrl = typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null;
   }
+  if (body.subreddit !== undefined) patch.subreddit = normalizeSubreddit(body.subreddit);
   if (RECURRENCES.includes(body.recurrence as Recurrence)) patch.recurrence = body.recurrence as Recurrence;
   if (body.recurrenceBrief !== undefined) {
     patch.recurrenceBrief = typeof body.recurrenceBrief === 'string' && body.recurrenceBrief.trim()
@@ -117,6 +127,18 @@ router.patch('/:id', (req: Request, res: Response) => {
     patch.autoPublish = body.autoPublish ? 1 : 0;
     // Réactiver l'auto-publication efface l'erreur précédente
     if (patch.autoPublish === 1) patch.publishError = null;
+  }
+
+  // Modifier le contenu, le subreddit ou la plateforme = corriger ce qui a
+  // échoué : l'erreur de publication précédente devient obsolète, on l'efface
+  // (sinon l'ancien message reste affiché et laisse croire que rien n'a changé).
+  if (post.publishError && (
+    (patch.content !== undefined && patch.content !== post.content) ||
+    (patch.subreddit !== undefined && patch.subreddit !== post.subreddit) ||
+    (patch.platform !== undefined && patch.platform !== post.platform) ||
+    (patch.imageUrl !== undefined && patch.imageUrl !== post.imageUrl)
+  )) {
+    patch.publishError = null;
   }
 
   // Date modifiée → l'événement calendrier doit être recréé
@@ -260,7 +282,7 @@ router.post('/:id/publish-now', async (req: Request, res: Response) => {
   for (const target of targets) {
     let result: string;
     try {
-      result = await publishViaComposio(req.user!.userId, target.platform, target.content, target.imageUrl, target.title);
+      result = await publishViaComposio(req.user!.userId, target.platform, target.content, target.imageUrl, target.title, target.subreddit);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Publication échouée';
       if (msg === 'COMPOSIO_NOT_CONFIGURED' || msg === 'AI_NOT_CONFIGURED') {

@@ -22,7 +22,7 @@ const TICK_MS = 60_000;
 let timer: NodeJS.Timeout | null = null;
 const inFlight = new Set<string>();
 
-type PublishFn = (userId: string, platform: string, content: string, imageUrl?: string | null, title?: string) => Promise<string>;
+type PublishFn = (userId: string, platform: string, content: string, imageUrl?: string | null, title?: string, subreddit?: string | null) => Promise<string>;
 
 /**
  * Traite les posts dus. Le publieur est injectable pour les tests.
@@ -42,7 +42,7 @@ export async function processDuePosts(
     try {
       // L'image part en paramètre média de l'outil de publication (et plus en
       // texte collé dans le contenu — Instagram & co l'exigent en vrai média)
-      const result = await publish(post.userId, post.platform, post.content, post.imageUrl, post.title);
+      const result = await publish(post.userId, post.platform, post.content, post.imageUrl, post.title, post.subreddit);
 
       // Re-vérifie l'état : l'utilisateur a pu publier/supprimer entre-temps
       const fresh = storage.getPostById(post.id);

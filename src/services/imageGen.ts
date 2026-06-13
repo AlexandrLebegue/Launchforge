@@ -24,8 +24,10 @@ function imageModel(): string {
 /** Héberge une image (base64) sur freeimage.host → URL publique permanente */
 export async function uploadPublicImage(base64: string): Promise<string> {
   const form = new FormData();
-  // Clé API publique documentée de freeimage.host (service gratuit)
-  form.append('key', '6d207e02198a847aa98d0a2a901485a5');
+  // Clé freeimage.host : par défaut la clé de DÉMO publique (partagée par tous,
+  // donc rate-limitée et faillible). Posez FREEIMAGE_API_KEY (compte gratuit
+  // freeimage.host) pour une clé dédiée et fiable.
+  form.append('key', process.env.FREEIMAGE_API_KEY || '6d207e02198a847aa98d0a2a901485a5');
   form.append('action', 'upload');
   form.append('source', base64);
   form.append('format', 'json');
@@ -44,10 +46,30 @@ export async function uploadPublicImage(base64: string): Promise<string> {
 }
 
 /**
+ * Héberge une image et retourne une URL utilisable, SANS jamais bloquer
+ * l'attachement d'un média. Conserve une copie locale (bibliothèque 90 j) puis
+ * tente l'URL publique freeimage.host (indispensable pour publier sur les
+ * plateformes). Si ce service externe échoue (clé partagée rate-limitée,
+ * format refusé, indisponibilité), repli sur l'hébergement local /uploads —
+ * l'aperçu et l'enregistrement marchent ; la publication nécessitera APP_URL.
+ */
+export async function hostImage(base64: string, ext = 'png'): Promise<{ url: string; public: boolean }> {
+  let localUrl: string | null = null;
+  try { localUrl = saveMediaFile(Buffer.from(base64, 'base64'), ext).url; } catch { /* copie locale best-effort */ }
+  try {
+    return { url: await uploadPublicImage(base64), public: true };
+  } catch (err) {
+    if (!localUrl) throw err; // ni public, ni local : on remonte l'erreur d'origine
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    return { url: appUrl ? `${appUrl}${localUrl}` : localUrl, public: Boolean(appUrl) };
+  }
+}
+
+/**
  * Génère un visuel à partir d'un brief (contexte projet injecté pour la
  * cohérence de marque) et retourne son URL publique.
  */
-export async function generateImage(userId: string, brief: string): Promise<{ url: string; model: string }> {
+export async function generateImage(userId: string, brief: string): Promise<{ url: string; model: string; public: boolean }> {
   if (!isImageGenConfigured()) throw new Error('AI_NOT_CONFIGURED');
 
   const company = buildCompanyContext(userId);
@@ -89,11 +111,8 @@ export async function generateImage(userId: string, brief: string): Promise<{ ur
   }
 
   const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-  // Copie serveur (bibliothèque locale, purge à 90 jours) + URL publique
-  try {
-    const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg';
-    saveMediaFile(Buffer.from(base64, 'base64'), ext);
-  } catch { /* la copie locale est best-effort */ }
-  const url = await uploadPublicImage(base64);
-  return { url, model: imageModel() };
+  const ext = dataUrl.startsWith('data:image/png') ? 'png' : 'jpg';
+  // Conserve une copie locale + URL publique, avec repli local si freeimage échoue
+  const { url, public: isPublic } = await hostImage(base64, ext);
+  return { url, model: imageModel(), public: isPublic };
 }
