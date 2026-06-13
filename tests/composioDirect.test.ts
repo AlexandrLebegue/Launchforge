@@ -350,7 +350,8 @@ describe('syncMetricsDirect — lecture déterministe des métriques', () => {
     });
     const out = await syncMetricsDirect(userId, 'instagram', '17895695668004196', exec);
     expect(out.metrics).toMatchObject({ found: true, impressions: 200, likes: 12, comments: 3, shares: 2 });
-    expect(calls[0].args).toEqual({ ig_post_id: '17895695668004196' });
+    // métriques explicites (le preset par défaut inclut « impressions », retirée par Meta)
+    expect(calls[0].args).toEqual({ ig_post_id: '17895695668004196', metric: ['reach', 'likes', 'comments', 'shares', 'saved'] });
   });
 
   it('LinkedIn : réactions comptées via l\'outil du serveur MCP', async () => {

@@ -699,7 +699,13 @@ export async function syncMetricsDirect(
       case 'instagram': {
         const igId = externalRef.match(/\b(\d{10,})\b/)?.[1];
         if (!igId) return { handled: false };
-        const data = await exec(uid, 'INSTAGRAM_GET_POST_INSIGHTS', { ig_post_id: igId });
+        // On demande EXPLICITEMENT les métriques supportées : les presets de
+        // l'outil incluent « impressions », que Meta a retirée pour les médias
+        // récents (erreur 400) — vérifié en réel sur un post fraîchement publié.
+        const data = await exec(uid, 'INSTAGRAM_GET_POST_INSIGHTS', {
+          ig_post_id: igId,
+          metric: ['reach', 'likes', 'comments', 'shares', 'saved'],
+        });
         const list = data?.data ?? data?.insights?.data;
         if (!Array.isArray(list) || list.length === 0) {
           return { handled: true, metrics: { found: false, note: 'Aucun insight renvoyé par Instagram pour ce média' } };
