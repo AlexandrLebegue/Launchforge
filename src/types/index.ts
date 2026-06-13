@@ -287,6 +287,8 @@ export interface Post {
   externalUrl: string | null;
   /** URL du visuel à joindre au post (image hébergée) */
   imageUrl: string | null;
+  /** Reddit : subreddit cible (sans le préfixe « r/ ») — null pour les autres plateformes */
+  subreddit: string | null;
   recurrence: Recurrence;
   /** Si renseignée : chaque nouvelle occurrence est RÉGÉNÉRÉE par l'IA à
    *  partir de cette instruction (sinon le même contenu est repris) */

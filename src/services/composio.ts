@@ -189,11 +189,18 @@ export async function publishViaComposio(
   content: string,
   imageUrl?: string | null,
   title?: string,
+  subreddit?: string | null,
 ): Promise<string> {
   // Garde-fou AVANT tout appel modèle : inutile de lancer une mission vouée
   // à l'échec (observé en usage réel sur Instagram sans image)
   if (!imageUrl && MEDIA_REQUIRED[platform]) {
     return `ECHEC: ${MEDIA_REQUIRED[platform]}`;
+  }
+  // Reddit EXIGE un subreddit cible. Sans lui, l'opérateur IA bloquait en
+  // demandant « dans quel subreddit ? » → échec de l'auto-publication. On
+  // exige le champ en amont avec un message actionnable.
+  if (platform === 'reddit' && !(subreddit && subreddit.trim())) {
+    return 'ECHEC: indiquez le subreddit cible (champ « Subreddit » de l\'éditeur) avant de publier sur Reddit.';
   }
 
   // Les plateformes récupèrent le média par son URL : elle doit être PUBLIQUE.
@@ -225,15 +232,23 @@ export async function publishViaComposio(
         ? 'Cette plateforme EXIGE le média : si aucun outil n\'accepte d\'image, réponds ECHEC (ne publie pas le texte seul).'
         : 'Si l\'outil de publication choisi n\'accepte aucun média, publie le texte et signale-le dans ta réponse.'}`)
     : '';
+  // Reddit : le subreddit cible est fourni par l'utilisateur (champ dédié) —
+  // l'opérateur ne doit plus le demander ni en inventer un.
+  const sub = subreddit?.trim();
+  const redditInstruction = platform === 'reddit' && sub
+    ? `\nReddit : publie un post TEXTE (self post) dans le subreddit « ${sub} » — paramètre subreddit = "${sub}" EXACTEMENT. Tu disposes de TOUT le nécessaire : NE POSE AUCUNE QUESTION, n'attends aucune confirmation, appelle directement l'outil de création de post. ${title?.trim()
+      ? `Titre du post = « ${title.trim()} » ; le texte fourni est le corps (selftext/text).`
+      : 'Première ligne du texte = titre du post Reddit ; le reste = corps (selftext/text).'} C'est un post texte, jamais un post lien — ignore toute mention type « lien en bio ».`
+    : '';
   const result = await runMcpTask(
     userId,
     platformKeywords(platform),
     `Tu es un opérateur de publication. Tu disposes des outils Composio de l'utilisateur pour la plateforme ${platform}.
-Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.${mediaInstruction}
+Mission : publier le contenu fourni, tel quel (ne le réécris pas), via l'outil de création de post/tweet/message approprié.${mediaInstruction}${redditInstruction}
 Si la publication réussit, réponds en une phrase avec le résultat, préfixée par "OK:". Si la réponse de l'outil contient l'URL ou l'identifiant du post créé, inclus-le TEL QUEL dans ta phrase (il sera enregistré pour la synchro des métriques).
 Si aucun outil ne permet de publier sur ${platform} ou si la publication échoue, réponds préfixé par "ECHEC:" avec la raison.
 IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, pas de markdown.`,
-    `Publie ce contenu sur ${platform} :\n\n${content}${mediaUrl ? `\n\n--- ${mediaIsVideo ? 'Vidéo' : 'Image'} à joindre (paramètre média de l'outil) ---\n${mediaUrl}` : ''}`,
+    `Publie ce contenu sur ${platform} :\n\n${content}${sub ? `\n\n--- Subreddit cible ---\n${sub}` : ''}${mediaUrl ? `\n\n--- ${mediaIsVideo ? 'Vidéo' : 'Image'} à joindre (paramètre média de l'outil) ---\n${mediaUrl}` : ''}`,
     ['create', 'post', 'tweet', 'publish', 'send', 'message', 'submit', 'media', 'photo', 'video', 'reel', 'upload'],
   );
   return guardedReply(result);
@@ -265,6 +280,11 @@ const METRICS_HINTS: Record<string, string> = {
 - Post personnel : appelle LINKEDIN_LIST_REACTIONS avec l'URN du post (urn:li:share:<id> ou urn:li:activity:<id>, extrais-le de l'URL si besoin) et COMPTE les réactions retournées → c'est la valeur "likes". LINKEDIN_GET_POST_CONTENT permet de vérifier le post.
 - L'API LinkedIn n'expose PAS les impressions ni le détail des commentaires d'un post personnel : mets 0 pour ces champs et explique-le dans "note". found=true dès que les réactions ont pu être lues.`,
   twitter: `Spécifique X/Twitter : l'id du tweet est le nombre final de l'URL /status/<id>. Les métriques publiques (public_metrics) couvrent vues, likes, réponses, reposts.`,
+  reddit: `Spécifique Reddit :
+- L'identifiant du post est la partie après /comments/ dans l'URL (ex. https://www.reddit.com/r/test/comments/1u4zw0e/... → id = "1u4zw0e").
+- Appelle REDDIT_RETRIEVE_POST_COMMENTS avec article=<id> : la réponse contient le post (post_listing) ET ses commentaires. Mappe : likes = score du post (post_listing → children[0] → data.score, c'est le nombre de votes nets) ; comments = num_comments du post (ou le nombre de commentaires retournés). À défaut, REDDIT_RETRIEVE_REDDIT_POST avec subreddit=<sous-reddit> et sort="new" liste les posts récents : retrouve celui dont l'id correspond et lis score + num_comments.
+- L'API Reddit n'expose PAS le nombre de vues (pas de view_count) : mets impressions=0 et précise-le dans "note". shares et clicks = 0.
+- found=true dès que le score OU le nombre de commentaires a pu être lu (même s'ils valent 0).`,
 };
 
 export interface SyncedMetrics {

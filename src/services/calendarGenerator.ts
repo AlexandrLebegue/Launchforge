@@ -131,6 +131,7 @@ export async function generateContentCalendar(params: CalendarParams): Promise<P
       publishedAt: null,
       externalUrl: null,
       imageUrl:    null,
+      subreddit:   null,
       recurrence:  'none',
       recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0, crossPostId: null,
       autoPublish: 0,

@@ -567,15 +567,16 @@ export class Storage {
       .prepare(
         `INSERT INTO posts
            (id, userId, planId, platform, title, content, status, scheduledAt, publishedAt,
-            externalUrl, imageUrl, recurrence, recurrenceBrief, seriesId,
+            externalUrl, imageUrl, subreddit, recurrence, recurrenceBrief, seriesId,
             recurrenceUseNews, recurrenceUseKnowledge, recurrenceUpdateKb, crossPostId,
             autoPublish, publishError, calendarSynced,
             impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.planId, post.platform, post.title, post.content, post.status,
-        post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.recurrence, post.recurrenceBrief,
+        post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.subreddit ?? null,
+        post.recurrence, post.recurrenceBrief,
         post.seriesId ?? null, post.recurrenceUseNews ?? 0, post.recurrenceUseKnowledge ?? 1, post.recurrenceUpdateKb ?? 0,
         post.crossPostId ?? null,
         post.autoPublish, post.publishError, post.calendarSynced,
@@ -587,7 +588,7 @@ export class Storage {
   updatePost(id: string, patch: Partial<Post>): void {
     const allowed: (keyof Post)[] = [
       'platform', 'title', 'content', 'status', 'scheduledAt', 'publishedAt',
-      'externalUrl', 'imageUrl', 'recurrence', 'recurrenceBrief', 'seriesId',
+      'externalUrl', 'imageUrl', 'subreddit', 'recurrence', 'recurrenceBrief', 'seriesId',
       'recurrenceUseNews', 'recurrenceUseKnowledge', 'recurrenceUpdateKb', 'crossPostId',
       'autoPublish', 'publishError', 'calendarSynced',
       'impressions', 'likes', 'comments', 'shares', 'clicks',

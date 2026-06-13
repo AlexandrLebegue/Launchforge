@@ -332,6 +332,10 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'crossPostId')) {
     database.exec(`ALTER TABLE posts ADD COLUMN crossPostId TEXT`);
   }
+  // Reddit : subreddit cible du post (sans le préfixe « r/ »)
+  if (!postCols.some((c) => c.name === 'subreddit')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN subreddit TEXT`);
+  }
   // Réinitialisation de mot de passe (jeton haché + expiration)
   if (!userCols.some((c) => c.name === 'resetTokenHash')) {
     database.exec(`ALTER TABLE users ADD COLUMN resetTokenHash TEXT`);

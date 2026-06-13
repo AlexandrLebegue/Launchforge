@@ -522,6 +522,8 @@ export interface Post {
   externalUrl: string | null;
   /** URL du visuel à joindre au post */
   imageUrl: string | null;
+  /** Reddit : subreddit cible (sans le préfixe « r/ ») */
+  subreddit: string | null;
   recurrence: Recurrence;
   /** Instruction de régénération IA : chaque nouvelle occurrence est réécrite
    *  par l'IA à partir de cette consigne (null = même contenu repris) */
@@ -824,13 +826,13 @@ export async function removeTelegramBot(): Promise<ApiResponse<{ ownBot: boolean
   return request('/config/telegram-bot', { method: 'DELETE' });
 }
 
-/** Génère un visuel IA hébergé publiquement (attaché au post si postId) */
-export async function generatePostImage(brief: string, postId?: string): Promise<ApiResponse<{ url: string }>> {
+/** Génère un visuel IA hébergé (attaché au post si postId) ; publicUrl null = repli local (non public) */
+export async function generatePostImage(brief: string, postId?: string): Promise<ApiResponse<{ url: string; publicUrl: string | null }>> {
   return request('/content/image', { method: 'POST', body: JSON.stringify({ brief, postId }) });
 }
 
-/** Héberge une image fournie par l'utilisateur (base64/data-URL) → URL publique */
-export async function uploadPostImage(imageBase64: string, postId?: string): Promise<ApiResponse<{ url: string }>> {
+/** Héberge une image fournie par l'utilisateur (base64/data-URL) ; publicUrl null = repli local (non public) */
+export async function uploadPostImage(imageBase64: string, postId?: string): Promise<ApiResponse<{ url: string; publicUrl: string | null }>> {
   return request('/content/image/upload', { method: 'POST', body: JSON.stringify({ imageBase64, postId }) });
 }
 

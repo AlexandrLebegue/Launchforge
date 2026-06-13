@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
+import { storage } from '../src/services/storage';
 import app from '../src/app';
 
 let token: string;
@@ -61,6 +62,29 @@ describe('Posts (Content Hub)', () => {
       .patch(`/api/posts/${postId}`)
       .set(auth())
       .send({ recurrenceBrief: 'Un conseil actionnable différent chaque semaine' });
+  });
+
+  it('normalise le subreddit (retire « r/ » et les caractères invalides)', async () => {
+    const res = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'reddit', title: 'Test', content: 'Mon post', subreddit: 'r/plant ER!',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.subreddit).toBe('plantER');
+  });
+
+  it('efface l\'erreur de publication périmée quand on corrige le subreddit', async () => {
+    const created = await request(app).post('/api/posts').set(auth()).send({
+      platform: 'reddit', title: 'À corriger', content: 'Texte',
+    });
+    const id = created.body.data.id;
+    // Simule un échec de publication précédent (subreddit manquant)
+    storage.updatePost(id, { publishError: 'dans quel subreddit publier ?' });
+    expect(storage.getPostById(id)!.publishError).toBeTruthy();
+
+    const fixed = await request(app).patch(`/api/posts/${id}`).set(auth()).send({ subreddit: 'plantER' });
+    expect(fixed.status).toBe(200);
+    expect(fixed.body.data.subreddit).toBe('plantER');
+    expect(fixed.body.data.publishError).toBeNull();
   });
 
   it('updates metrics on a post', async () => {
@@ -349,6 +373,17 @@ describe('Publication avec média (garde-fous sans appel modèle)', () => {
       const out = await publishViaComposio('user-x', platform, 'Texte sans média');
       expect(out).toMatch(/^ECHEC:/);
     }
+  });
+
+  it('Reddit sans subreddit : ECHEC actionnable AVANT tout appel modèle', async () => {
+    const { publishViaComposio } = await import('../src/services/composio');
+    const out = await publishViaComposio('user-x', 'reddit', 'Mon post', null, 'Titre');
+    expect(out).toMatch(/^ECHEC:/);
+    expect(out.toLowerCase()).toContain('subreddit');
+    // Avec un subreddit, la garde passe → on échoue PLUS LOIN (Composio non configuré)
+    const withSub = await publishViaComposio('user-x', 'reddit', 'Mon post', null, 'Titre', 'SaaS')
+      .catch((err: Error) => err.message);
+    expect(withSub).toBe('COMPOSIO_NOT_CONFIGURED');
   });
 });
 

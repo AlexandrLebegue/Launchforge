@@ -268,6 +268,16 @@ describe('publishDirect — périmètre et erreurs', () => {
     expect(out.handled).toBe(true);
     expect(out.result).toBe('ECHEC: Tweet text exceeds 280 characters');
   });
+
+  it('transforme « No connected account » en message actionnable (sans exposer l\'id interne)', async () => {
+    const { exec } = recorder({
+      TWITTER_CREATION_OF_A_POST: new Error('No connected account found for user ID lf-abc for toolkit twitter'),
+    });
+    const out = await publishDirect(userId, 'twitter', 'Mon tweet', null, '', exec);
+    expect(out.handled).toBe(true);
+    expect(out.result).toBe('ECHEC: aucun compte X / Twitter connecté — rattachez-le dans Configuration avant de publier.');
+    expect(out.result).not.toContain('lf-');
+  });
 });
 
 describe('publishDirect — Reddit', () => {

@@ -71,9 +71,10 @@ interface PreviewProps {
   content: string;
   mediaUrl: string;
   mediaIsVideo: boolean;
+  subreddit?: string;
 }
 
-function PlatformPreview({ platform, title, content, mediaUrl, mediaIsVideo }: PreviewProps) {
+function PlatformPreview({ platform, title, content, mediaUrl, mediaIsVideo, subreddit }: PreviewProps) {
   const text = content.trim();
   const hideOnError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     (e.target as HTMLImageElement).style.display = 'none';
@@ -149,7 +150,7 @@ function PlatformPreview({ platform, title, content, mediaUrl, mediaIsVideo }: P
     const body = title.trim() ? text : lines.slice(1).join('\n').trim();
     return (
       <div className="pv pv-light pv-reddit">
-        <div className="pv-reddit-meta">r/votre-communauté · publié par u/vous · il y a 1 h</div>
+        <div className="pv-reddit-meta">r/{subreddit?.trim() || 'votre-communauté'} · publié par u/vous · il y a 1 h</div>
         <div className="pv-reddit-title">{rTitle || empty}</div>
         {body && <div className="pv-text pv-reddit-body"><Markdown text={body} /></div>}
         {media}
@@ -223,6 +224,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     scheduledAt: toLocalInput(post?.scheduledAt ?? initialScheduledAt ?? null),
     externalUrl: post?.externalUrl ?? '',
     imageUrl:    post?.imageUrl ?? '',
+    subreddit:   post?.subreddit ?? '',
     recurrence:  (post?.recurrence ?? 'none') as Recurrence,
     recurrenceBrief: post?.recurrenceBrief ?? '',
     recurrenceUseNews:      Boolean(post?.recurrenceUseNews),
@@ -276,6 +278,9 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     if (res.success && res.data) {
       set('imageUrl', res.data.url);
       setImgPrompt('');
+      if (!res.data.publicUrl) {
+        setImgError('Image générée et hébergée localement (service d\'hébergement public indisponible) — l\'aperçu marche ; pour publier sur les plateformes, configurez APP_URL (URL publique du serveur).');
+      }
     } else {
       setImgError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Génération échouée.');
     }
@@ -312,8 +317,14 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
     reader.onload = async () => {
       const res = await uploadPostImage(String(reader.result), post?.id);
       setImgBusy(false);
-      if (res.success && res.data) set('imageUrl', res.data.url);
-      else setImgError(res.error || 'Téléversement échoué.');
+      if (res.success && res.data) {
+        set('imageUrl', res.data.url);
+        if (!res.data.publicUrl) {
+          setImgError('Image hébergée localement (service d\'hébergement public indisponible) — l\'aperçu marche ; pour publier sur les plateformes, configurez APP_URL (URL publique du serveur).');
+        }
+      } else {
+        setImgError(res.error || 'Téléversement échoué.');
+      }
     };
     reader.onerror = () => { setImgBusy(false); setImgError('Lecture du fichier impossible.'); };
     reader.readAsDataURL(file);
@@ -448,6 +459,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
       scheduledAt: form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null,
       externalUrl: form.externalUrl.trim() || null,
       imageUrl:    form.imageUrl.trim() || null,
+      subreddit:   form.subreddit.trim() || null,
       recurrence:  form.recurrence,
       recurrenceBrief: form.recurrence !== 'none' && form.recurrenceBrief.trim() ? form.recurrenceBrief.trim() : null,
       recurrenceUseNews:      form.recurrenceUseNews ? 1 : 0,
@@ -568,6 +580,21 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                       auto-publication) — chacun se publie et se mesure séparément.
                     </span>
                   </>
+                )}
+                {selPlatforms.includes('reddit') && (
+                  <label className="form-label-block" style={{ marginTop: 12 }}>
+                    Subreddit <span className="form-hint-inline">— obligatoire pour publier sur Reddit</span>
+                    <div className="ai-assist-row">
+                      <span style={{ alignSelf: 'center', color: 'var(--color-text-muted)', fontWeight: 600 }}>r/</span>
+                      <input
+                        className="form-input"
+                        value={form.subreddit}
+                        onChange={(e) => set('subreddit', e.target.value.replace(/^\/?r\//i, '').replace(/[^A-Za-z0-9_]/g, ''))}
+                        placeholder="ex. SaaS, startups, Entrepreneur"
+                      />
+                    </div>
+                    <span className="form-hint-inline">Le nom exact de la communauté, sans le « r/ ».</span>
+                  </label>
                 )}
               </section>
 
@@ -756,6 +783,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
                   content={form.content}
                   mediaUrl={mediaUrl}
                   mediaIsVideo={mediaIsVideo}
+                  subreddit={form.subreddit}
                 />
                 {pvIdx > 0 && crossAdapt && (
                   <span className="form-hint-inline">Le texte sera adapté aux codes de {platformLabel(pvPlatform)} par l'IA à l'enregistrement.</span>
