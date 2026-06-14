@@ -67,10 +67,15 @@ async function getConnectedToolkits(composioId: string | null, fresh = false): P
 
 // ── GET /api/config/status ───────────────────────────────────────────────────
 router.get('/status', async (req: Request, res: Response) => {
+  // Projet actif (perso ou d'équipe). Les comptes utilisés sont ceux du
+  // PROPRIÉTAIRE du projet ; un membre non-propriétaire les voit en lecture seule.
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  const canManageAccounts = ctx.ownerUserId === req.user!.userId;
+  const ownerName = canManageAccounts ? null : (storage.getUserById(ctx.ownerUserId)?.name || storage.getUserById(ctx.ownerUserId)?.email || 'le propriétaire');
   // ?fresh=1 contourne le cache (polling après une connexion de compte)
-  const connected = await getConnectedToolkits(composioUserIdFor(req.user!.userId), req.query.fresh === '1');
-  // Le mode de publication est un réglage du projet actif
-  const agents = storage.getAgentsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId));
+  const connected = await getConnectedToolkits(composioUserIdFor(ctx.ownerUserId), req.query.fresh === '1');
+  // Le mode de publication est un réglage du projet actif (perso ou d'équipe)
+  const agents = storage.getAgentsByPlan(ctx.ownerUserId, ctx.planId);
   const publishMode = agents.length > 0 && agents.every((a) => a.approvalMode === 'auto')
     ? 'auto'
     : 'manual';
@@ -85,6 +90,9 @@ router.get('/status', async (req: Request, res: Response) => {
       composio: {
         configured: isComposioConfigured() && Boolean(process.env.COMPOSIO_API_KEY),
         dashboardUrl: 'https://dashboard.composio.dev',
+        // L'utilisateur courant peut-il connecter/déconnecter (= il est le propriétaire) ?
+        canManage: canManageAccounts,
+        ownerName,
         toolkits: FEATURED_TOOLKITS.map((t) => ({
           ...t,
           connected: connected.has(t.slug),
@@ -121,6 +129,10 @@ router.post('/connect', async (req: Request, res: Response) => {
   if (!isComposioConfigured() || !process.env.COMPOSIO_API_KEY) {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
+  // Sur un projet d'équipe, seuls les comptes du propriétaire sont utilisés
+  if (storage.resolveActiveProject(req.user!.userId).ownerUserId !== req.user!.userId) {
+    return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
+  }
   try {
     const redirectUrl = await createConnectLink(req.user!.userId, toolkit.toLowerCase());
     // Le statut de CET utilisateur devra refléter la connexion dès l'autorisation
@@ -144,6 +156,9 @@ router.post('/disconnect', async (req: Request, res: Response) => {
   }
   if (!isComposioConfigured() || !process.env.COMPOSIO_API_KEY) {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+  if (storage.resolveActiveProject(req.user!.userId).ownerUserId !== req.user!.userId) {
+    return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
   }
   try {
     const removed = await disconnectToolkit(req.user!.userId, toolkit.toLowerCase());
@@ -233,8 +248,12 @@ router.patch('/publish-mode', (req: Request, res: Response) => {
   if (mode !== 'auto' && mode !== 'manual') {
     return res.status(400).json({ success: false, error: 'mode must be auto or manual' });
   }
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
+  }
   // Réglage propre au projet actif : les autres projets gardent le leur
-  for (const agent of storage.getAgentsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId))) {
+  for (const agent of storage.getAgentsByPlan(ctx.ownerUserId, ctx.planId)) {
     storage.updateAgent(agent.id, { approvalMode: mode });
   }
   res.json({ success: true, data: { publishMode: mode } });

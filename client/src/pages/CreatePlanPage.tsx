@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, FormEvent, ChangeEvent, Fragment } from 'react';
+import { useState, useRef, useEffect, FormEvent, ChangeEvent, KeyboardEvent, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Flame, User, Paperclip } from 'lucide-react';
 import Markdown from '../components/Markdown';
 import {
   startOnboarding,
@@ -61,11 +62,18 @@ function GenerationSplash() {
 
   return (
     <div className="gen-splash">
-      <div className="gen-splash-rocket">
-        <span className="gen-splash-emoji"></span>
+      <div className="gen-splash-forge" aria-hidden="true">
         <span className="gen-splash-ring" />
         <span className="gen-splash-ring r2" />
         <span className="gen-splash-ring r3" />
+        <div className="forge-scene">
+          <div className="forge-anvil" />
+          <div className="forge-glow" />
+          <div className="forge-hammer"><span className="forge-hammer-head" /></div>
+          <div className="forge-sparks">
+            <span /><span /><span /><span /><span /><span />
+          </div>
+        </div>
       </div>
       <h2 className="gen-splash-title">Génération de votre plan de promotion</h2>
       <div className="gen-splash-step" key={stepIndex}>{step.icon} {step.text}</div>
@@ -95,10 +103,20 @@ export default function CreatePlanPage() {
 
   const chatEnd = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [session?.messages.length, sending, streamText, streamActions.length]);
+
+  // Zone de saisie auto-extensible : grandit avec le texte (retours à la ligne
+  // visibles), jusqu'à un plafond, puis défile. Se réinitialise une fois envoyé.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
 
   useEffect(() => {
     (async () => {
@@ -245,7 +263,7 @@ export default function CreatePlanPage() {
   const profile = session?.profile;
 
   return (
-    <div>
+    <div className="chat-screen">
       <div className="chat-page-title">Créer mon plan de promotion</div>
       <div className="chat-page-subtitle">
         L'assistant IA vous pose les bonnes questions et recherche lui-même les infos de votre entreprise
@@ -265,7 +283,9 @@ export default function CreatePlanPage() {
                     </div>
                   )}
                   <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                    <div className="chat-avatar">{msg.role === 'assistant' ? '' : ''}</div>
+                    <div className={`chat-avatar ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                      {msg.role === 'assistant' ? <Flame size={16} /> : <User size={16} />}
+                    </div>
                     <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
                       <Markdown text={msg.text} />
                     </div>
@@ -283,7 +303,7 @@ export default function CreatePlanPage() {
 
               {sending && (
                 <div className="chat-msg chat-msg-bot">
-                  <div className="chat-avatar"></div>
+                  <div className="chat-avatar bot"><Flame size={16} /></div>
                   {streamText
                     ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
                     : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
@@ -337,18 +357,29 @@ export default function CreatePlanPage() {
                   title="Joindre un document (pdf, txt, md, csv, json, html)"
                   onClick={() => fileRef.current?.click()}
                   disabled={sending}
-                ></button>
-                <input
-                  type="text"
+                >
+                  <Paperclip size={18} />
+                </button>
+                <textarea
+                  ref={inputRef}
+                  className="chat-input-field"
+                  rows={1}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Votre réponse… (nom d'entreprise, site web, ou décrivez votre idée)"
+                  onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+                    // Entrée envoie ; Maj+Entrée insère un retour à la ligne
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="Votre réponse… (nom d'entreprise, site web, ou décrivez votre idée). Maj+Entrée pour un retour à la ligne."
                   disabled={sending}
                   autoFocus
                 />
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn btn-primary chat-send-btn"
                   disabled={sending || (!input.trim() && pendingDocs.length === 0)}
                 >
                   Envoyer →

@@ -62,6 +62,8 @@ export interface ChatParams {
   /** Si fourni, la réponse est streamée et chaque delta de texte est transmis */
   onDelta?: (text: string) => void;
   timeoutMs?: number;
+  /** Annulation externe (ex. déconnexion du client SSE) — coupe l'appel modèle */
+  signal?: AbortSignal;
 }
 
 function buildBody(params: ChatParams, stream: boolean) {
@@ -120,6 +122,12 @@ export async function chatComplete(params: ChatParams): Promise<ChatResult> {
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), params.timeoutMs ?? 120000);
+  // Annulation externe (client SSE déconnecté) → on coupe la requête modèle
+  const onExternalAbort = () => controller.abort();
+  if (params.signal) {
+    if (params.signal.aborted) controller.abort();
+    else params.signal.addEventListener('abort', onExternalAbort, { once: true });
+  }
 
   try {
     if (params.onDelta) {
@@ -153,6 +161,7 @@ export async function chatComplete(params: ChatParams): Promise<ChatResult> {
     };
   } finally {
     clearTimeout(timeout);
+    params.signal?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -235,9 +244,11 @@ export function sanitizeJson(text: string): string {
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
   }
-  // Certains modèles ajoutent du texte autour — isole le premier objet JSON
+  // Certains modèles ajoutent du texte autour — isole le premier objet JSON.
+  // start !== -1 (et pas > 0) pour aussi retirer la prose en QUEUE quand la
+  // réponse commence directement par « { ».
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
-  if (start > 0 && end > start) cleaned = cleaned.slice(start, end + 1);
+  if (start !== -1 && end > start) cleaned = cleaned.slice(start, end + 1);
   return cleaned.trim();
 }

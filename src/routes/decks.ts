@@ -38,8 +38,8 @@ function authHeaderOrQuery(req: Request, res: Response, next: NextFunction): voi
 
 // ── GET /api/decks ───────────────────────────────────────────────────────────
 router.get('/', requireAuth, (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  res.json({ success: true, data: storage.getDecksByPlan(userId, storage.getActivePlanId(userId)) });
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  res.json({ success: true, data: storage.getDecksByPlan(ctx.ownerUserId, ctx.planId) });
 });
 
 // ── POST /api/decks — génération IA d'un deck ────────────────────────────────
@@ -52,13 +52,17 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'brief is required' });
   }
 
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : génération non autorisée' });
+  }
+
   try {
-    const userId = req.user!.userId;
-    const { title, markdown } = await generateDeckMarkdown(userId, brief.trim().slice(0, 1000), Number(slides) || 8);
+    const { title, markdown } = await generateDeckMarkdown(ctx.ownerUserId, brief.trim().slice(0, 1000), Number(slides) || 8);
     const deck = {
       id: uuid(),
-      userId,
-      planId: storage.getActivePlanId(userId),
+      userId: ctx.ownerUserId,
+      planId: ctx.planId,
       title,
       markdown,
       createdAt: new Date().toISOString(),
@@ -79,17 +83,17 @@ router.get('/theme-preview', authHeaderOrQuery, (req: Request, res: Response) =>
 // ── GET /api/decks/:id/html — présentation plein écran ──────────────────────
 router.get('/:id/html', authHeaderOrQuery, (req: Request, res: Response) => {
   const deck = storage.getDeckById(req.params.id);
-  if (!deck || deck.userId !== req.user!.userId) {
+  if (!deck || !storage.accessRole(req.user!.userId, deck.planId, deck.userId)) {
     return res.status(404).json({ success: false, error: 'Deck not found' });
   }
-  const { theme, css } = themeForUser(req.user!.userId);
+  const { theme, css } = themeForUser(deck.userId);
   res.type('html').send(renderDeckHtml(deck.markdown, theme, css));
 });
 
 // ── GET /api/decks/:id/markdown — source Marp (réutilisable dans Marp CLI) ──
 router.get('/:id/markdown', authHeaderOrQuery, (req: Request, res: Response) => {
   const deck = storage.getDeckById(req.params.id);
-  if (!deck || deck.userId !== req.user!.userId) {
+  if (!deck || !storage.accessRole(req.user!.userId, deck.planId, deck.userId)) {
     return res.status(404).json({ success: false, error: 'Deck not found' });
   }
   res.setHeader('Content-Disposition', `attachment; filename="deck-${deck.id.slice(0, 8)}.md"`);
@@ -101,8 +105,12 @@ router.get('/:id/markdown', authHeaderOrQuery, (req: Request, res: Response) => 
 // aussi hébergé publiquement pour pouvoir être attaché/publié sur un post.
 router.post('/:id/render', requireAuth, async (req: Request, res: Response) => {
   const deck = storage.getDeckById(req.params.id);
-  if (!deck || deck.userId !== req.user!.userId) {
+  const role = deck ? storage.accessRole(req.user!.userId, deck.planId, deck.userId) : null;
+  if (!deck || !role) {
     return res.status(404).json({ success: false, error: 'Deck not found' });
+  }
+  if (role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
   }
   const { format, postId } = req.body as { format?: string; postId?: string };
   if (format !== 'gif' && format !== 'mp4') {
@@ -110,7 +118,7 @@ router.post('/:id/render', requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    const { theme } = themeForUser(req.user!.userId);
+    const { theme } = themeForUser(deck.userId);
     let url: string;
     let publicUrl: string | null = null;
 
@@ -125,7 +133,7 @@ router.post('/:id/render', requireAuth, async (req: Request, res: Response) => {
 
     if (postId && publicUrl) {
       const post = storage.getPostById(postId);
-      if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: publicUrl });
+      if (post && storage.accessRole(req.user!.userId, post.planId, post.userId)) storage.updatePost(post.id, { imageUrl: publicUrl });
     }
     res.json({ success: true, data: { url, publicUrl } });
   } catch (err) {
@@ -136,8 +144,12 @@ router.post('/:id/render', requireAuth, async (req: Request, res: Response) => {
 // ── DELETE /api/decks/:id ────────────────────────────────────────────────────
 router.delete('/:id', requireAuth, (req: Request, res: Response) => {
   const deck = storage.getDeckById(req.params.id);
-  if (!deck || deck.userId !== req.user!.userId) {
+  const role = deck ? storage.accessRole(req.user!.userId, deck.planId, deck.userId) : null;
+  if (!deck || !role) {
     return res.status(404).json({ success: false, error: 'Deck not found' });
+  }
+  if (role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
   }
   storage.deleteDeck(deck.id);
   res.json({ success: true, data: null });

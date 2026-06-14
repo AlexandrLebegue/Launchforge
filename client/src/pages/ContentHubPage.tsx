@@ -202,6 +202,8 @@ interface EditorProps {
   post: Post | null;            // null = création
   /** Date pré-remplie pour une création depuis le calendrier */
   initialScheduledAt?: string | null;
+  /** Rôle Lecteur : consultation seule (pas d'enregistrement ni de publication) */
+  readOnly?: boolean;
   onClose: () => void;
   onSaved: (post: Post) => void;
   /** Des exemplaires multi-plateformes ont été créés → la liste doit être rechargée */
@@ -215,7 +217,7 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCrossposted }: EditorProps) {
+export function PostEditor({ post, initialScheduledAt, readOnly = false, onClose, onSaved, onCrossposted }: EditorProps) {
   const [form, setForm] = useState({
     platform:    post?.platform ?? 'linkedin',
     title:       post?.title ?? '',
@@ -546,7 +548,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             <div className="pe-col">
 
               {/* 1. Plateformes : multiselect — la première est la principale */}
-              <section className="pe-panel">
+              <section className="pe-panel" data-tour="pe-platforms">
                 <h3 className="pe-panel-title">
                   Plateformes
                   {post?.crossPostId && <span className="form-hint-inline"> — fait partie d'un groupe multi-plateformes</span>}
@@ -599,7 +601,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               </section>
 
               {/* 2. Contenu */}
-              <section className="pe-panel">
+              <section className="pe-panel" data-tour="pe-content">
                 <h3 className="pe-panel-title">Contenu</h3>
                 <label className="form-label-block">
                   Statut
@@ -628,7 +630,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               </section>
 
               {/* 2. Média */}
-              <section className="pe-panel">
+              <section className="pe-panel" data-tour="pe-media">
                 <h3 className="pe-panel-title">Média <span className="form-hint-inline">— image, GIF ou vidéo joint à la publication (obligatoire pour Instagram)</span></h3>
                 <div className="ai-assist-row">
                   <input
@@ -659,7 +661,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               </section>
 
               {/* 3. Planification */}
-              <section className="pe-panel">
+              <section className="pe-panel" data-tour="pe-schedule">
                 <h3 className="pe-panel-title">Planification</h3>
                 <div className="post-editor-row">
                   <label className="form-label-block">
@@ -759,7 +761,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
             <div className="pe-col pe-col-right">
 
               {/* Aperçu — un rendu par plateforme sélectionnée, en carrousel */}
-              <section className="pe-panel pe-preview">
+              <section className="pe-panel pe-preview" data-tour="pe-preview">
                 <h3 className="pe-panel-title">
                   Aperçu
                   <span className="pe-preview-meta" style={{ marginLeft: 'auto', textTransform: 'none', letterSpacing: 0 }}>
@@ -798,7 +800,7 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
               </section>
 
               {/* Rédaction par l'IA */}
-              <section className="pe-panel pe-ai">
+              <section className="pe-panel pe-ai" data-tour="pe-ai">
                 <h3 className="pe-panel-title"><Sparkles size={14} /> Rédaction par l'IA</h3>
                 <p className="form-hint" style={{ marginBottom: 8 }}>
                   S'appuie sur votre <Link to="/knowledge">base de connaissances</Link> et écrit
@@ -966,17 +968,21 @@ export function PostEditor({ post, initialScheduledAt, onClose, onSaved, onCross
           )}
           <div className="modal-footer pe-footer">
             {error && <span className="chat-error pe-footer-error">{error}</span>}
+            {readOnly && <span className="form-hint-inline pe-footer-error">👁️ Lecture seule — vous êtes Lecteur sur ce projet.</span>}
             <button type="button" className="btn btn-ghost" onClick={onClose}>
-              {publishResult?.ok ? 'Fermer' : 'Annuler'}
+              {publishResult?.ok ? 'Fermer' : (readOnly ? 'Fermer' : 'Annuler')}
             </button>
+            {!readOnly && (
             <button type="submit" className="btn btn-ghost pe-save-btn" disabled={saving || publishing}>
               {saving
                 ? (crossTargets.length > 0 ? '⏳ Enregistrement + déclinaison…' : '⏳ Enregistrement…')
                 : crossTargets.length > 0 ? `Enregistrer sur ${selPlatforms.length} plateformes` : 'Enregistrer'}
             </button>
-            {form.status !== 'published' && (
+            )}
+            {!readOnly && form.status !== 'published' && (
               <button
                 type="button"
+                data-tour="pe-publish"
                 className="btn btn-primary btn-primary-glow"
                 onClick={handlePublishNow}
                 disabled={publishing || saving || !form.content.trim()}
@@ -1123,7 +1129,7 @@ type Tab = 'posts' | 'decks';
 
 export default function ContentHubPage() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
-  const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
+  const [activeProject, setActiveProject] = useState<{ id: string; name: string; role?: string } | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
@@ -1144,6 +1150,16 @@ export default function ContentHubPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Tutoriel « éditeur de post » : ouvre un nouveau post pour que la visite
+  // guidée puisse pointer ses champs (déclenché par ?tutorial=post)
+  useEffect(() => {
+    if (searchParams.get('tutorial') === 'post') {
+      setEditing('new');
+      searchParams.delete('tutorial');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   const [statusFilter,   setStatusFilter]   = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [search,   setSearch]   = useState('');
@@ -1155,7 +1171,7 @@ export default function ContentHubPage() {
     if (postsRes.success && postsRes.data) setAllPosts(postsRes.data);
     if (overviewRes.success && overviewRes.data?.project) {
       const p = overviewRes.data.project;
-      setActiveProject({ id: p.id, name: p.productName });
+      setActiveProject({ id: p.id, name: p.productName, role: p.role });
     }
     setLoading(false);
   }, []);
@@ -1248,6 +1264,8 @@ export default function ContentHubPage() {
 
   if (loading) return <div className="loading">⏳ Chargement du hub de contenu…</div>;
 
+  const readOnly = activeProject?.role === 'viewer';
+
   return (
     <div className="animate-fadeIn">
       <div className="dashboard-header">
@@ -1258,16 +1276,24 @@ export default function ContentHubPage() {
             {' '}Planifiez, rédigez avec l'IA, publiez et suivez les performances.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button className="btn btn-ghost" onClick={() => setShowAssistant(true)} title="Chat IA : idées, recherche web, rédaction, enregistrement direct">
-            Assistant
-          </button>
-          <button className="btn btn-ghost" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
-            Générer mon calendrier
-          </button>
-          <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouveau post</button>
-        </div>
+        {!readOnly && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost" data-tour="hub-assistant" onClick={() => setShowAssistant(true)} title="Chat IA : idées, recherche web, rédaction, enregistrement direct">
+              Assistant
+            </button>
+            <button className="btn btn-ghost" data-tour="hub-calendar" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
+              Générer mon calendrier
+            </button>
+            <button className="btn btn-primary" data-tour="hub-new" onClick={() => setEditing('new')}>＋ Nouveau post</button>
+          </div>
+        )}
       </div>
+
+      {readOnly && (
+        <div className="approval-feedback" style={{ background: 'var(--color-surface-2)' }}>
+          👁️ Vous consultez ce projet en <strong>Lecteur</strong> — la création et la publication sont réservées aux éditeurs.
+        </div>
+      )}
 
       {feedback && (
         <div className="approval-feedback" onClick={() => setFeedback('')}>{feedback}</div>
@@ -1328,7 +1354,7 @@ export default function ContentHubPage() {
       )}
 
       {/* Tabs */}
-      <div className="hub-tabs">
+      <div className="hub-tabs" data-tour="hub-tabs">
         <button className={`hub-tab${tab === 'posts' ? ' active' : ''}`} onClick={() => setTab('posts')}>Posts</button>
         <button className={`hub-tab${tab === 'decks' ? ' active' : ''}`} onClick={() => setTab('decks')}>Slides</button>
       </div>
@@ -1338,7 +1364,7 @@ export default function ContentHubPage() {
       ) : tab === 'posts' ? (
         <>
           {/* Filtres */}
-          <div className="kanban-toolbar">
+          <div className="kanban-toolbar" data-tour="hub-filters">
             <input className="kanban-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un post…" />
             <select className="kanban-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="all">Tous les statuts</option>
@@ -1358,9 +1384,11 @@ export default function ContentHubPage() {
               <span className="plan-empty-icon"><Megaphone size={40} /></span>
               <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
               <p>Créez votre premier post — l'assistant IA le rédige à partir de votre base de connaissances.</p>
-              <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
-                ＋ Créer un post
-              </button>
+              {!readOnly && (
+                <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
+                  ＋ Créer un post
+                </button>
+              )}
             </div>
           ) : (
             <div className="post-grid">
@@ -1416,12 +1444,13 @@ export default function ContentHubPage() {
       {editing !== null && (
         <PostEditor
           post={editing === 'new' ? null : editing}
+          readOnly={readOnly}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
           onCrossposted={load}
         />
       )}
-      {!showAssistant && (
+      {!showAssistant && !readOnly && (
         <button
           className="assistant-fab"
           onClick={() => setShowAssistant(true)}

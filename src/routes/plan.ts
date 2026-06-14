@@ -23,6 +23,9 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
       ? await createAILaunchPlan(input, user.userId)
       : createLaunchPlan(input, user.userId);
 
+    // Nouveau projet → devient le projet actif de l'utilisateur
+    storage.setActivePlan(user.userId, plan.id);
+
     // La base de connaissances DU PROJET se remplit toute seule depuis le
     // profil — avant le bootstrap du calendrier, qui s'appuie dessus.
     try {
@@ -98,9 +101,9 @@ router.get('/:id', requireAuth, (req: Request, res: Response) => {
     const user = req.user as AuthPayload;
     const plan = getLaunchPlan(id);
 
-    // Isolation : un plan n'est visible que par son propriétaire (404 sinon,
-    // pour ne pas révéler l'existence du plan)
-    if (!plan || plan.userId !== user.userId) {
+    // Accès : propriétaire d'un projet perso OU membre de l'équipe propriétaire
+    // (404 sinon, pour ne pas révéler l'existence du plan)
+    if (!plan || !storage.getProjectRole(user.userId, id)) {
       const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
       res.status(404).json(response);
       return;
@@ -124,11 +127,36 @@ router.post('/:id/activate', requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
   const user = req.user as AuthPayload;
   const plan = getLaunchPlan(id);
-  if (!plan || plan.userId !== user.userId) {
+  if (!plan || !storage.getProjectRole(user.userId, id)) {
     return res.status(404).json({ success: false, error: `Plan with id "${id}" not found` });
   }
   storage.setActivePlan(user.userId, id);
   res.json({ success: true, data: { activePlanId: id } });
+});
+
+// ── POST /api/plan/:id/team ──────────────────────────────────────────────────
+// Rattache (teamId) ou détache (null) un projet à une équipe. Réservé au
+// PROPRIÉTAIRE du projet, qui doit aussi être membre (owner/editor) de l'équipe.
+router.post('/:id/team', requireAuth, (req: Request, res: Response) => {
+  const { id } = req.params;
+  const user = req.user as AuthPayload;
+  const plan = getLaunchPlan(id);
+  if (!plan || plan.userId !== user.userId) {
+    return res.status(404).json({ success: false, error: `Plan with id "${id}" not found` });
+  }
+  const teamId = (req.body as { teamId?: unknown }).teamId;
+  if (teamId === null || teamId === undefined || teamId === '') {
+    storage.setPlanTeam(id, null);
+    return res.json({ success: true, data: { teamId: null } });
+  }
+  if (typeof teamId !== 'string') {
+    return res.status(400).json({ success: false, error: 'teamId invalide' });
+  }
+  const role = storage.getTeamRole(teamId, user.userId);
+  if (!role) return res.status(403).json({ success: false, error: 'Vous ne faites pas partie de cette équipe' });
+  if (role === 'viewer') return res.status(403).json({ success: false, error: 'Rôle Lecteur : rattachement non autorisé' });
+  storage.setPlanTeam(id, teamId);
+  res.json({ success: true, data: { teamId } });
 });
 
 // Runs des agents pour ce plan (badges temps réel sur le Kanban)
@@ -136,7 +164,7 @@ router.get('/:id/runs', requireAuth, (req: Request, res: Response) => {
   const { id } = req.params;
   const user = req.user as AuthPayload;
   const plan = getLaunchPlan(id);
-  if (!plan || plan.userId !== user.userId) {
+  if (!plan || !storage.getProjectRole(user.userId, id)) {
     const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
     res.status(404).json(response);
     return;
@@ -149,10 +177,14 @@ router.patch('/:id/kanban', requireAuth, (req: Request, res: Response) => {
     const { id } = req.params;
     const user = req.user as AuthPayload;
     const plan = getLaunchPlan(id);
-    if (!plan || plan.userId !== user.userId) {
+    const role = storage.getProjectRole(user.userId, id);
+    if (!plan || !role) {
       const response: ApiResponse<null> = { success: false, error: `Plan with id "${id}" not found` };
       res.status(404).json(response);
       return;
+    }
+    if (role === 'viewer') {
+      return res.status(403).json({ success: false, error: 'Rôle Lecteur : modification non autorisée' });
     }
     const kanbanState = req.body as KanbanState;
     storage.updateKanbanState(id, kanbanState);

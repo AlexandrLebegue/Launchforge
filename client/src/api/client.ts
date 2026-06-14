@@ -27,9 +27,25 @@ async function request<T>(
 
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  const json = await res.json();
-  return json;
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch {
+    return { success: false, error: 'Connexion au serveur impossible' } as ApiResponse<T>;
+  }
+  // Réponse non-JSON (ex. page HTML d'erreur si la route n'existe pas côté
+  // serveur) : on ne laisse PAS échouer le parse — sinon la promesse rejette
+  // et l'appelant reste bloqué (chargement infini). On renvoie une erreur claire.
+  try {
+    return await res.json();
+  } catch {
+    return {
+      success: false,
+      error: res.status === 404
+        ? 'Ressource introuvable — le serveur n\'est peut-être pas à jour (redémarrez-le).'
+        : `Réponse invalide du serveur (HTTP ${res.status}).`,
+    } as ApiResponse<T>;
+  }
 }
 
 export interface User {
@@ -643,6 +659,63 @@ export async function deleteKnowledge(id: string): Promise<ApiResponse<null>> {
   return request(`/knowledge/${id}`, { method: 'DELETE' });
 }
 
+// ── Mise à jour automatique de la base (sources GitHub / site web) ────────────
+
+export type KnowledgeSourceType = 'github' | 'website';
+
+export interface KnowledgeSource {
+  id: string;
+  userId: string;
+  planId: string | null;
+  type: KnowledgeSourceType;
+  url: string;
+  label: string;
+  lastSyncedAt: string | null;
+  createdAt: string;
+}
+
+export interface KnowledgeSuggestion {
+  action: 'create' | 'update';
+  targetId: string | null;
+  category: KnowledgeCategory;
+  title: string;
+  content: string;
+  source: string;
+  reason: string;
+}
+
+export interface KnowledgeSyncResult {
+  suggestions: KnowledgeSuggestion[];
+  fetched: { type: KnowledgeSourceType; url: string; label: string; chars: number }[];
+  errors: { url: string; error: string }[];
+}
+
+export async function getKnowledgeSources(): Promise<ApiResponse<KnowledgeSource[]>> {
+  return request('/knowledge/sources');
+}
+
+export async function addKnowledgeSource(data: {
+  type: KnowledgeSourceType; url: string; label?: string;
+}): Promise<ApiResponse<KnowledgeSource>> {
+  return request('/knowledge/sources', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function deleteKnowledgeSource(id: string): Promise<ApiResponse<null>> {
+  return request(`/knowledge/sources/${id}`, { method: 'DELETE' });
+}
+
+export async function analyzeKnowledgeSources(data: {
+  github?: string; website?: string; crawl?: boolean; sourceIds?: string[];
+}): Promise<ApiResponse<KnowledgeSyncResult>> {
+  return request('/knowledge/sync/analyze', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function applyKnowledgeSuggestions(
+  suggestions: KnowledgeSuggestion[]
+): Promise<ApiResponse<{ applied: KnowledgeEntry[] }>> {
+  return request('/knowledge/sync/apply', { method: 'POST', body: JSON.stringify({ suggestions }) });
+}
+
 // ── Contacts (prospects / clients / partenaires) ──────────────────────────────
 
 export type ContactType = 'prospect' | 'client' | 'partner';
@@ -730,6 +803,16 @@ export interface ProjectSummary {
   niche: string;
   targetAudience: string;
   companyName: string | null;
+  /** Projet d'équipe : id + nom de l'équipe (absent = projet personnel) */
+  teamId?: string | null;
+  teamName?: string | null;
+  /** Rôle de l'utilisateur courant sur ce projet */
+  role?: TeamRole;
+}
+
+/** Rattache (teamId) ou détache (null) un projet à une équipe */
+export async function assignPlanToTeam(planId: string, teamId: string | null): Promise<ApiResponse<{ teamId: string | null }>> {
+  return request(`/plan/${planId}/team`, { method: 'POST', body: JSON.stringify({ teamId }) });
 }
 
 export interface Overview {
@@ -779,7 +862,7 @@ export interface ConfigToolkit {
 
 export interface ConfigStatus {
   ai: { configured: boolean; model: string | null };
-  composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[] };
+  composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[]; canManage?: boolean; ownerName?: string | null };
   marp: { theme: string; hasCustomCss: boolean; themes: { value: string; label: string }[] };
   metricsSync: { intervalMinutes: number };
   telegram: { configured: boolean; linked: boolean; ownBot: boolean; botUsername: string | null };
@@ -942,17 +1025,22 @@ export interface PostChatHandlers {
   onSaved: (postId: string, title: string) => void;
   onDone: (reply: string, actions: string[]) => void;
   onError: (error: string) => void;
+  /** Appelé quand l'utilisateur interrompt volontairement le flux (abort) — pas une erreur */
+  onAbort?: () => void;
 }
 
 /** Lecteur SSE commun aux chats (création de posts, assistant intégré) */
 async function streamChat(
   path: string,
   messages: { role: 'user' | 'assistant'; text: string }[],
-  handlers: Omit<PostChatHandlers, 'onSaved'> & { onSaved?: PostChatHandlers['onSaved'] }
+  handlers: Omit<PostChatHandlers, 'onSaved'> & { onSaved?: PostChatHandlers['onSaved'] },
+  signal?: AbortSignal
 ): Promise<void> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const isAbort = (err: unknown) => Boolean(signal?.aborted) || (err as { name?: string })?.name === 'AbortError';
 
   let res: globalThis.Response;
   try {
@@ -960,9 +1048,11 @@ async function streamChat(
       method: 'POST',
       headers,
       body: JSON.stringify({ messages }),
+      signal,
     });
-  } catch {
-    handlers.onError('Connexion au serveur impossible');
+  } catch (err) {
+    if (isAbort(err)) handlers.onAbort?.();
+    else handlers.onError('Connexion au serveur impossible');
     return;
   }
 
@@ -981,29 +1071,39 @@ async function streamChat(
   let buffer = '';
   let finished = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const events = buffer.split('\n\n');
-    buffer = events.pop() || '';
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
 
-    for (const event of events) {
-      const line = event.split('\n').find((l) => l.startsWith('data: '));
-      if (!line) continue;
-      try {
-        const payload = JSON.parse(line.slice(6));
-        if (payload.type === 'delta') handlers.onDelta(payload.text);
-        else if (payload.type === 'action') handlers.onAction(payload.text);
-        else if (payload.type === 'saved') handlers.onSaved?.(payload.postId, payload.title);
-        else if (payload.type === 'done') { finished = true; handlers.onDone(payload.reply, payload.actions || []); }
-        else if (payload.type === 'error') { finished = true; handlers.onError(payload.error); }
-      } catch { /* chunk malformé — ignoré */ }
+      for (const event of events) {
+        const line = event.split('\n').find((l) => l.startsWith('data: '));
+        if (!line) continue;
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (payload.type === 'delta') handlers.onDelta(payload.text);
+          else if (payload.type === 'action') handlers.onAction(payload.text);
+          else if (payload.type === 'saved') handlers.onSaved?.(payload.postId, payload.title);
+          else if (payload.type === 'done') { finished = true; handlers.onDone(payload.reply, payload.actions || []); }
+          else if (payload.type === 'error') { finished = true; handlers.onError(payload.error); }
+        } catch { /* chunk malformé — ignoré */ }
+      }
     }
+  } catch (err) {
+    // Abandon volontaire (clic « Stop ») → pas une erreur ; on garde le texte déjà reçu
+    if (isAbort(err)) { handlers.onAbort?.(); return; }
+    handlers.onError('La connexion a été interrompue — réessayez.');
+    return;
   }
 
-  if (!finished) handlers.onError('La connexion a été interrompue — réessayez.');
+  if (!finished) {
+    if (signal?.aborted) handlers.onAbort?.();
+    else handlers.onError('La connexion a été interrompue — réessayez.');
+  }
 }
 
 /** Chat de création de posts — SSE (deltas, recherches web, posts enregistrés) */
@@ -1017,9 +1117,10 @@ export async function streamPostChat(
 /** Assistant LaunchForge intégré (vue 💬 Assistant) — mêmes outils que le bot Telegram */
 export async function streamAssistantChat(
   messages: { role: 'user' | 'assistant'; text: string }[],
-  handlers: Omit<PostChatHandlers, 'onSaved'>
+  handlers: Omit<PostChatHandlers, 'onSaved'>,
+  signal?: AbortSignal
 ): Promise<void> {
-  return streamChat('/assistant/chat/stream', messages, handlers);
+  return streamChat('/assistant/chat/stream', messages, handlers, signal);
 }
 
 // ── Telegram ──────────────────────────────────────────────────────────────────
@@ -1069,4 +1170,93 @@ export async function assignCardToAgent(
   }
 ): Promise<ApiResponse<AgentRun>> {
   return request(`/agents/${agentId}/runs`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+// ── Équipes (collaboration) ───────────────────────────────────────────────────
+
+export type TeamRole = 'owner' | 'editor' | 'viewer';
+
+export interface TeamSummary {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+  role: TeamRole;
+  memberCount: number;
+}
+
+export interface TeamMemberInfo {
+  userId: string;
+  name: string;
+  email: string;
+  role: TeamRole;
+  createdAt: string;
+}
+
+export interface TeamInvite {
+  id: string;
+  teamId: string;
+  code: string;
+  role: TeamRole;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export interface TeamDetail {
+  team: { id: string; name: string; ownerId: string; createdAt: string };
+  role: TeamRole;
+  members: TeamMemberInfo[];
+  invites: TeamInvite[];
+}
+
+export async function getTeams(): Promise<ApiResponse<TeamSummary[]>> {
+  return request('/teams');
+}
+
+export async function createTeam(name: string): Promise<ApiResponse<TeamSummary>> {
+  return request('/teams', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export async function getTeam(id: string): Promise<ApiResponse<TeamDetail>> {
+  return request(`/teams/${id}`);
+}
+
+export async function renameTeam(id: string, name: string): Promise<ApiResponse<TeamSummary>> {
+  return request(`/teams/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+}
+
+export async function deleteTeam(id: string): Promise<ApiResponse<null>> {
+  return request(`/teams/${id}`, { method: 'DELETE' });
+}
+
+export async function createTeamInvite(id: string, role: TeamRole, expiresInDays = 7): Promise<ApiResponse<TeamInvite>> {
+  return request(`/teams/${id}/invites`, { method: 'POST', body: JSON.stringify({ role, expiresInDays }) });
+}
+
+export async function deleteTeamInvite(teamId: string, inviteId: string): Promise<ApiResponse<null>> {
+  return request(`/teams/${teamId}/invites/${inviteId}`, { method: 'DELETE' });
+}
+
+export async function updateTeamMemberRole(teamId: string, userId: string, role: TeamRole): Promise<ApiResponse<null>> {
+  return request(`/teams/${teamId}/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+}
+
+export async function removeTeamMember(teamId: string, userId: string): Promise<ApiResponse<null>> {
+  return request(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' });
+}
+
+export async function joinTeam(code: string): Promise<ApiResponse<{ team: TeamSummary; role: TeamRole; alreadyMember: boolean }>> {
+  return request('/teams/join', { method: 'POST', body: JSON.stringify({ code }) });
+}
+
+export interface InvitePreview {
+  valid: boolean;
+  expired: boolean;
+  teamName: string | null;
+  role: TeamRole;
+}
+
+/** Aperçu PUBLIC d'une invitation (nom de l'équipe + validité), sans connexion */
+export async function getInvitePreview(code: string): Promise<ApiResponse<InvitePreview>> {
+  return request(`/teams/invite/${encodeURIComponent(code)}`);
 }

@@ -12,21 +12,26 @@ import { KnowledgeCategory, KnowledgeEntry } from '../types';
 const router = Router();
 router.use(requireAuth);
 
-const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'other'];
+const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'news', 'other'];
 
 function loadOwnedEntry(req: Request, res: Response): KnowledgeEntry | null {
   const entry = storage.getKnowledgeById(req.params.id);
-  if (!entry || entry.userId !== req.user!.userId) {
+  const role = entry ? storage.accessRole(req.user!.userId, entry.planId, entry.userId) : null;
+  if (!entry || !role) {
     res.status(404).json({ success: false, error: 'Entry not found' });
+    return null;
+  }
+  if (role === 'viewer') {
+    res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
     return null;
   }
   return entry;
 }
 
-// La base de connaissances est propre au projet actif
+// La base de connaissances est propre au projet actif (perso ou d'équipe)
 router.get('/', (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  res.json({ success: true, data: storage.getKnowledgeByPlan(userId, storage.getActivePlanId(userId)) });
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  res.json({ success: true, data: storage.getKnowledgeByPlan(ctx.ownerUserId, ctx.planId) });
 });
 
 router.post('/', (req: Request, res: Response) => {
@@ -35,11 +40,16 @@ router.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'title and content are required' });
   }
 
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : création non autorisée' });
+  }
+
   const now = new Date().toISOString();
   const entry: KnowledgeEntry = {
     id:        uuid(),
-    userId:    req.user!.userId,
-    planId:    storage.getActivePlanId(req.user!.userId),
+    userId:    ctx.ownerUserId,
+    planId:    ctx.planId,
     category:  CATEGORIES.includes(category as KnowledgeCategory) ? (category as KnowledgeCategory) : 'other',
     title:     title.trim(),
     content:   content.trim(),

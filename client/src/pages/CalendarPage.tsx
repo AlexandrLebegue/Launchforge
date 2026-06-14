@@ -67,7 +67,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
           <span><i className="cal-dot draft" /> brouillon</span>
           <span><i className="cal-dot published" /> publié</span>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
+        <button type="button" className="btn btn-ghost" data-tour="cal-sync" onClick={onSync} disabled={syncing} style={{ marginLeft: 'auto' }}>
           {syncing ? '⏳ Synchronisation…' : 'Synchroniser Google Calendar'}
         </button>
       </div>
@@ -75,7 +75,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
       <div className="cal-grid cal-head">
         {['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map((d) => <div key={d} className="cal-dayname">{d}</div>)}
       </div>
-      <div className="cal-grid">
+      <div className="cal-grid" data-tour="cal-grid">
         {weeks.map((day) => {
           const key = day.toDateString();
           const inMonth = day.getMonth() === month.getMonth();
@@ -139,6 +139,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
 export default function CalendarPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [role, setRole] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Post | null | 'new'>(null);
   const [createDate, setCreateDate] = useState<string | null>(null);
@@ -150,6 +151,7 @@ export default function CalendarPage() {
     if (postsRes.success && postsRes.data) setPosts(postsRes.data);
     if (overviewRes.success && overviewRes.data?.project) {
       setActiveProject(overviewRes.data.project.productName);
+      setRole(overviewRes.data.project.role);
     }
     setLoading(false);
   }, []);
@@ -193,9 +195,11 @@ export default function CalendarPage() {
             {' '}Votre planning éditorial — programmé, brouillons et publications passées.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setCreateDate(null); setEditing('new'); }}>
-          ＋ Nouveau post
-        </button>
+        {role !== 'viewer' && (
+          <button className="btn btn-primary" data-tour="cal-new" onClick={() => { setCreateDate(null); setEditing('new'); }}>
+            ＋ Nouveau post
+          </button>
+        )}
       </div>
 
       {feedback && (
@@ -205,7 +209,7 @@ export default function CalendarPage() {
       <CalendarView
         posts={posts}
         onOpen={(p) => setEditing(p)}
-        onCreate={(dateIso) => { setCreateDate(dateIso); setEditing('new'); }}
+        onCreate={(dateIso) => { if (role === 'viewer') return; setCreateDate(dateIso); setEditing('new'); }}
         onSync={handleSync}
         syncing={syncing}
       />
@@ -214,6 +218,7 @@ export default function CalendarPage() {
         <PostEditor
           post={editing === 'new' ? null : editing}
           initialScheduledAt={editing === 'new' ? createDate : null}
+          readOnly={role === 'viewer'}
           onClose={() => { setEditing(null); setCreateDate(null); }}
           onSaved={handleSaved}
           onCrossposted={load}

@@ -83,6 +83,7 @@ export async function runAssistantTurn(
   userId: string,
   history: AssistantMessage[],
   onEvent?: (event: AssistantEvent) => void,
+  signal?: AbortSignal,
 ): Promise<AssistantResult> {
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt(userId) },
@@ -93,12 +94,14 @@ export async function runAssistantTurn(
   let fullText = '';
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    if (signal?.aborted) break; // client déconnecté → on arrête la boucle agentique
     let emittedSeparator = fullText === '';
 
     const result = await chatComplete({
       messages,
       tools: TOOLS,
       maxTokens: 2500,
+      signal,
       onDelta: onEvent
         ? (delta) => {
             if (!emittedSeparator) {
@@ -114,6 +117,7 @@ export async function runAssistantTurn(
     if (iterText) fullText = fullText ? `${fullText}\n\n${iterText}` : iterText;
 
     if (result.toolCalls.length === 0) break;
+    if (signal?.aborted) break; // ne pas exécuter d'outils si le client a coupé
 
     messages.push(result.rawAssistantMessage);
     for (const call of result.toolCalls) {

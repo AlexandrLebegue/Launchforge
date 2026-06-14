@@ -75,7 +75,7 @@ export default function ApprovalsPage() {
 
   return (
     <div className="animate-fadeIn">
-      <div className="dashboard-header">
+      <div className="dashboard-header" data-tour="appr-header">
         <div>
           <h1>Validations</h1>
           <p>
@@ -113,7 +113,7 @@ export default function ApprovalsPage() {
             const state = states[item.id] ?? { content: item.result || '', busy: null, error: null };
             const edited = state.content.trim() !== (item.result || '').trim();
             return (
-              <div key={item.id} className="approval-card animate-fadeInUp">
+              <div key={item.id} className="approval-card animate-fadeInUp" data-tour="appr-card">
                 <div className="approval-card-header">
                   <span className="approval-agent">
                     {PLATFORM_ICONS[item.agentPlatform] ?? ''} {item.agentName}
@@ -139,7 +139,7 @@ export default function ApprovalsPage() {
                 {edited && <div className="approval-edited-hint">Contenu modifié — la version éditée sera publiée</div>}
                 {state.error && <div className="chat-error">{state.error}</div>}
 
-                <div className="approval-actions">
+                <div className="approval-actions" data-tour="appr-actions">
                   <button
                     className="btn btn-primary"
                     onClick={() => handleApprove(item)}
@@ -162,7 +162,7 @@ export default function ApprovalsPage() {
       )}
       {/* ── Historique : l'attestation de ce qui est réellement parti ── */}
       {history.length > 0 && (
-        <div className="history-section">
+        <div className="history-section" data-tour="appr-history">
           <h2 className="history-title">Historique des envois</h2>
           <p className="form-hint" style={{ marginBottom: 12 }}>
             Le résultat exact renvoyé par la plateforme pour chaque contenu validé —

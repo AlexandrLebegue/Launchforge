@@ -1,10 +1,11 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, RefreshCw } from 'lucide-react';
 import {
-  getKnowledge, createKnowledge, updateKnowledge, deleteKnowledge,
+  getKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, getOverview,
   KnowledgeEntry, KnowledgeCategory,
 } from '../api/client';
 import ContactsPanel from '../components/ContactsPanel';
+import KnowledgeSyncModal from '../components/KnowledgeSyncModal';
 
 const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint: string }[] = [
   { value: 'company',  label: 'Entreprise',       icon: '', hint: 'Histoire, mission, valeurs, équipe…' },
@@ -22,11 +23,12 @@ const catMeta = (c: KnowledgeCategory) => CATEGORIES.find((x) => x.value === c) 
 interface EditorProps {
   entry: KnowledgeEntry | null;
   defaultCategory: KnowledgeCategory;
+  readOnly?: boolean;
   onClose: () => void;
   onSaved: (entry: KnowledgeEntry) => void;
 }
 
-function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) {
+function EntryEditor({ entry, defaultCategory, readOnly = false, onClose, onSaved }: EditorProps) {
   const [form, setForm] = useState({
     category: entry?.category ?? defaultCategory,
     title:    entry?.title ?? '',
@@ -55,7 +57,7 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{entry ? 'Modifier la fiche' : 'Nouvelle fiche'}</h2>
+          <h2>{readOnly ? 'Fiche' : entry ? 'Modifier la fiche' : 'Nouvelle fiche'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -65,6 +67,7 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
             <select
               className="form-input"
               value={form.category}
+              disabled={readOnly}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as KnowledgeCategory }))}
             >
               {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -77,9 +80,10 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
             <input
               className="form-input"
               value={form.title}
+              disabled={readOnly}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
               placeholder="ex. Notre proposition de valeur"
-              autoFocus={!entry}
+              autoFocus={!entry && !readOnly}
             />
           </label>
 
@@ -88,6 +92,7 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
             <textarea
               className="form-input post-content-area"
               value={form.content}
+              disabled={readOnly}
               onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
               rows={8}
               placeholder="Écrivez comme si vous briefiez un nouveau collaborateur — l'IA s'en servira mot pour mot."
@@ -97,10 +102,19 @@ function EntryEditor({ entry, defaultCategory, onClose, onSaved }: EditorProps) 
           {error && <div className="chat-error">{error}</div>}
 
           <div className="modal-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? '⏳…' : 'Enregistrer'}
-            </button>
+            {readOnly ? (
+              <>
+                <span className="form-hint-inline" style={{ marginRight: 'auto' }}>👁️ Lecture seule — vous êtes Lecteur sur ce projet.</span>
+                <button type="button" className="btn btn-primary" onClick={onClose}>Fermer</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn-ghost" onClick={onClose}>Annuler</button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? '⏳…' : 'Enregistrer'}
+                </button>
+              </>
+            )}
           </div>
         </form>
       </div>
@@ -115,11 +129,17 @@ export default function KnowledgePage() {
   const [editing,  setEditing]  = useState<KnowledgeEntry | null | 'new'>(null);
   const [catFilter, setCatFilter] = useState<'all' | KnowledgeCategory>('all');
   const [search,   setSearch]   = useState('');
+  const [showSync, setShowSync] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
 
   useEffect(() => {
     getKnowledge().then((res) => {
       if (res.success && res.data) setEntries(res.data);
       setLoading(false);
+    });
+    // Rôle Lecteur : on masque les actions d'écriture (cohérent avec Hub/Calendrier)
+    getOverview().then((res) => {
+      if (res.success && res.data) setReadOnly(res.data.project?.role === 'viewer');
     });
   }, []);
 
@@ -129,6 +149,11 @@ export default function KnowledgePage() {
       const exists = prev.some((e) => e.id === saved.id);
       return exists ? prev.map((e) => (e.id === saved.id ? saved : e)) : [saved, ...prev];
     });
+  };
+
+  const handleApplied = (applied: KnowledgeEntry[]) => {
+    const appliedIds = new Set(applied.map((e) => e.id));
+    setEntries((prev) => [...applied, ...prev.filter((e) => !appliedIds.has(e.id))]);
   };
 
   const handleDelete = async (entry: KnowledgeEntry) => {
@@ -159,13 +184,21 @@ export default function KnowledgePage() {
               : 'Vos prospects, clients et partenaires — détectés et scorés par l\'IA depuis vos commentaires et votre boîte mail.'}
           </p>
         </div>
-        {tab === 'knowledge' && (
-          <button className="btn btn-primary" onClick={() => setEditing('new')}>＋ Nouvelle fiche</button>
+        {tab === 'knowledge' && !readOnly && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost" data-tour="kb-sync" onClick={() => setShowSync(true)}>
+              <RefreshCw size={15} /> Mettre à jour
+            </button>
+            <button className="btn btn-primary" data-tour="kb-new" onClick={() => setEditing('new')}>＋ Nouvelle fiche</button>
+          </div>
+        )}
+        {tab === 'knowledge' && readOnly && (
+          <span className="chip chip-warning">👁️ Lecture seule</span>
         )}
       </div>
 
       {/* Onglets */}
-      <div className="hub-tabs" style={{ marginTop: 4 }}>
+      <div className="hub-tabs" data-tour="kb-tabs" style={{ marginTop: 4 }}>
         <button className={`hub-tab${tab === 'knowledge' ? ' active' : ''}`} onClick={() => setTab('knowledge')}>Fiches</button>
         <button className={`hub-tab${tab === 'contacts' ? ' active' : ''}`} onClick={() => setTab('contacts')}>Contacts</button>
       </div>
@@ -175,7 +208,7 @@ export default function KnowledgePage() {
       ) : (
       <>
       {/* Filtres par catégorie */}
-      <div className="knowledge-cats">
+      <div className="knowledge-cats" data-tour="kb-cats">
         <button className={`knowledge-cat${catFilter === 'all' ? ' active' : ''}`} onClick={() => setCatFilter('all')}>
           Tout <span className="knowledge-cat-count">{entries.length}</span>
         </button>
@@ -209,9 +242,11 @@ export default function KnowledgePage() {
             Commencez par 3 fiches : votre proposition de valeur (Produit), votre client idéal (Audience)
             et votre ton de marque (Ton & style). L'IA générera ensuite du contenu vraiment personnalisé.
           </p>
-          <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
-            ＋ Créer ma première fiche
-          </button>
+          {!readOnly && (
+            <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
+              ＋ Créer ma première fiche
+            </button>
+          )}
         </div>
       ) : (
         <div className="knowledge-grid">
@@ -221,11 +256,13 @@ export default function KnowledgePage() {
               <div key={entry.id} className="knowledge-card" onClick={() => setEditing(entry)}>
                 <div className="knowledge-card-top">
                   <span className="knowledge-badge">{meta.icon} {meta.label}</span>
-                  <button
-                    className="kanban-delete"
-                    title="Supprimer"
-                    onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
-                  >×</button>
+                  {!readOnly && (
+                    <button
+                      className="kanban-delete"
+                      title="Supprimer"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
+                    >×</button>
+                  )}
                 </div>
                 <div className="knowledge-card-title">{entry.title}</div>
                 <div className="knowledge-card-content">{entry.content.slice(0, 220)}{entry.content.length > 220 ? '…' : ''}</div>
@@ -242,9 +279,14 @@ export default function KnowledgePage() {
         <EntryEditor
           entry={editing === 'new' ? null : editing}
           defaultCategory={catFilter === 'all' ? 'company' : catFilter}
+          readOnly={readOnly}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />
+      )}
+
+      {showSync && (
+        <KnowledgeSyncModal onClose={() => setShowSync(false)} onApplied={handleApplied} />
       )}
       </>
       )}

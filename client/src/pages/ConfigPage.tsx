@@ -261,7 +261,7 @@ export default function ConfigPage() {
         </div>
 
         {/* ── Pipeline de publication ── */}
-        <div className="card config-card">
+        <div className="card config-card" data-tour="cfg-publish">
           <div className="config-card-head">
             <span className="config-card-title">Publication des contenus IA</span>
           </div>
@@ -292,7 +292,7 @@ export default function ConfigPage() {
         </div>
 
         {/* ── Synchro automatique des métriques ── */}
-        <div className="card config-card">
+        <div className="card config-card" data-tour="cfg-metrics">
           <div className="config-card-head">
             <span className="config-card-title">Synchro des métriques</span>
             {status.metricsSync.intervalMinutes > 0
@@ -376,7 +376,7 @@ export default function ConfigPage() {
         </div>
 
         {/* ── Composio ── */}
-        <div className="card config-card config-card-wide">
+        <div className="card config-card config-card-wide" data-tour="cfg-accounts">
           <div className="config-card-head">
             <span className="config-card-title">Connexions plateformes (Composio)</span>
             {status.composio.configured
@@ -397,6 +397,11 @@ export default function ConfigPage() {
               <code>.env</code> du serveur, puis connectez vos comptes sur le dashboard Composio.
             </p>
           )}
+          {status.composio.canManage === false && (
+            <div className="config-desc" style={{ background: 'var(--color-surface-2)', borderRadius: 'var(--radius)', padding: '8px 12px' }}>
+              👁️ Projet d'équipe : les comptes utilisés pour publier sont ceux de <strong>{status.composio.ownerName || 'son propriétaire'}</strong> — vous les voyez en lecture seule.
+            </div>
+          )}
           <div className="config-toolkits">
             {status.composio.toolkits.map((t) => (
               <div key={t.slug} className={`config-toolkit${t.connected ? ' on' : ''}`}>
@@ -410,7 +415,9 @@ export default function ConfigPage() {
                     </span>
                   )}
                 </span>
-                {t.connected ? (
+                {status.composio.canManage === false ? (
+                  <span className={`config-badge ${t.connected ? 'ok' : 'warn'}`}>{t.connected ? 'Connecté' : 'Non connecté'}</span>
+                ) : t.connected ? (
                   <>
                     <span className="config-badge ok">Fonctionnel</span>
                     <button

@@ -129,6 +129,11 @@ export interface ProjectSummary {
   niche: string;
   targetAudience: string;
   companyName: string | null;
+  /** Projet d'équipe : id + nom de l'équipe (null = projet personnel) */
+  teamId?: string | null;
+  teamName?: string | null;
+  /** Rôle de l'utilisateur courant sur ce projet */
+  role?: TeamRole;
 }
 
 export interface Overview {
@@ -177,6 +182,39 @@ export interface AuthRequest {
 export interface AuthPayload {
   userId: string;
   email: string;
+}
+
+// ── Équipes ────────────────────────────────────────────────────────────────
+export type TeamRole = 'owner' | 'editor' | 'viewer';
+
+export interface Team {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+}
+
+/** Équipe + rôle de l'utilisateur courant + nombre de membres (pour les listes) */
+export interface TeamSummary extends Team {
+  role: TeamRole;
+  memberCount: number;
+}
+
+export interface TeamMemberInfo {
+  userId: string;
+  name: string;
+  email: string;
+  role: TeamRole;
+  createdAt: string;
+}
+
+export interface TeamInvite {
+  id: string;
+  teamId: string;
+  code: string;
+  role: TeamRole;
+  createdAt: string;
+  expiresAt: string | null;
 }
 
 export interface TemplateMeta {
@@ -331,6 +369,40 @@ export interface KnowledgeEntry {
   content: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ── Mise à jour automatique de la base de connaissances ───────────────────────
+// L'utilisateur déclare des SOURCES (dépôt GitHub, site/page web) ; l'IA les
+// analyse et propose des fiches à créer/mettre à jour (validées par l'utilisateur).
+
+export type KnowledgeSourceType = 'github' | 'website';
+
+export interface KnowledgeSource {
+  id: string;
+  /** Propriétaire du projet (même clé que knowledge.userId) */
+  userId: string;
+  /** Projet auquel la source est rattachée (null = base personnelle) */
+  planId: string | null;
+  type: KnowledgeSourceType;
+  url: string;
+  label: string;
+  /** Dernière analyse réussie (ISO) — null si jamais synchronisée */
+  lastSyncedAt: string | null;
+  createdAt: string;
+}
+
+/** Proposition issue de l'analyse IA d'une source — soumise à l'utilisateur */
+export interface KnowledgeSuggestion {
+  action: 'create' | 'update';
+  /** Fiche existante à mettre à jour (action = update) ; null pour une création */
+  targetId: string | null;
+  category: KnowledgeCategory;
+  title: string;
+  content: string;
+  /** Libellé court de la source d'où provient l'information */
+  source: string;
+  /** Courte justification de la proposition par l'IA */
+  reason: string;
 }
 
 // ── Contacts (prospects / clients / partenaires) ──────────────────────────────

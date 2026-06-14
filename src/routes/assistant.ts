@@ -36,17 +36,22 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  // L'utilisateur peut interrompre : à la fermeture de la connexion, on coupe
+  // l'appel modèle en cours (économie de tokens) et on n'écrit plus rien.
+  const ac = new AbortController();
+  req.on('close', () => ac.abort());
+
   const send = (payload: unknown) => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if (!ac.signal.aborted && !res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
   try {
-    const result = await runAssistantTurn(req.user!.userId, history, send);
-    send({ type: 'done', reply: result.reply, actions: result.actions });
+    const result = await runAssistantTurn(req.user!.userId, history, send, ac.signal);
+    if (!ac.signal.aborted) send({ type: 'done', reply: result.reply, actions: result.actions });
   } catch (err) {
-    send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });
+    if (!ac.signal.aborted) send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });
   } finally {
-    res.end();
+    if (!res.writableEnded) res.end();
   }
 });
 

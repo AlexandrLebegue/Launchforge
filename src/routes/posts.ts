@@ -19,10 +19,16 @@ router.use(requireAuth);
 const STATUSES: PostStatus[] = ['idea', 'draft', 'scheduled', 'published'];
 const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'biweekly', 'monthly'];
 
+/** Charge un post accessible (projet perso ou d'équipe) et bloque les Lecteurs. */
 function loadOwnedPost(req: Request, res: Response): Post | null {
   const post = storage.getPostById(req.params.id);
-  if (!post || post.userId !== req.user!.userId) {
+  const role = post ? storage.accessRole(req.user!.userId, post.planId, post.userId) : null;
+  if (!post || !role) {
     res.status(404).json({ success: false, error: 'Post not found' });
+    return null;
+  }
+  if (role === 'viewer') {
+    res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
     return null;
   }
   return post;
@@ -45,8 +51,8 @@ function normalizeSubreddit(value: unknown): string | null {
 // ── GET /api/posts ───────────────────────────────────────────────────────────
 // Le Hub de contenu est propre au projet actif
 router.get('/', (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  res.json({ success: true, data: storage.getPostsByPlan(userId, storage.getActivePlanId(userId)) });
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  res.json({ success: true, data: storage.getPostsByPlan(ctx.ownerUserId, ctx.planId) });
 });
 
 // ── POST /api/posts ──────────────────────────────────────────────────────────
@@ -56,11 +62,17 @@ router.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'platform is required' });
   }
 
+  // Projet actif (perso ou d'équipe) : les données sont rattachées au propriétaire
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : création non autorisée' });
+  }
+
   const now = new Date().toISOString();
   const post: Post = {
     id:          uuid(),
-    userId:      req.user!.userId,
-    planId:      storage.getActivePlan(req.user!.userId)?.id ?? null,
+    userId:      ctx.ownerUserId,
+    planId:      ctx.planId,
     platform:    body.platform,
     title:       typeof body.title === 'string' ? body.title : '',
     content:     typeof body.content === 'string' ? body.content : '',
@@ -282,7 +294,8 @@ router.post('/:id/publish-now', async (req: Request, res: Response) => {
   for (const target of targets) {
     let result: string;
     try {
-      result = await publishViaComposio(req.user!.userId, target.platform, target.content, target.imageUrl, target.title, target.subreddit);
+      // Comptes du PROPRIÉTAIRE du projet (target.userId) — vrai aussi pour un projet d'équipe
+      result = await publishViaComposio(target.userId, target.platform, target.content, target.imageUrl, target.title, target.subreddit);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Publication échouée';
       if (msg === 'COMPOSIO_NOT_CONFIGURED' || msg === 'AI_NOT_CONFIGURED') {
@@ -346,7 +359,7 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
   }
 
   try {
-    const metrics = await syncMetricsViaComposio(req.user!.userId, post.platform, post.externalUrl, post.title);
+    const metrics = await syncMetricsViaComposio(post.userId, post.platform, post.externalUrl, post.title);
     if (!metrics.found) {
       return res.status(422).json({
         success: false,
@@ -383,7 +396,7 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Seuls les posts publiés peuvent être analysés' });
   }
   try {
-    const result = await analyzePost(req.user!.userId, post);
+    const result = await analyzePost(post.userId, post);
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Analyse échouée' });
@@ -397,7 +410,8 @@ router.post('/sync-calendar', async (req: Request, res: Response) => {
   if (!isComposioConfigured() || !isAIConfigured()) {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
-  const toSync = storage.getPostsByPlan(req.user!.userId, storage.getActivePlanId(req.user!.userId))
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  const toSync = storage.getPostsByPlan(ctx.ownerUserId, ctx.planId)
     .filter((p) => p.status === 'scheduled' && p.scheduledAt && !p.calendarSynced);
   if (toSync.length === 0) {
     return res.json({ success: true, data: { synced: 0, message: 'Tout est déjà synchronisé' } });

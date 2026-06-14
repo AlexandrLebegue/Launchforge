@@ -11,6 +11,7 @@ import onboardingRoutes from './routes/onboarding';
 import approvalRoutes from './routes/approvals';
 import postRoutes from './routes/posts';
 import knowledgeRoutes from './routes/knowledge';
+import knowledgeSyncRoutes from './routes/knowledgeSync';
 import contentRoutes from './routes/content';
 import contactRoutes from './routes/contacts';
 import telegramRoutes from './routes/telegram';
@@ -18,6 +19,7 @@ import configRoutes from './routes/config';
 import overviewRoutes from './routes/overview';
 import assistantRoutes from './routes/assistant';
 import deckRoutes from './routes/decks';
+import teamRoutes from './routes/teams';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -40,6 +42,8 @@ app.use('/api/agents', agentRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/posts', postRoutes);
+// Monté AVANT knowledgeRoutes : capte /sources… et /sync…, le reste retombe sur le CRUD
+app.use('/api/knowledge', knowledgeSyncRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/contacts', contactRoutes);
@@ -48,6 +52,7 @@ app.use('/api/config', configRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/api/decks', deckRoutes);
+app.use('/api/teams', teamRoutes);
 
 // Médias générés (GIF/MP4 des decks, visuels) — purge automatique à 90 jours.
 // Le dossier est résolu à chaque requête : UPLOADS_DIR peut être posé après l'import.

@@ -26,8 +26,13 @@ const TYPES: ContactType[] = ['prospect', 'client', 'partner'];
 
 function loadOwnedContact(req: Request, res: Response): Contact | null {
   const contact = storage.getContactById(req.params.id);
-  if (!contact || contact.userId !== req.user!.userId) {
+  const role = contact ? storage.accessRole(req.user!.userId, contact.planId, contact.userId) : null;
+  if (!contact || !role) {
     res.status(404).json({ success: false, error: 'Contact not found' });
+    return null;
+  }
+  if (role === 'viewer') {
+    res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
     return null;
   }
   return contact;
@@ -40,8 +45,8 @@ const str = (v: unknown, max = 300): string | null =>
 
 // Les contacts sont propres au projet actif
 router.get('/', (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  res.json({ success: true, data: storage.getContactsByPlan(userId, storage.getActivePlanId(userId)) });
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  res.json({ success: true, data: storage.getContactsByPlan(ctx.ownerUserId, ctx.planId) });
 });
 
 router.post('/', (req: Request, res: Response) => {
@@ -51,12 +56,17 @@ router.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'name is required' });
   }
 
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : création non autorisée' });
+  }
+
   const score = Number(body.interestScore);
   const now = new Date().toISOString();
   const contact: Contact = {
     id:              uuid(),
-    userId:          req.user!.userId,
-    planId:          storage.getActivePlanId(req.user!.userId),
+    userId:          ctx.ownerUserId,
+    planId:          ctx.planId,
     name,
     email:           str(body.email, 200),
     company:         str(body.company, 120),
@@ -116,7 +126,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
 
   try {
     const candidates = await analyzeMessages(
-      req.user!.userId,
+      storage.resolveActiveProject(req.user!.userId).ownerUserId,
       text,
       str(source, 100) || 'messages collés',
     );
@@ -134,7 +144,7 @@ router.post('/scan-inbox', async (req: Request, res: Response) => {
   }
 
   try {
-    const candidates = await scanInbox(req.user!.userId);
+    const candidates = await scanInbox(storage.resolveActiveProject(req.user!.userId).ownerUserId);
     res.json({ success: true, data: candidates });
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Scan failed' });
@@ -150,7 +160,7 @@ router.post('/scan-post', async (req: Request, res: Response) => {
   }
 
   const post = storage.getPostById(postId);
-  if (!post || post.userId !== req.user!.userId) {
+  if (!post || !storage.accessRole(req.user!.userId, post.planId, post.userId)) {
     return res.status(404).json({ success: false, error: 'Post not found' });
   }
   if (!post.externalUrl) {
@@ -162,7 +172,7 @@ router.post('/scan-post', async (req: Request, res: Response) => {
 
   try {
     const candidates = await scanPostEngagement(
-      req.user!.userId,
+      post.userId,
       post.platform,
       post.externalUrl,
       post.title,
@@ -188,7 +198,7 @@ router.post('/:id/draft-email', async (req: Request, res: Response) => {
   }
 
   try {
-    const draft = await draftEmailForContact(req.user!.userId, contact, goal);
+    const draft = await draftEmailForContact(contact.userId, contact, goal);
     res.json({ success: true, data: draft });
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Draft failed' });
@@ -212,7 +222,7 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await sendEmailViaComposio(req.user!.userId, contact.email, subject!.trim(), body.trim());
+    const result = await sendEmailViaComposio(contact.userId, contact.email, subject!.trim(), body.trim());
     const ok = result.trim().toUpperCase().startsWith('OK');
 
     if (ok) {

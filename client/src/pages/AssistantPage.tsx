@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, FormEvent, Fragment } from 'react';
+import { Flame, User, Square } from 'lucide-react';
 import { streamAssistantChat, getOverview, PostChatMessage } from '../api/client';
 import Markdown from '../components/Markdown';
 
@@ -41,6 +42,10 @@ export default function AssistantPage() {
   const [projectName, setProjectName] = useState<string | null>(null);
   const chatEnd  = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Interruption : contrôleur du flux en cours + dernier texte/actions reçus
+  const abortRef = useRef<AbortController | null>(null);
+  const streamTextRef = useRef('');
+  const actionsRef = useRef<string[]>([]);
 
   useEffect(() => {
     getOverview().then((res) => {
@@ -64,6 +69,11 @@ export default function AssistantPage() {
     setInput('');
     setStreamText('');
     setStreamActions([]);
+    streamTextRef.current = '';
+    actionsRef.current = [];
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const nextHistory: PostChatMessage[] = [...messages, { role: 'user', text: text.trim() }];
     setMessages(nextHistory);
@@ -71,9 +81,10 @@ export default function AssistantPage() {
     await streamAssistantChat(
       nextHistory.filter((m) => m !== WELCOME).map(({ role, text: t }) => ({ role, text: t })),
       {
-        onDelta:  (t) => setStreamText((prev) => prev + t),
-        onAction: (a) => setStreamActions((prev) => [...prev, a]),
+        onDelta:  (t) => { streamTextRef.current += t; setStreamText((prev) => prev + t); },
+        onAction: (a) => { actionsRef.current = [...actionsRef.current, a]; setStreamActions((prev) => [...prev, a]); },
         onDone: (reply, actions) => {
+          abortRef.current = null;
           setSending(false);
           setStreamText('');
           setStreamActions([]);
@@ -81,6 +92,7 @@ export default function AssistantPage() {
           inputRef.current?.focus();
         },
         onError: (err) => {
+          abortRef.current = null;
           setSending(false);
           setStreamText('');
           setStreamActions([]);
@@ -88,9 +100,29 @@ export default function AssistantPage() {
           setInput(text);
           setMessages((prev) => prev.slice(0, -1));
         },
+        // Interruption volontaire : on conserve ce qui a déjà été généré
+        onAbort: () => {
+          abortRef.current = null;
+          setSending(false);
+          const partial = streamTextRef.current.trim();
+          const acts = actionsRef.current;
+          setStreamText('');
+          setStreamActions([]);
+          if (partial) {
+            setMessages((prev) => [
+              ...prev,
+              { role: 'assistant', text: `${partial}\n\n_(réponse interrompue)_`, actions: acts.length ? acts : undefined },
+            ]);
+          }
+          inputRef.current?.focus();
+        },
       },
+      controller.signal,
     );
   };
+
+  /** Interrompt la réponse en cours (le texte déjà reçu est conservé) */
+  const stop = () => abortRef.current?.abort();
 
   const handleSend = (e?: FormEvent) => {
     e?.preventDefault();
@@ -124,7 +156,7 @@ export default function AssistantPage() {
             Posts, emails, agenda, validations, recherche web.
           </p>
         </div>
-        <button className="btn btn-ghost" onClick={handleReset} title="Nouvelle conversation">
+        <button className="btn btn-ghost" data-tour="asst-reset" onClick={handleReset} title="Nouvelle conversation">
           ↺ Nouvelle conversation
         </button>
       </div>
@@ -139,7 +171,9 @@ export default function AssistantPage() {
               </div>
             )}
             <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-              <div className="chat-avatar">{msg.role === 'assistant' ? '' : ''}</div>
+              <div className={`chat-avatar ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                {msg.role === 'assistant' ? <Flame size={16} /> : <User size={16} />}
+              </div>
               <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
                 <Markdown text={msg.text} />
               </div>
@@ -154,7 +188,7 @@ export default function AssistantPage() {
         )}
         {sending && (
           <div className="chat-msg chat-msg-bot">
-            <div className="chat-avatar"></div>
+            <div className="chat-avatar bot"><Flame size={16} /></div>
             {streamText
               ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
               : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
@@ -163,7 +197,7 @@ export default function AssistantPage() {
 
         {/* Suggestions (conversation vierge) */}
         {fresh && !sending && (
-          <div className="assistant-suggestions">
+          <div className="assistant-suggestions" data-tour="asst-suggestions">
             {SUGGESTIONS.map((s) => (
               <button key={s.label} className="assistant-suggestion" onClick={() => send(s.prompt)}>
                 <span className="assistant-suggestion-icon">{s.icon}</span>
@@ -179,7 +213,7 @@ export default function AssistantPage() {
       {error && <div className="chat-error" style={{ margin: '0 0 8px' }}>{error}</div>}
 
       {/* Saisie */}
-      <form className="assistant-page-input" onSubmit={handleSend}>
+      <form className="assistant-page-input" data-tour="asst-input" onSubmit={handleSend}>
         <textarea
           ref={inputRef}
           value={input}
@@ -190,9 +224,15 @@ export default function AssistantPage() {
           disabled={sending}
           autoFocus
         />
-        <button type="submit" className="btn btn-primary" disabled={sending || !input.trim()}>
-          {sending ? '⏳' : 'Envoyer →'}
-        </button>
+        {sending ? (
+          <button type="button" className="btn btn-stop" onClick={stop} title="Interrompre la réponse">
+            <Square size={13} fill="currentColor" /> Stop
+          </button>
+        ) : (
+          <button type="submit" className="btn btn-primary" disabled={!input.trim()}>
+            Envoyer →
+          </button>
+        )}
       </form>
     </div>
   );

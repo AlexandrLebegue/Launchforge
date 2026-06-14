@@ -22,8 +22,13 @@ function loadOwnedPendingRun(req: Request, res: Response): AgentRun | null {
     return null;
   }
   const agent = storage.getAgentById(run.agentId);
-  if (!agent || agent.userId !== req.user!.userId) {
+  const role = agent ? storage.accessRole(req.user!.userId, agent.planId, agent.userId) : null;
+  if (!agent || !role) {
     res.status(404).json({ success: false, error: 'Run not found' });
+    return null;
+  }
+  if (role === 'viewer') {
+    res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
     return null;
   }
   if (run.status !== 'awaiting_approval') {
@@ -35,8 +40,8 @@ function loadOwnedPendingRun(req: Request, res: Response): AgentRun | null {
 
 // ── GET /api/approvals — demandes en attente du projet actif ─────────────────
 router.get('/', (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  const items = storage.getPendingApprovalsByPlan(userId, storage.getActivePlanId(userId));
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  const items = storage.getPendingApprovalsByPlan(ctx.ownerUserId, ctx.planId);
   res.json({ success: true, data: items });
 });
 
@@ -44,8 +49,8 @@ router.get('/', (req: Request, res: Response) => {
 // Runs terminés du projet avec leur résultat exact (lien publié, raison
 // d'échec, motif de rejet) — l'utilisateur n'a plus à faire confiance.
 router.get('/history', (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  const items = storage.getRunHistoryByPlan(userId, storage.getActivePlanId(userId));
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  const items = storage.getRunHistoryByPlan(ctx.ownerUserId, ctx.planId);
   res.json({ success: true, data: items });
 });
 

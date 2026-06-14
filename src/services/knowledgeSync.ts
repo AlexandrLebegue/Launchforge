@@ -1,0 +1,259 @@
+/**
+ * Mise à jour automatique de la base de connaissances.
+ *
+ * L'utilisateur déclare des SOURCES (dépôt GitHub, site/page web). Ce service
+ * récupère leur contenu réel puis demande à l'IA d'en extraire des fiches à
+ * créer/mettre à jour. Les propositions sont ensuite validées par l'utilisateur
+ * (cf. /api/knowledge/sync/apply) — on n'écrit jamais la base sans son accord.
+ *
+ * Anti-hallucination : l'analyse ne porte QUE sur le texte réellement téléchargé.
+ */
+
+import * as cheerio from 'cheerio';
+import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
+import { storage } from './storage';
+import { KnowledgeCategory, KnowledgeEntry, KnowledgeSourceType, KnowledgeSuggestion } from '../types';
+
+const UA = 'Mozilla/5.0 (compatible; LaunchForge/1.0; +https://launchforge.dev)';
+
+export interface FetchedSource {
+  type: KnowledgeSourceType;
+  /** URL normalisée réellement récupérée */
+  url: string;
+  label: string;
+  text: string;
+}
+
+// ── GitHub ────────────────────────────────────────────────────────────────────
+
+function ghHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const h: Record<string, string> = { 'User-Agent': 'LaunchForge', Accept: 'application/vnd.github+json', ...extra };
+  if (process.env.GITHUB_TOKEN) h.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  return h;
+}
+
+/** Extrait owner/repo de formes variées : URL complète, github.com/x/y, x/y */
+export function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
+  let s = (input || '').trim();
+  if (!s) return null;
+  s = s.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/^github\.com\//i, '');
+  s = s.replace(/[?#].*$/, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+  const parts = s.split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+  return { owner: parts[0], repo: parts[1] };
+}
+
+export async function fetchGitHubKnowledge(url: string): Promise<FetchedSource> {
+  const parsed = parseGitHubRepo(url);
+  if (!parsed) throw new Error(`URL GitHub invalide (format attendu : github.com/utilisateur/depot)`);
+  const { owner, repo } = parsed;
+  const api = `https://api.github.com/repos/${owner}/${repo}`;
+
+  const metaRes = await fetch(api, { headers: ghHeaders(), signal: AbortSignal.timeout(10000) });
+  if (metaRes.status === 404) throw new Error(`Dépôt introuvable : ${owner}/${repo} (privé ou inexistant)`);
+  if (metaRes.status === 403) throw new Error(`GitHub a limité les requêtes — réessayez plus tard (ou configurez GITHUB_TOKEN)`);
+  if (!metaRes.ok) throw new Error(`GitHub a renvoyé ${metaRes.status} pour ${owner}/${repo}`);
+  const meta = (await metaRes.json()) as any;
+
+  // README en texte brut (facultatif)
+  let readme = '';
+  try {
+    const r = await fetch(`${api}/readme`, {
+      headers: ghHeaders({ Accept: 'application/vnd.github.raw' }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (r.ok) readme = await r.text();
+  } catch { /* README facultatif */ }
+
+  // Dernières versions (changelog / actus) — facultatif
+  let releases = '';
+  try {
+    const r = await fetch(`${api}/releases?per_page=3`, { headers: ghHeaders(), signal: AbortSignal.timeout(8000) });
+    if (r.ok) {
+      const rels = (await r.json()) as any[];
+      releases = (rels || [])
+        .map((rel) => `- ${rel.name || rel.tag_name} (${String(rel.published_at || '').slice(0, 10)}) : ${String(rel.body || '').slice(0, 500)}`)
+        .join('\n');
+    }
+  } catch { /* facultatif */ }
+
+  const text = [
+    `Dépôt : ${meta.full_name}`,
+    meta.description && `Description : ${meta.description}`,
+    meta.homepage && `Site associé : ${meta.homepage}`,
+    Array.isArray(meta.topics) && meta.topics.length ? `Sujets : ${meta.topics.join(', ')}` : '',
+    meta.language && `Langage principal : ${meta.language}`,
+    typeof meta.stargazers_count === 'number' ? `Étoiles : ${meta.stargazers_count}` : '',
+    readme && `\n--- README ---\n${readme.slice(0, 12000)}`,
+    releases && `\n--- Dernières versions ---\n${releases}`,
+  ].filter(Boolean).join('\n');
+
+  return { type: 'github', url, label: meta.full_name || `${owner}/${repo}`, text: text.slice(0, 16000) };
+}
+
+// ── Site web ──────────────────────────────────────────────────────────────────
+
+async function fetchHtml(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (ct && !ct.includes('html') && !ct.includes('text')) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+function htmlToText(html: string): { title: string; text: string } {
+  const $ = cheerio.load(html);
+  $('script, style, noscript, svg, nav, footer, header, iframe, form').remove();
+  const title = $('title').text().trim();
+  const metaDesc = $('meta[name="description"]').attr('content') || '';
+  const body = $('body').text().replace(/\s+/g, ' ').trim();
+  const text = [title && `Titre : ${title}`, metaDesc && `Description : ${metaDesc}`, body].filter(Boolean).join('\n');
+  return { title, text };
+}
+
+/** Liens internes pertinents (à propos, tarifs, produit, fonctionnalités…) */
+function relevantInternalLinks(html: string, pageUrl: string, origin: string, max = 3): string[] {
+  const $ = cheerio.load(html);
+  const wanted = ['about', 'a-propos', 'apropos', 'pricing', 'tarif', 'product', 'produit', 'features', 'fonctionnalit', 'service', 'solution'];
+  const seen = new Set<string>([pageUrl.replace(/#.*$/, '')]);
+  const links: string[] = [];
+  $('a[href]').each((_, el) => {
+    if (links.length >= max) return;
+    const href = $(el).attr('href');
+    if (!href) return;
+    let abs: URL;
+    try { abs = new URL(href, pageUrl); } catch { return; }
+    if (abs.origin !== origin) return;
+    const clean = abs.toString().replace(/#.*$/, '');
+    if (seen.has(clean)) return;
+    const key = (abs.pathname + abs.search).toLowerCase();
+    if (wanted.some((w) => key.includes(w))) { seen.add(clean); links.push(clean); }
+  });
+  return links;
+}
+
+export async function fetchWebsiteKnowledge(rawUrl: string, crawl = false): Promise<FetchedSource> {
+  let url = (rawUrl || '').trim();
+  if (!url) throw new Error('URL de site web vide');
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  let origin: URL;
+  try { origin = new URL(url); } catch { throw new Error(`URL de site invalide`); }
+
+  const html = await fetchHtml(url);
+  if (!html) throw new Error(`Page web inaccessible : ${url}`);
+  const main = htmlToText(html);
+  let text = main.text;
+
+  if (crawl) {
+    const links = relevantInternalLinks(html, url, origin.origin, 3);
+    for (const link of links) {
+      const h = await fetchHtml(link);
+      if (!h) continue;
+      text += `\n\n--- ${link} ---\n${htmlToText(h).text}`;
+    }
+  }
+
+  if (!text.trim()) throw new Error(`Aucun texte exploitable sur ${url}`);
+  return { type: 'website', url, label: main.title || origin.hostname, text: text.slice(0, 16000) };
+}
+
+// ── Analyse IA → propositions de fiches ──────────────────────────────────────
+
+const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'news', 'other'];
+
+const SUGGESTION_SPEC = `Réponds UNIQUEMENT avec un objet JSON :
+{"suggestions": [{
+  "action": "create" | "update",
+  "targetId": "id EXACT d'une fiche existante à mettre à jour, sinon null",
+  "category": "company" | "product" | "audience" | "tone" | "offers" | "learnings" | "news" | "other",
+  "title": "titre court et clair",
+  "content": "contenu factuel rédigé, prêt à être réutilisé par l'IA (pas de markdown lourd)",
+  "source": "libellé court de la source d'origine (dépôt ou site)",
+  "reason": "1 phrase : ce que la fiche apporte ou ce qui a changé"
+}]}
+
+Règles impératives :
+- Base-toi EXCLUSIVEMENT sur le contenu fourni des sources. N'invente AUCUN fait.
+- Utilise "update" (avec le targetId exact) quand une fiche existante traite déjà du sujet ; sinon "create".
+- Ne propose une mise à jour QUE si elle ajoute une information réellement nouvelle — ne reproduis pas une fiche identique.
+- Rédige des fiches autonomes et concises (3 à 8 phrases), en français.
+- Choisis la catégorie la plus juste ("news" pour nouveautés/versions récentes).
+- suggestions = [] si les sources n'apportent rien d'exploitable.`;
+
+function parseSuggestions(raw: string, existing: KnowledgeEntry[]): KnowledgeSuggestion[] {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(sanitizeJson(raw));
+  } catch {
+    // Le modèle a répondu en prose (outil indispo, refus…) : on remonte son texte.
+    throw new Error(raw.replace(/^[\s*_#>`]+/, '').slice(0, 250) || 'Réponse illisible du modèle');
+  }
+  const list = Array.isArray(parsed?.suggestions) ? parsed.suggestions : [];
+  const validIds = new Set(existing.map((e) => e.id));
+  const out: KnowledgeSuggestion[] = [];
+  for (const s of list) {
+    if (!s || typeof s.title !== 'string' || typeof s.content !== 'string') continue;
+    const title = s.title.trim();
+    const content = s.content.trim();
+    if (!title || !content) continue;
+    let action: 'create' | 'update' = s.action === 'update' ? 'update' : 'create';
+    const targetId: string | null = typeof s.targetId === 'string' && validIds.has(s.targetId) ? s.targetId : null;
+    if (action === 'update' && !targetId) action = 'create'; // cible invalide → création
+    out.push({
+      action,
+      targetId,
+      category: CATEGORIES.includes(s.category) ? s.category : 'other',
+      title: title.slice(0, 200),
+      content: content.slice(0, 8000),
+      source: typeof s.source === 'string' ? s.source.slice(0, 120) : '',
+      reason: typeof s.reason === 'string' ? s.reason.slice(0, 300) : '',
+    });
+  }
+  return out;
+}
+
+/** Analyse les sources récupérées et propose des fiches (create/update). */
+export async function analyzeSourcesForKnowledge(
+  ownerUserId: string,
+  planId: string | null,
+  fetched: FetchedSource[],
+): Promise<KnowledgeSuggestion[]> {
+  if (!isAIConfigured()) throw new Error('AI_NOT_CONFIGURED');
+  if (fetched.length === 0) throw new Error('Aucune source exploitable n\'a pu être récupérée');
+
+  const existing = storage.getKnowledgeByPlan(ownerUserId, planId); // triées par updatedAt DESC
+  // Borne l'inventaire des fiches (il grossit à chaque sync) pour ne pas évincer
+  // le texte des sources du contexte du modèle — les plus récentes d'abord.
+  let existingBlock = '';
+  for (const e of existing) {
+    const line = `- id=${e.id} [${e.category}] ${e.title}\n  ${e.content.slice(0, 200).replace(/\s+/g, ' ')}\n`;
+    if (existingBlock.length + line.length > 10000) break;
+    existingBlock += line;
+  }
+  if (!existingBlock) existingBlock = '(aucune fiche pour l\'instant)';
+
+  const sourcesBlock = fetched
+    .map((s) => `### Source (${s.type}) : ${s.label}\nURL : ${s.url}\n${s.text}`)
+    .join('\n\n=====\n\n');
+
+  const result = await chatComplete({
+    messages: [
+      {
+        role: 'system',
+        content: `Tu enrichis la base de connaissances d'une entreprise à partir de ses sources officielles (dépôt de code, site web). Tu en extrais des faits durables et utiles pour produire du contenu marketing fidèle à la réalité.\n\n${SUGGESTION_SPEC}`,
+      },
+      {
+        role: 'user',
+        content: `## Fiches existantes (pour décider create vs update — réutilise leur id pour une mise à jour)\n${existingBlock}\n\n## Contenu des sources à analyser\n${sourcesBlock.slice(0, 40000)}`,
+      },
+    ],
+    maxTokens: 4000,
+    jsonMode: true,
+  });
+
+  return parseSuggestions(result.content, existing);
+}

@@ -142,7 +142,8 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
 // ── GET /api/content/performance — séries pour les graphiques (sans IA) ─────
 router.get('/performance', (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  res.json({ success: true, data: computePerformanceSeries(userId, storage.getActivePlanId(userId)) });
+  const ctx = storage.resolveActiveProject(userId);
+  res.json({ success: true, data: computePerformanceSeries(ctx.ownerUserId, ctx.planId) });
 });
 
 // ── GET /api/content/report — rapport de campagne narratif (IA) ─────────────

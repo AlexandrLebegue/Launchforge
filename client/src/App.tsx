@@ -8,6 +8,7 @@ import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import { LegalNoticePage, PrivacyPage } from './pages/LegalPages';
+import JoinPage from './pages/JoinPage';
 import DashboardPage from './pages/DashboardPage';
 import AssistantPage from './pages/AssistantPage';
 import PerformancePage from './pages/PerformancePage';
@@ -17,6 +18,7 @@ import ConfigPage from './pages/ConfigPage';
 import ContentHubPage from './pages/ContentHubPage';
 import CalendarPage from './pages/CalendarPage';
 import KnowledgePage from './pages/KnowledgePage';
+import TeamsPage from './pages/TeamsPage';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -67,6 +69,7 @@ export default function App() {
             <Route path="assistant" element={<AssistantPage />} />
             <Route path="performance" element={<PerformancePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
+            <Route path="teams" element={<TeamsPage />} />
           </>
         )}
       </Route>
@@ -78,6 +81,7 @@ export default function App() {
         path="/register"
         element={user ? <Navigate to="/" replace /> : <RegisterPage onRegister={(u) => setUser(u)} />}
       />
+      <Route path="/join" element={<JoinPage user={user} onAuthed={(u) => setUser(u)} />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage onLogin={(u) => setUser(u)} />} />
       <Route path="/legal" element={<LegalNoticePage />} />

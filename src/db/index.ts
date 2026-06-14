@@ -388,6 +388,72 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_decks_user_plan ON decks(userId, planId);
   `);
 
+  // ── Équipes (collaboration multi-utilisateur sur un projet) ────────────────
+  // Une équipe possède des projets (plans.teamId) ; ses membres y accèdent
+  // selon leur rôle (owner/editor/viewer). Les invitations se font par code.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS teams (
+      id        TEXT PRIMARY KEY,
+      name      TEXT NOT NULL,
+      ownerId   TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (ownerId) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS team_members (
+      teamId    TEXT NOT NULL,
+      userId    TEXT NOT NULL,
+      role      TEXT NOT NULL DEFAULT 'editor',
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (teamId, userId),
+      FOREIGN KEY (teamId) REFERENCES teams(id),
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+    CREATE TABLE IF NOT EXISTS team_invites (
+      id        TEXT PRIMARY KEY,
+      teamId    TEXT NOT NULL,
+      code      TEXT UNIQUE NOT NULL,
+      role      TEXT NOT NULL DEFAULT 'editor',
+      createdAt TEXT NOT NULL,
+      expiresAt TEXT,
+      FOREIGN KEY (teamId) REFERENCES teams(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(userId);
+    CREATE INDEX IF NOT EXISTS idx_team_invites_team ON team_invites(teamId);
+  `);
+  // Un projet peut appartenir à une équipe (null = projet personnel, comme avant)
+  const plansInfo = database.pragma('table_info(plans)') as { name: string }[];
+  if (!plansInfo.some((c) => c.name === 'teamId')) {
+    database.exec(`ALTER TABLE plans ADD COLUMN teamId TEXT`);
+  }
+  // Projet actif PAR UTILISATEUR (l'ancien drapeau plans.active ne gérait pas
+  // les projets d'équipe possédés par quelqu'un d'autre). Backfill depuis l'ancien.
+  if (!userCols.some((c) => c.name === 'activePlanId')) {
+    database.exec(`ALTER TABLE users ADD COLUMN activePlanId TEXT`);
+    database.exec(
+      `UPDATE users SET activePlanId =
+         (SELECT p.id FROM plans p WHERE p.userId = users.id AND p.active = 1 LIMIT 1)
+       WHERE activePlanId IS NULL`
+    );
+  }
+
+  // ── Mise à jour automatique de la base de connaissances ────────────────────
+  // Sources déclarées par projet (dépôt GitHub, site/page web) que l'IA analyse
+  // pour proposer des fiches. Clé sur userId = propriétaire (comme knowledge).
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS knowledge_sources (
+      id           TEXT PRIMARY KEY,
+      userId       TEXT NOT NULL,
+      planId       TEXT,
+      type         TEXT NOT NULL DEFAULT 'website',
+      url          TEXT NOT NULL,
+      label        TEXT NOT NULL DEFAULT '',
+      lastSyncedAt TEXT,
+      createdAt    TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_sources_user_plan ON knowledge_sources(userId, planId);
+  `);
+
   // Index pour les requêtes scopées par projet (idempotent)
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_plans_user        ON plans(userId, active);

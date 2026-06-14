@@ -88,7 +88,7 @@ export default function PerformancePage() {
 
   return (
     <div className="animate-fadeIn">
-      <div className="dashboard-header">
+      <div className="dashboard-header" data-tour="perf-header">
         <div>
           <h1>Performances</h1>
           <p>Vos chiffres dans le temps, l'analyse IA, et ce qu'il faut en faire — pour le projet actif.</p>
@@ -102,7 +102,7 @@ export default function PerformancePage() {
           <p>Publiez des posts (et laissez la synchro des métriques travailler, ou saisissez-les) — les courbes apparaîtront ici.</p>
         </div>
       ) : (
-        <div className="analytics-wrap">
+        <div className="analytics-wrap" data-tour="perf-analytics">
           {/* ── Évolution hebdomadaire ── */}
           <div className="card">
             <div className="card-header">Vues & likes par semaine de publication</div>
@@ -235,7 +235,7 @@ export default function PerformancePage() {
           )}
 
           {/* ── Tableau détaillé ── */}
-          <div className="card">
+          <div className="card" data-tour="perf-table">
             <div className="card-header">Détail des posts publiés</div>
             <div className="analytics-table">
               <div className="analytics-row analytics-head">
@@ -286,7 +286,7 @@ function CampaignReportCard() {
   };
 
   return (
-    <div className="card">
+    <div className="card" data-tour="perf-report">
       <div className="config-card-head">
         <span className="config-card-title">Rapport de campagne</span>
         <button type="button" className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={generate} disabled={busy}>

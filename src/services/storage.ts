@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, Contact, TelegramLink, Reminder, ProjectSummary, Overview } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -100,14 +100,124 @@ export class Storage {
 
     db.transaction(() => {
       db.prepare(`DELETE FROM agent_runs WHERE agentId IN (SELECT id FROM agents WHERE userId = ?)`).run(userId);
-      for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'contacts',
+      for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'knowledge_sources', 'contacts',
                            'telegram_links', 'reminders', 'decks', 'onboarding_sessions', 'plans']) {
         db.prepare(`DELETE FROM ${table} WHERE userId = ?`).run(userId);
       }
+      // Équipes possédées : on supprime l'équipe, ses invitations et ses membres
+      db.prepare(`DELETE FROM team_invites WHERE teamId IN (SELECT id FROM teams WHERE ownerId = ?)`).run(userId);
+      db.prepare(`DELETE FROM team_members WHERE teamId IN (SELECT id FROM teams WHERE ownerId = ?)`).run(userId);
+      db.prepare(`DELETE FROM teams WHERE ownerId = ?`).run(userId);
+      // Appartenances de l'utilisateur à d'autres équipes
+      db.prepare(`DELETE FROM team_members WHERE userId = ?`).run(userId);
       db.prepare(`DELETE FROM users WHERE id = ?`).run(userId);
     })();
 
     return [...new Set(mediaFiles)];
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Équipes (collaboration sur des projets partagés)
+  // ──────────────────────────────────────────────────────────────
+
+  /** Crée une équipe et y inscrit le créateur comme propriétaire */
+  createTeam(name: string, ownerId: string): Team {
+    const team: Team = { id: randomUUID(), name, ownerId, createdAt: new Date().toISOString() };
+    const db = getDb();
+    db.prepare(`INSERT INTO teams (id, name, ownerId, createdAt) VALUES (?, ?, ?, ?)`)
+      .run(team.id, team.name, team.ownerId, team.createdAt);
+    db.prepare(`INSERT INTO team_members (teamId, userId, role, createdAt) VALUES (?, ?, 'owner', ?)`)
+      .run(team.id, ownerId, team.createdAt);
+    return team;
+  }
+
+  renameTeam(teamId: string, name: string): void {
+    getDb().prepare(`UPDATE teams SET name = ? WHERE id = ?`).run(name, teamId);
+  }
+
+  /** Supprime l'équipe et tout son rattachement (membres, invitations).
+   *  Les projets de l'équipe redeviennent personnels (teamId = NULL). */
+  deleteTeam(teamId: string): void {
+    const db = getDb();
+    db.prepare(`UPDATE plans SET teamId = NULL WHERE teamId = ?`).run(teamId);
+    db.prepare(`DELETE FROM team_invites WHERE teamId = ?`).run(teamId);
+    db.prepare(`DELETE FROM team_members WHERE teamId = ?`).run(teamId);
+    db.prepare(`DELETE FROM teams WHERE id = ?`).run(teamId);
+  }
+
+  getTeamById(teamId: string): Team | undefined {
+    return getDb().prepare(`SELECT * FROM teams WHERE id = ?`).get(teamId) as Team | undefined;
+  }
+
+  /** Équipes de l'utilisateur, avec son rôle et le nombre de membres */
+  getTeamsByUserId(userId: string): TeamSummary[] {
+    return getDb()
+      .prepare(
+        `SELECT t.id, t.name, t.ownerId, t.createdAt, m.role,
+                (SELECT COUNT(*) FROM team_members mm WHERE mm.teamId = t.id) AS memberCount
+         FROM teams t
+         JOIN team_members m ON m.teamId = t.id AND m.userId = ?
+         ORDER BY t.createdAt DESC`
+      )
+      .all(userId) as TeamSummary[];
+  }
+
+  /** Rôle de l'utilisateur dans l'équipe — null s'il n'est pas membre */
+  getTeamRole(teamId: string, userId: string): TeamRole | null {
+    const row = getDb()
+      .prepare(`SELECT role FROM team_members WHERE teamId = ? AND userId = ?`)
+      .get(teamId, userId) as { role: TeamRole } | undefined;
+    return row?.role ?? null;
+  }
+
+  getTeamMembers(teamId: string): TeamMemberInfo[] {
+    return getDb()
+      .prepare(
+        `SELECT m.userId, u.name, u.email, m.role, m.createdAt
+         FROM team_members m JOIN users u ON u.id = m.userId
+         WHERE m.teamId = ?
+         ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, m.createdAt ASC`
+      )
+      .all(teamId) as TeamMemberInfo[];
+  }
+
+  addTeamMember(teamId: string, userId: string, role: TeamRole): void {
+    getDb()
+      .prepare(
+        `INSERT INTO team_members (teamId, userId, role, createdAt) VALUES (?, ?, ?, ?)
+         ON CONFLICT(teamId, userId) DO UPDATE SET role = excluded.role`
+      )
+      .run(teamId, userId, role, new Date().toISOString());
+  }
+
+  updateTeamMemberRole(teamId: string, userId: string, role: TeamRole): void {
+    getDb().prepare(`UPDATE team_members SET role = ? WHERE teamId = ? AND userId = ?`).run(role, teamId, userId);
+  }
+
+  removeTeamMember(teamId: string, userId: string): void {
+    getDb().prepare(`DELETE FROM team_members WHERE teamId = ? AND userId = ?`).run(teamId, userId);
+  }
+
+  createTeamInvite(teamId: string, code: string, role: TeamRole, expiresAt: string | null): TeamInvite {
+    const invite: TeamInvite = { id: randomUUID(), teamId, code, role, createdAt: new Date().toISOString(), expiresAt };
+    getDb()
+      .prepare(`INSERT INTO team_invites (id, teamId, code, role, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(invite.id, invite.teamId, invite.code, invite.role, invite.createdAt, invite.expiresAt);
+    return invite;
+  }
+
+  getTeamInvites(teamId: string): TeamInvite[] {
+    return getDb()
+      .prepare(`SELECT * FROM team_invites WHERE teamId = ? ORDER BY createdAt DESC`)
+      .all(teamId) as TeamInvite[];
+  }
+
+  getTeamInviteByCode(code: string): TeamInvite | undefined {
+    return getDb().prepare(`SELECT * FROM team_invites WHERE code = ?`).get(code) as TeamInvite | undefined;
+  }
+
+  deleteTeamInvite(inviteId: string): void {
+    getDb().prepare(`DELETE FROM team_invites WHERE id = ?`).run(inviteId);
   }
 
   // ── Réglages multi-utilisateur (identité Composio, bot Telegram) ─────────
@@ -315,25 +425,80 @@ export class Storage {
     return row ? this.rowToPlan(row) : undefined;
   }
 
-  /** Définit le projet actif de l'utilisateur (un seul à la fois) */
-  setActivePlan(userId: string, planId: string): void {
-    const db = getDb();
-    db.prepare(`UPDATE plans SET active = 0 WHERE userId = ?`).run(userId);
-    db.prepare(`UPDATE plans SET active = 1 WHERE id = ? AND userId = ?`).run(planId, userId);
+  // ── Projet actif (par utilisateur) & accès aux projets d'équipe ───────────
+
+  /** Métadonnées d'accès d'un projet (sans parser les gros blobs JSON) */
+  getPlanMeta(planId: string): { id: string; userId: string; teamId: string | null } | undefined {
+    return getDb().prepare(`SELECT id, userId, teamId FROM plans WHERE id = ?`).get(planId) as any;
   }
 
-  /** Projet actif de l'utilisateur (à défaut : le plus récent) */
-  getActivePlan(userId: string): LaunchPlan | undefined {
+  /**
+   * Rôle de l'utilisateur sur un projet (owner/editor/viewer) — null = aucun
+   * accès. Projet personnel : seul son créateur est « owner ». Projet d'équipe :
+   * le rôle du membre dans l'équipe.
+   */
+  getProjectRole(userId: string, planId: string): TeamRole | null {
+    const meta = this.getPlanMeta(planId);
+    if (!meta) return null;
+    if (meta.teamId) return this.getTeamRole(meta.teamId, userId);
+    return meta.userId === userId ? 'owner' : null;
+  }
+
+  /** Rôle pour une ressource projet — gère le cas legacy (planId null = perso) */
+  accessRole(userId: string, planId: string | null, ownerUserId: string): TeamRole | null {
+    if (planId) return this.getProjectRole(userId, planId);
+    return ownerUserId === userId ? 'owner' : null;
+  }
+
+  /** Plan le plus récent accessible (perso ou via une équipe) — pour le repli */
+  private mostRecentAccessiblePlanId(userId: string): string | null {
     const row = getDb()
-      .prepare(`SELECT * FROM plans WHERE userId = ? AND active = 1 LIMIT 1`)
-      .get(userId) as any;
-    if (row) return this.rowToPlan(row);
-    return this.getPlansByUserId(userId)[0];
+      .prepare(
+        `SELECT p.id FROM plans p
+         LEFT JOIN team_members tm ON tm.teamId = p.teamId AND tm.userId = @uid
+         WHERE p.userId = @uid OR tm.userId IS NOT NULL
+         ORDER BY p.createdAt DESC LIMIT 1`
+      )
+      .get({ uid: userId }) as { id: string } | undefined;
+    return row?.id ?? null;
   }
 
-  /** Id du projet actif — clé d'isolation de toutes les données projet */
+  /** Définit le projet actif de l'utilisateur (vérifie l'accès) */
+  setActivePlan(userId: string, planId: string): void {
+    if (!this.getProjectRole(userId, planId)) return; // pas d'accès → no-op
+    getDb().prepare(`UPDATE users SET activePlanId = ? WHERE id = ?`).run(planId, userId);
+  }
+
+  /** Id du projet actif — clé d'isolation. Repli sur le plus récent accessible. */
   getActivePlanId(userId: string): string | null {
-    return this.getActivePlan(userId)?.id ?? null;
+    const row = getDb().prepare(`SELECT activePlanId FROM users WHERE id = ?`).get(userId) as { activePlanId: string | null } | undefined;
+    const pid = row?.activePlanId ?? null;
+    if (pid && this.getProjectRole(userId, pid)) return pid;
+    return this.mostRecentAccessiblePlanId(userId);
+  }
+
+  getActivePlan(userId: string): LaunchPlan | undefined {
+    const id = this.getActivePlanId(userId);
+    return id ? this.getPlan(id) : undefined;
+  }
+
+  /**
+   * Contexte du projet actif : l'id, le PROPRIÉTAIRE (clé des données et des
+   * comptes Composio) et le rôle de l'utilisateur courant. Pour un projet
+   * personnel, ownerUserId = l'utilisateur lui-même.
+   */
+  resolveActiveProject(userId: string): { planId: string | null; ownerUserId: string; role: TeamRole } {
+    const planId = this.getActivePlanId(userId);
+    if (!planId) return { planId: null, ownerUserId: userId, role: 'owner' };
+    const meta = this.getPlanMeta(planId);
+    if (!meta) return { planId: null, ownerUserId: userId, role: 'owner' };
+    const role = meta.teamId ? (this.getTeamRole(meta.teamId, userId) ?? 'viewer') : 'owner';
+    return { planId, ownerUserId: meta.userId, role };
+  }
+
+  /** Rattache (teamId) ou détache (null) un projet à une équipe */
+  setPlanTeam(planId: string, teamId: string | null): void {
+    getDb().prepare(`UPDATE plans SET teamId = ? WHERE id = ?`).run(teamId, planId);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -345,17 +510,24 @@ export class Storage {
    * champs utiles — pas de parse des gros blobs JSON (plan hebdo, kanban…).
    */
   getProjectSummaries(userId: string): ProjectSummary[] {
-    return getDb()
+    const activeId = this.getActivePlanId(userId);
+    const rows = getDb()
       .prepare(
-        `SELECT id, active, createdAt,
-                json_extract(input, '$.productName')    AS productName,
-                json_extract(input, '$.niche')          AS niche,
-                json_extract(input, '$.targetAudience') AS targetAudience,
-                json_extract(input, '$.company.name')   AS companyName
-         FROM plans WHERE userId = ?
-         ORDER BY active DESC, createdAt DESC`
+        `SELECT p.id, p.createdAt, p.teamId,
+                json_extract(p.input, '$.productName')    AS productName,
+                json_extract(p.input, '$.niche')          AS niche,
+                json_extract(p.input, '$.targetAudience') AS targetAudience,
+                json_extract(p.input, '$.company.name')   AS companyName,
+                t.name AS teamName,
+                COALESCE(tm.role, 'owner') AS role
+         FROM plans p
+         LEFT JOIN teams t ON t.id = p.teamId
+         LEFT JOIN team_members tm ON tm.teamId = p.teamId AND tm.userId = @uid
+         WHERE p.userId = @uid OR (p.teamId IS NOT NULL AND tm.userId IS NOT NULL)
+         ORDER BY p.createdAt DESC`
       )
-      .all(userId) as ProjectSummary[];
+      .all({ uid: userId }) as any[];
+    return rows.map((r) => ({ ...r, active: r.id === activeId ? 1 : 0 })) as ProjectSummary[];
   }
 
   /**
@@ -366,8 +538,11 @@ export class Storage {
   getOverview(userId: string): Overview {
     const db = getDb();
     const projects = this.getProjectSummaries(userId);
-    const project  = projects.find((p) => p.active) ?? projects[0] ?? null;
-    const planId   = project?.id ?? null;
+    // Projet actif + son propriétaire (clé des données pour un projet d'équipe)
+    const ctx = this.resolveActiveProject(userId);
+    const planId = ctx.planId;
+    const ownerUserId = ctx.ownerUserId;
+    const project = projects.find((p) => p.id === planId) ?? projects[0] ?? null;
 
     // Stats Kanban : seul le kanban_state du projet actif est parsé
     const tasks = { total: 0, done: 0, inProgress: 0, progress: 0 };
@@ -391,7 +566,7 @@ export class Storage {
                 COALESCE(SUM(status IN ('draft', 'idea')), 0)     AS drafts
          FROM posts WHERE userId = ? AND planId IS ?`
       )
-      .get(userId, planId) as { scheduled: number; published: number; drafts: number };
+      .get(ownerUserId, planId) as { scheduled: number; published: number; drafts: number };
 
     const nextPost = db
       .prepare(
@@ -400,7 +575,7 @@ export class Storage {
          WHERE userId = ? AND planId IS ? AND status = 'scheduled' AND scheduledAt IS NOT NULL
          ORDER BY scheduledAt ASC LIMIT 1`
       )
-      .get(userId, planId) as Overview['posts']['next'] | undefined;
+      .get(ownerUserId, planId) as Overview['posts']['next'] | undefined;
 
     const approvals = (db
       .prepare(
@@ -408,7 +583,7 @@ export class Storage {
          FROM agent_runs r JOIN agents a ON a.id = r.agentId
          WHERE a.userId = ? AND r.planId IS ? AND r.status = 'awaiting_approval'`
       )
-      .get(userId, planId) as { c: number }).c;
+      .get(ownerUserId, planId) as { c: number }).c;
 
     return {
       projects,
@@ -420,10 +595,13 @@ export class Storage {
   }
 
   getPlansByUserId(userId: string): LaunchPlan[] {
+    const activeId = this.getActivePlanId(userId);
     const rows = getDb()
       .prepare(`SELECT * FROM plans WHERE userId = ? ORDER BY createdAt DESC`)
       .all(userId) as any[];
-    return rows.map((r) => this.rowToPlan(r));
+    // Le drapeau « actif » vient de users.activePlanId (source de vérité), pas
+    // de l'ancienne colonne plans.active
+    return rows.map((r) => { const p = this.rowToPlan(r); p.active = p.id === activeId ? 1 : 0; return p; });
   }
 
   getAllPlans(): LaunchPlan[] {
@@ -717,6 +895,63 @@ export class Storage {
 
   deleteKnowledge(id: string): void {
     getDb().prepare(`DELETE FROM knowledge WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Sources de connaissances (mise à jour automatique de la base)
+  // ──────────────────────────────────────────────────────────────
+
+  /** Sources déclarées pour un projet (GitHub, site web) */
+  getKnowledgeSources(userId: string, planId: string | null): KnowledgeSource[] {
+    return getDb()
+      .prepare(`SELECT * FROM knowledge_sources WHERE userId = ? AND planId IS ? ORDER BY createdAt ASC`)
+      .all(userId, planId) as KnowledgeSource[];
+  }
+
+  getKnowledgeSourceById(id: string): KnowledgeSource | undefined {
+    return getDb().prepare(`SELECT * FROM knowledge_sources WHERE id = ?`).get(id) as KnowledgeSource | undefined;
+  }
+
+  /**
+   * Enregistre une source en évitant les doublons : si une source du même type
+   * et de la même URL existe déjà pour ce projet, on la renvoie (et on met à
+   * jour son libellé) plutôt que d'en créer une seconde.
+   */
+  upsertKnowledgeSource(
+    userId: string,
+    planId: string | null,
+    type: KnowledgeSourceType,
+    url: string,
+    label: string,
+  ): KnowledgeSource {
+    const db = getDb();
+    const existing = db
+      .prepare(`SELECT * FROM knowledge_sources WHERE userId = ? AND planId IS ? AND type = ? AND url = ?`)
+      .get(userId, planId, type, url) as KnowledgeSource | undefined;
+    if (existing) {
+      if (label && label !== existing.label) {
+        db.prepare(`UPDATE knowledge_sources SET label = ? WHERE id = ?`).run(label, existing.id);
+        return { ...existing, label };
+      }
+      return existing;
+    }
+    const source: KnowledgeSource = {
+      id: randomUUID(), userId, planId, type, url, label,
+      lastSyncedAt: null, createdAt: new Date().toISOString(),
+    };
+    db.prepare(
+      `INSERT INTO knowledge_sources (id, userId, planId, type, url, label, lastSyncedAt, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(source.id, source.userId, source.planId, source.type, source.url, source.label, source.lastSyncedAt, source.createdAt);
+    return source;
+  }
+
+  markKnowledgeSourceSynced(id: string, at: string): void {
+    getDb().prepare(`UPDATE knowledge_sources SET lastSyncedAt = ? WHERE id = ?`).run(at, id);
+  }
+
+  deleteKnowledgeSource(id: string): void {
+    getDb().prepare(`DELETE FROM knowledge_sources WHERE id = ?`).run(id);
   }
 
   // ──────────────────────────────────────────────────────────────

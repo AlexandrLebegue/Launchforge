@@ -29,11 +29,26 @@ router.get('/catalog', (_req: Request, res: Response) => {
   res.json({ success: true, data: getCatalog() });
 });
 
+/** Charge un agent accessible (perso ou d'équipe) ; bloque les Lecteurs si write. */
+function loadAgent(req: Request, res: Response, write: boolean): Agent | null {
+  const agent = storage.getAgentById(req.params.id);
+  const role = agent ? storage.accessRole(req.user!.userId, agent.planId, agent.userId) : null;
+  if (!agent || !role) {
+    res.status(404).json({ success: false, error: 'Agent not found' });
+    return null;
+  }
+  if (write && role === 'viewer') {
+    res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
+    return null;
+  }
+  return agent;
+}
+
 // ── GET /api/agents ──────────────────────────────────────────────────────────
 // Les agents (et leur mode de validation) sont propres au projet actif
 router.get('/', (req: Request, res: Response) => {
-  const userId = req.user!.userId;
-  const agents = storage.getAgentsByPlan(userId, storage.getActivePlanId(userId));
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  const agents = storage.getAgentsByPlan(ctx.ownerUserId, ctx.planId);
   res.json({ success: true, data: agents.map(sanitizeAgent) });
 });
 
@@ -56,10 +71,15 @@ router.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: `Unknown platform: ${platform}` });
   }
 
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
+  }
+
   const agent: Agent = {
     id:           uuid(),
-    userId:       req.user!.userId,
-    planId:       storage.getActivePlanId(req.user!.userId),
+    userId:       ctx.ownerUserId,
+    planId:       ctx.planId,
     name:         name || template.name,
     platform,
     apiKey:       apiKey || '',
@@ -75,19 +95,15 @@ router.post('/', (req: Request, res: Response) => {
 
 // ── GET /api/agents/:id ──────────────────────────────────────────────────────
 router.get('/:id', (req: Request, res: Response) => {
-  const agent = storage.getAgentById(req.params.id);
-  if (!agent || agent.userId !== req.user!.userId) {
-    return res.status(404).json({ success: false, error: 'Agent not found' });
-  }
+  const agent = loadAgent(req, res, false);
+  if (!agent) return;
   res.json({ success: true, data: sanitizeAgent(agent) });
 });
 
 // ── PATCH /api/agents/:id ────────────────────────────────────────────────────
 router.patch('/:id', (req: Request, res: Response) => {
-  const agent = storage.getAgentById(req.params.id);
-  if (!agent || agent.userId !== req.user!.userId) {
-    return res.status(404).json({ success: false, error: 'Agent not found' });
-  }
+  const agent = loadAgent(req, res, true);
+  if (!agent) return;
 
   const { name, apiKey, status, approvalMode } = req.body as Partial<Pick<Agent, 'name' | 'apiKey' | 'status' | 'approvalMode'>>;
   // Une chaîne vide signifie "ne pas toucher à la clé" (le client ne la
@@ -105,20 +121,16 @@ router.patch('/:id', (req: Request, res: Response) => {
 
 // ── DELETE /api/agents/:id ───────────────────────────────────────────────────
 router.delete('/:id', (req: Request, res: Response) => {
-  const agent = storage.getAgentById(req.params.id);
-  if (!agent || agent.userId !== req.user!.userId) {
-    return res.status(404).json({ success: false, error: 'Agent not found' });
-  }
+  const agent = loadAgent(req, res, true);
+  if (!agent) return;
   storage.deleteAgent(req.params.id);
   res.json({ success: true, data: null });
 });
 
 // ── GET /api/agents/:id/runs ─────────────────────────────────────────────────
 router.get('/:id/runs', (req: Request, res: Response) => {
-  const agent = storage.getAgentById(req.params.id);
-  if (!agent || agent.userId !== req.user!.userId) {
-    return res.status(404).json({ success: false, error: 'Agent not found' });
-  }
+  const agent = loadAgent(req, res, false);
+  if (!agent) return;
   const runs = storage.getRunsByAgentId(req.params.id);
   res.json({ success: true, data: runs });
 });
@@ -146,15 +158,21 @@ router.post('/assign-platform', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'planId, cardId and cardTitle are required' });
   }
 
+  // Accès au projet (perso ou d'équipe) ; l'agent est rattaché au propriétaire
+  const role = storage.getProjectRole(req.user!.userId, planId);
+  if (!role) return res.status(404).json({ success: false, error: 'Projet introuvable' });
+  if (role === 'viewer') return res.status(403).json({ success: false, error: 'Rôle Lecteur : action non autorisée' });
+  const ownerUserId = storage.getPlanMeta(planId)!.userId;
+
   // L'agent (et son mode de validation) est propre au projet de la carte
-  let agent = storage.getAgentsByPlan(req.user!.userId, planId).find((a) => a.platform === platform);
+  let agent = storage.getAgentsByPlan(ownerUserId, planId).find((a) => a.platform === platform);
   if (!agent) {
     // Mode hérité du réglage du projet (auto si tous les agents existants le sont)
-    const others = storage.getAgentsByPlan(req.user!.userId, planId);
+    const others = storage.getAgentsByPlan(ownerUserId, planId);
     const mode: ApprovalMode = others.length > 0 && others.every((a) => a.approvalMode === 'auto') ? 'auto' : 'manual';
     agent = {
       id:           uuid(),
-      userId:       req.user!.userId,
+      userId:       ownerUserId,
       planId,
       name:         template.name,
       platform,
@@ -197,10 +215,8 @@ router.post('/assign-platform', async (req: Request, res: Response) => {
 // ── POST /api/agents/:id/runs ────────────────────────────────────────────────
 // Assigne une carte Kanban à l'agent et déclenche l'exécution
 router.post('/:id/runs', async (req: Request, res: Response) => {
-  const agent = storage.getAgentById(req.params.id);
-  if (!agent || agent.userId !== req.user!.userId) {
-    return res.status(404).json({ success: false, error: 'Agent not found' });
-  }
+  const agent = loadAgent(req, res, true);
+  if (!agent) return;
 
   const { planId, cardId, cardTitle, cardDescription, cardCategory, cardEffort } = req.body as {
     planId:          string;
