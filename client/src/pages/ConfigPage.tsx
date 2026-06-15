@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
   MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot,
@@ -8,7 +8,7 @@ import {
   exportMyData, deleteAccount, setToken,
   setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
   setMarpTheme, customizeMarpTheme, themePreviewUrl,
-  ConfigStatus,
+  ConfigStatus, OwnAppField,
 } from '../api/client';
 
 const SYNC_INTERVALS = [
@@ -18,6 +18,14 @@ const SYNC_INTERVALS = [
   { value: 720,  label: 'Toutes les 12 h' },
   { value: 1440, label: 'Une fois par jour' },
 ];
+
+/** Libellés lisibles des identifiants d'app développeur (NEEDS_OWN_APP) */
+const OWN_APP_FIELD_LABELS: Record<string, string> = {
+  client_id: 'Client ID',
+  client_secret: 'Client Secret',
+  generic_id: 'Bearer Token',
+  scopes: 'Scopes',
+};
 
 const TOOLKIT_ICONS: Record<string, React.ReactNode> = {
   linkedin: <Briefcase size={18} />, twitter: <MessageCircle size={18} />, instagram: <Camera size={18} />,
@@ -81,6 +89,10 @@ export default function ConfigPage() {
   const [connecting,    setConnecting]    = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
+  // Toolkits sans auth gérée par Composio (X/Twitter, TikTok…) : l'utilisateur
+  // fournit les identifiants de sa propre app développeur
+  const [ownApp,       setOwnApp]       = useState<Record<string, { fields: OwnAppField[]; callbackUrl: string }>>({});
+  const [ownAppValues, setOwnAppValues] = useState<Record<string, Record<string, string>>>({});
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = (fresh = false) => getConfigStatus(fresh).then((res) => {
@@ -113,13 +125,23 @@ export default function ConfigPage() {
   const handleConnect = async (slug: string) => {
     setConnecting(slug);
     setConnectErrors((e) => ({ ...e, [slug]: '' }));
-    const res = await connectToolkit(slug);
+    // Formulaire « app développeur » ouvert et rempli → identifiants joints
+    const values = ownAppValues[slug];
+    const creds = ownApp[slug] && values && Object.values(values).some((v) => v.trim())
+      ? values
+      : undefined;
+    const res = await connectToolkit(slug, creds);
     setConnecting(null);
     if (res.success && res.data) {
+      setOwnApp((o) => { const { [slug]: _gone, ...rest } = o; return rest; });
+      setOwnAppValues((o) => { const { [slug]: _gone, ...rest } = o; return rest; });
       setConnectLinks((l) => ({ ...l, [slug]: res.data!.redirectUrl }));
       // Ouverture directe ; le lien reste affiché si le navigateur bloque la popup
       window.open(res.data.redirectUrl, '_blank', 'noopener');
       startPolling(slug);
+    } else if (res.code === 'NEEDS_OWN_APP' && Array.isArray(res.fields) && res.fields.length > 0) {
+      // Pas d'auth « clé en main » pour ce toolkit : on ouvre le formulaire
+      setOwnApp((o) => ({ ...o, [slug]: { fields: res.fields!, callbackUrl: res.callbackUrl ?? '' } }));
     } else {
       setConnectErrors((e) => ({
         ...e,
@@ -404,7 +426,8 @@ export default function ConfigPage() {
           )}
           <div className="config-toolkits">
             {status.composio.toolkits.map((t) => (
-              <div key={t.slug} className={`config-toolkit${t.connected ? ' on' : ''}`}>
+              <Fragment key={t.slug}>
+              <div className={`config-toolkit${t.connected ? ' on' : ''}`}>
                 <span className="config-toolkit-icon">{TOOLKIT_ICONS[t.slug] ?? <Plug size={18} />}</span>
                 <span className="config-toolkit-main">
                   <span className="config-toolkit-name">{t.name}</span>
@@ -451,6 +474,63 @@ export default function ConfigPage() {
                   </button>
                 )}
               </div>
+              {/* Pas d'auth « clé en main » (X/Twitter, TikTok…) : identifiants
+                  de l'app développeur de l'utilisateur */}
+              {!t.connected && ownApp[t.slug] && (
+                <div className="config-ownapp">
+                  <p className="config-ownapp-help">
+                    {t.name} n'a pas d'authentification « clé en main » chez Composio : créez une app
+                    (gratuite) sur le portail développeur de la plateforme
+                    {t.slug === 'twitter' && <> (<a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener noreferrer">developer.x.com</a> → Projects &amp; Apps → User authentication settings, type « Web App », et notez aussi le Bearer Token de l'app)</>}
+                    {t.slug === 'tiktok' && <> (<a href="https://developers.tiktok.com/" target="_blank" rel="noopener noreferrer">developers.tiktok.com</a>)</>}
+                    , déclarez l'URL de callback ci-dessous dans ses « Redirect URLs », puis collez ses
+                    identifiants — ils restent chez Composio, jamais dans LaunchForge.
+                  </p>
+                  {ownApp[t.slug].callbackUrl && (
+                    <div className="config-ownapp-callback">
+                      <span>URL de callback à déclarer :</span>
+                      <code>{ownApp[t.slug].callbackUrl}</code>
+                      <button
+                        type="button" className="btn btn-ghost btn-sm"
+                        onClick={() => navigator.clipboard?.writeText(ownApp[t.slug].callbackUrl)}
+                      >
+                        Copier
+                      </button>
+                    </div>
+                  )}
+                  {ownApp[t.slug].fields.map((f) => (
+                    <label key={f.name} className="config-ownapp-field">
+                      <span>{OWN_APP_FIELD_LABELS[f.name] ?? f.name}</span>
+                      <input
+                        type={/secret/i.test(f.name) ? 'password' : 'text'}
+                        placeholder={f.description.slice(0, 90)}
+                        value={ownAppValues[t.slug]?.[f.name] ?? ''}
+                        onChange={(e) => setOwnAppValues((o) => ({
+                          ...o,
+                          [t.slug]: { ...o[t.slug], [f.name]: e.target.value },
+                        }))}
+                      />
+                    </label>
+                  ))}
+                  <div className="config-ownapp-actions">
+                    <button
+                      type="button" className="btn btn-primary btn-sm"
+                      disabled={connecting === t.slug
+                        || !ownApp[t.slug].fields.every((f) => (ownAppValues[t.slug]?.[f.name] ?? '').trim())}
+                      onClick={() => handleConnect(t.slug)}
+                    >
+                      {connecting === t.slug ? '⏳…' : 'Enregistrer et connecter'}
+                    </button>
+                    <button
+                      type="button" className="btn btn-ghost btn-sm"
+                      onClick={() => setOwnApp((o) => { const { [t.slug]: _gone, ...rest } = o; return rest; })}
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+              </Fragment>
             ))}
           </div>
           <p className="form-hint">

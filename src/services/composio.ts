@@ -12,7 +12,7 @@
 import { chatComplete, ChatMessage, ToolDef, sanitizeJson, isAIConfigured } from './aiClient';
 import { McpSession, McpTool, isComposioConfigured } from './mcpClient';
 import { composioUserIdFor } from './composioConnect';
-import { publishDirect } from './composioDirect';
+import { publishDirect, syncMetricsDirect } from './composioDirect';
 
 export { isComposioConfigured };
 
@@ -179,7 +179,7 @@ export function guardedReply(result: McpTaskResult): string {
 /** Plateformes qui refusent toute publication sans média */
 const MEDIA_REQUIRED: Record<string, string> = {
   instagram: 'Instagram exige une image — attachez un visuel au post (champ Image du Hub, ou donnez une URL d\'image à l\'assistant)',
-  tiktok:    'TikTok exige une vidéo — attachez l\'URL du média au post avant de publier',
+  tiktok:    'TikTok exige un média (vidéo, ou image pour un post photo) — attachez-le au post avant de publier',
   youtube:   'YouTube exige une vidéo — attachez l\'URL du média au post avant de publier',
 };
 
@@ -303,6 +303,14 @@ export async function syncMetricsViaComposio(
   externalUrl: string,
   title: string,
 ): Promise<SyncedMetrics> {
+  // Lecture DIRECTE (API Composio, déterministe) quand la référence externe
+  // est exploitable — l'opérateur IA reste le repli (référence illisible,
+  // outil en erreur, plateforme sans stratégie).
+  if (process.env.COMPOSIO_API_KEY) {
+    const direct = await syncMetricsDirect(userId, platform, externalUrl);
+    if (direct.handled && direct.metrics) return direct.metrics;
+  }
+
   const { reply, okCalls } = await runMcpTask(
     userId,
     platformKeywords(platform),

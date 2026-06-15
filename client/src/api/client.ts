@@ -873,9 +873,25 @@ export async function getConfigStatus(fresh = false): Promise<ApiResponse<Config
   return request(`/config/status${fresh ? '?fresh=1' : ''}`);
 }
 
+/** Champ d'identifiant exigé par un toolkit sans auth gérée (ex. X/Twitter) */
+export interface OwnAppField { name: string; description: string }
+
+export type ConnectToolkitResponse = ApiResponse<{ redirectUrl: string }> & {
+  /** NEEDS_OWN_APP : fournir les identifiants de sa propre app développeur */
+  code?: string;
+  fields?: OwnAppField[];
+  callbackUrl?: string;
+};
+
 /** Prépare la connexion d'un compte et renvoie le lien d'autorisation OAuth */
-export async function connectToolkit(toolkit: string): Promise<ApiResponse<{ redirectUrl: string }>> {
-  return request('/config/connect', { method: 'POST', body: JSON.stringify({ toolkit }) });
+export async function connectToolkit(
+  toolkit: string,
+  credentials?: Record<string, string>,
+): Promise<ConnectToolkitResponse> {
+  return request('/config/connect', {
+    method: 'POST',
+    body: JSON.stringify({ toolkit, ...(credentials ? { credentials } : {}) }),
+  });
 }
 
 /** Déconnecte un compte (supprime les comptes connectés du toolkit chez Composio) */

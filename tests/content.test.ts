@@ -207,6 +207,13 @@ describe('Connexion de comptes (Configuration)', () => {
       .send({ toolkit: 'linkedin' });
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('COMPOSIO_NOT_CONFIGURED');
+
+    // identifiants d'app développeur joints (X/Twitter…) : mêmes garde-fous
+    const withCreds = await request(app)
+      .post('/api/config/connect')
+      .set(auth())
+      .send({ toolkit: 'twitter', credentials: { client_id: 'x', client_secret: 'y', generic_id: 'z' } });
+    expect(withCreds.status).toBe(503);
   });
 
   it('déconnexion : mêmes garde-fous (toolkit requis, 503 sans Composio)', async () => {

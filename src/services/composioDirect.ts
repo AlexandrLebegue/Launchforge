@@ -22,9 +22,32 @@
  *                  attente du traitement pour la vidéo — puis CREATE_POST
  *  - YouTube     : YOUTUBE_UPLOAD_VIDEO (le binaire est récupéré par
  *                  Composio depuis l'URL publique passée en videoFilePath)
+ *  - Reddit      : REDDIT_CREATE_REDDIT_POST — le subreddit cible se déclare
+ *                  en mentionnant r/<nom> dans le titre ou le contenu. Texte
+ *                  → post 'self' ; média → post 'link' vers l'URL du média
+ *                  (Reddit l'affiche comme post image), le texte partant en
+ *                  premier commentaire. L'API YouTube Data v3 n'expose pas
+ *                  les « community posts » (limite Google) : seul l'upload
+ *                  de vidéo existe.
+ *  - Facebook    : FACEBOOK_GET_USER_PAGES (première Page gérée, en cache —
+ *                  l'API Graph ne publie pas sur un profil personnel) puis
+ *                  CREATE_POST (texte) / CREATE_PHOTO_POST (url) /
+ *                  CREATE_VIDEO_POST (file_url)
+ *  - TikTok      : TIKTOK_PUBLISH_VIDEO (URL publique) + suivi
+ *                  FETCH_PUBLISH_STATUS, ou TIKTOK_POST_PHOTO (DIRECT_POST)
+ *                  pour une image
  *
- * Les autres plateformes (Reddit : subreddit/flair requis, Facebook :
- * page_id…) restent sur l'opérateur IA, qui sait demander le contexte.
+ * Métriques (syncMetricsDirect) — lecture déterministe likes/commentaires/
+ * vues par plateforme : TWITTER_POST_LOOKUP_BY_POST_ID (public_metrics),
+ * YOUTUBE_VIDEO_DETAILS (statistics), REDDIT_RETRIEVE_SPECIFIC_COMMENT
+ * (score, num_comments via t3_<id>), INSTAGRAM_GET_POST_INSIGHTS
+ * (reach/likes/comments/shares), FACEBOOK_GET_POST (résumés likes/
+ * commentaires/partages), LINKEDIN_LIST_REACTIONS (serveur MCP — l'API
+ * LinkedIn n'expose pas plus pour un post personnel). TikTok reste sur
+ * l'opérateur IA (pas de lecture par identifiant de publication).
+ *
+ * Blog, newsletter, Product Hunt, Hacker News : pas d'API de publication
+ * exposée par Composio (HN et PH n'en ont pas d'officielle) → opérateur IA.
  */
 
 import { createHash } from 'crypto';
@@ -255,9 +278,10 @@ async function publishLinkedInViaProxy(accountId: string, author: string, commen
   return `ECHEC: LinkedIn a refusé la publication via le proxy — ${lastErr}`;
 }
 
-// Identités résolues une fois par utilisateur (URN LinkedIn, compte Instagram)
+// Identités résolues une fois par utilisateur (URN LinkedIn, compte Instagram, Page Facebook)
 const linkedinAuthorCache = new Map<string, string>();
 const instagramIdCache = new Map<string, string>();
+const facebookPageCache = new Map<string, { id: string; name: string }>();
 
 const firstLine = (text: string, max = 95) =>
   (text.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, max);
@@ -441,8 +465,11 @@ export async function publishDirect(
             } catch { break; /* statut indisponible : on tente la publication */ }
           }
         }
-        await exec(uid, 'INSTAGRAM_CREATE_POST', { ig_user_id: igUserId, creation_id: creationId });
-        return { handled: true, result: `OK: publication Instagram créée (id ${creationId})` };
+        const published = await exec(uid, 'INSTAGRAM_CREATE_POST', { ig_user_id: igUserId, creation_id: creationId });
+        // L'id renvoyé ici est celui du MÉDIA publié : c'est lui qu'attendent
+        // les insights (GET_POST_INSIGHTS) — pas l'id du conteneur de création
+        const mediaId = String(published?.id ?? published?.data?.id ?? creationId);
+        return { handled: true, result: `OK: publication Instagram créée (id ${mediaId})` };
       }
 
       case 'youtube': {
@@ -461,6 +488,101 @@ export async function publishDirect(
         return { handled: true, result: `OK: vidéo YouTube publiée${videoId ? ` https://youtu.be/${videoId}` : ''}` };
       }
 
+      case 'facebook': {
+        // L'API Graph ne publie que sur des PAGES (le profil personnel est fermé
+        // aux apps depuis 2018) : on résout la première page gérée, en cache
+        let page = facebookPageCache.get(uid);
+        if (!page) {
+          const pages = await exec(uid, 'FACEBOOK_GET_USER_PAGES', {});
+          const first = (pages?.data ?? pages?.pages ?? [])[0];
+          if (!first?.id) {
+            return { handled: true, result: 'ECHEC: aucune Page Facebook gérée par ce compte — l\'API Facebook ne permet de publier que sur une Page (pas sur un profil personnel). Créez une Page ou reconnectez un compte qui en gère une.' };
+          }
+          page = { id: String(first.id), name: String(first.name ?? 'Page') };
+          facebookPageCache.set(uid, page);
+        }
+        let data: any;
+        if (mediaUrl && mediaIsVideo) {
+          data = await exec(uid, 'FACEBOOK_CREATE_VIDEO_POST', {
+            page_id: page.id,
+            file_url: mediaUrl,
+            description: content,
+            title: (title || firstLine(content) || 'Vidéo').slice(0, 95),
+          });
+        } else if (mediaUrl) {
+          data = await exec(uid, 'FACEBOOK_CREATE_PHOTO_POST', { page_id: page.id, url: mediaUrl, message: content });
+        } else {
+          data = await exec(uid, 'FACEBOOK_CREATE_POST', { page_id: page.id, message: content });
+        }
+        const postId = data?.post_id ?? data?.id ?? data?.data?.post_id ?? data?.data?.id ?? '';
+        return { handled: true, result: `OK: post Facebook publié sur la page ${page.name}${postId ? ` https://www.facebook.com/${postId}` : ''}` };
+      }
+
+      case 'tiktok': {
+        if (!mediaUrl) return { handled: true, result: 'ECHEC: TikTok exige un média (vidéo, ou image pour un post photo).' };
+        if (mediaIsVideo) {
+          const data = await exec(uid, 'TIKTOK_PUBLISH_VIDEO', {
+            video_url: mediaUrl,
+            caption: content.slice(0, 2200),
+            privacy_level: 'PUBLIC_TO_EVERYONE',
+          });
+          const publishId = String(data?.publish_id ?? data?.data?.publish_id ?? '');
+          // TikTok télécharge puis traite la vidéo : on suit le statut de publication
+          if (publishId) {
+            for (let i = 0; i < 12; i++) {
+              await sleep(5000);
+              try {
+                const st = await exec(uid, 'TIKTOK_FETCH_PUBLISH_STATUS', { publish_id: publishId });
+                const code = String(st?.status ?? st?.data?.status ?? '');
+                if (code === 'PUBLISH_COMPLETE') return { handled: true, result: `OK: vidéo TikTok publiée (publication ${publishId})` };
+                if (code === 'FAILED') {
+                  const reason = st?.fail_reason ?? st?.data?.fail_reason ?? 'raison inconnue';
+                  return { handled: true, result: `ECHEC: TikTok a refusé la vidéo — ${reason}` };
+                }
+              } catch { break; /* statut indisponible : la vidéo est partie, TikTok finit le traitement */ }
+            }
+          }
+          return { handled: true, result: `OK: vidéo TikTok envoyée${publishId ? ` (publication ${publishId})` : ''} — traitement en cours côté TikTok` };
+        }
+        const data = await exec(uid, 'TIKTOK_POST_PHOTO', {
+          photo_images: [mediaUrl],
+          photo_cover_index: 0,
+          post_mode: 'DIRECT_POST',
+          privacy_level: 'PUBLIC_TO_EVERYONE',
+          title: (title || firstLine(content, 85) || 'Photo').slice(0, 85),
+          description: content.slice(0, 4000),
+        });
+        const publishId = String(data?.publish_id ?? data?.data?.publish_id ?? '');
+        return { handled: true, result: `OK: post photo TikTok publié${publishId ? ` (publication ${publishId})` : ''}` };
+      }
+
+      case 'reddit': {
+        // Le subreddit cible se déclare en mentionnant r/<nom> dans le titre ou le contenu
+        const sub = `${title}\n${content}`.match(/(?:^|[\s("'«])r\/([A-Za-z0-9][A-Za-z0-9_]{1,20})/)?.[1];
+        if (!sub) {
+          return { handled: true, result: 'ECHEC: indiquez le subreddit cible en mentionnant r/<nom> dans le titre ou le contenu du post (ex. « r/startups »).' };
+        }
+        const postTitle = (title || firstLine(content, 295) || 'Post').slice(0, 295);
+        const data = await exec(uid, 'REDDIT_CREATE_REDDIT_POST', mediaUrl
+          // Un lien direct vers une image/vidéo s'affiche comme post média sur Reddit
+          ? { subreddit: sub, title: postTitle, kind: 'link', url: mediaUrl }
+          : { subreddit: sub, title: postTitle, kind: 'self', text: content });
+        const d = data?.json?.data ?? data?.data?.json?.data ?? data ?? {};
+        const thing: string = d?.name ?? (d?.id ? `t3_${d.id}` : '');
+        const url: string = d?.url ?? '';
+        let note = '';
+        if (mediaUrl && thing && content.trim() && content.trim() !== postTitle) {
+          // Un post lien n'a pas de corps de texte : le contenu part en premier commentaire
+          try {
+            await exec(uid, 'REDDIT_POST_REDDIT_COMMENT', { thing_id: thing, text: content });
+            note = ' (texte publié en premier commentaire)';
+          } catch {
+            note = ' (texte non joint : l\'envoi du commentaire a échoué)';
+          }
+        }
+        return { handled: true, result: `OK: post Reddit publié sur r/${sub}${url ? ` ${url}` : ''}${note}` };
+      }
+
       default:
         return { handled: false };
     }
@@ -474,5 +596,204 @@ export async function publishDirect(
       return { handled: true, result: `ECHEC: aucun compte ${label} connecté — rattachez-le dans Configuration avant de publier.` };
     }
     return { handled: true, result: `ECHEC: ${msg}` };
+  }
+}
+
+// ── Métriques directes ─────────────────────────────────────────────────────────
+
+export interface DirectMetrics {
+  found: boolean;
+  impressions?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  clicks?: number;
+  note?: string;
+}
+
+export interface DirectMetricsResult {
+  /** false = pas de stratégie directe (ou outil en erreur) → opérateur IA */
+  handled: boolean;
+  metrics?: DirectMetrics;
+}
+
+const toNum = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+};
+
+/**
+ * Lecture déterministe des métriques d'un post publié (likes, commentaires,
+ * vues, partages) à partir de sa référence externe (URL ou identifiant
+ * enregistré à la publication). Toute erreur rend la main à l'opérateur IA :
+ * pour la LECTURE, le repli a du sens (autres outils, post retrouvable par
+ * son titre…).
+ */
+export async function syncMetricsDirect(
+  userId: string,
+  platform: string,
+  externalRef: string,
+  exec: ToolExecutor = executeComposioTool,
+  mcp: McpToolCaller = callMcpToolDirect,
+): Promise<DirectMetricsResult> {
+  const uid = composioUserIdFor(userId);
+  if (!uid) return { handled: false };
+
+  try {
+    switch (platform) {
+      case 'twitter': {
+        const id = externalRef.match(/status\/(\d+)/)?.[1]
+          ?? (/^\d{8,}$/.test(externalRef.trim()) ? externalRef.trim() : null);
+        if (!id) return { handled: false };
+        const data = await exec(uid, 'TWITTER_POST_LOOKUP_BY_POST_ID', {
+          id,
+          tweet_fields: ['public_metrics'],
+        });
+        const m = data?.data?.public_metrics ?? data?.public_metrics;
+        if (!m) return { handled: true, metrics: { found: false, note: 'Tweet sans métriques publiques dans la réponse' } };
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: toNum(m.impression_count),
+            likes: toNum(m.like_count),
+            comments: toNum(m.reply_count),
+            shares: toNum(m.retweet_count) + toNum(m.quote_count),
+            clicks: 0,
+          },
+        };
+      }
+
+      case 'youtube': {
+        const id = externalRef.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/)([\w-]{6,})/)?.[1]
+          ?? (/^[\w-]{11}$/.test(externalRef.trim()) ? externalRef.trim() : null);
+        if (!id) return { handled: false };
+        const data = await exec(uid, 'YOUTUBE_VIDEO_DETAILS', { id, part: 'statistics' });
+        // Forme réelle constatée : data.response_data.items[0].statistics
+        const st = data?.response_data?.items?.[0]?.statistics
+          ?? data?.items?.[0]?.statistics ?? data?.data?.items?.[0]?.statistics ?? data?.statistics;
+        if (!st) return { handled: true, metrics: { found: false, note: 'Vidéo introuvable (statistics absentes de la réponse YouTube)' } };
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: toNum(st.viewCount),
+            likes: toNum(st.likeCount),
+            comments: toNum(st.commentCount),
+            shares: 0,
+            clicks: 0,
+            note: 'YouTube n\'expose pas les partages via l\'API',
+          },
+        };
+      }
+
+      case 'reddit': {
+        const article = externalRef.match(/comments\/([a-z0-9]{4,})/i)?.[1];
+        if (!article) return { handled: false };
+        // RETRIEVE_SPECIFIC_COMMENT accepte aussi un POST via son fullname
+        // t3_<id> — forme réelle constatée : data.things[0].data (score,
+        // num_comments). L'endpoint des commentaires, lui, ne renvoie pas le post.
+        const data = await exec(uid, 'REDDIT_RETRIEVE_SPECIFIC_COMMENT', { id: `t3_${article}` });
+        const post = data?.things?.[0]?.data ?? data?.data?.things?.[0]?.data;
+        if (!post) return { handled: true, metrics: { found: false, note: 'Post Reddit introuvable dans la réponse' } };
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: 0,
+            likes: toNum(post.score ?? post.ups),
+            comments: toNum(post.num_comments),
+            shares: toNum(post.num_crossposts),
+            clicks: 0,
+            note: 'Reddit n\'expose pas les impressions (score = votes nets)',
+          },
+        };
+      }
+
+      case 'instagram': {
+        const igId = externalRef.match(/\b(\d{10,})\b/)?.[1];
+        if (!igId) return { handled: false };
+        // On demande EXPLICITEMENT les métriques supportées : les presets de
+        // l'outil incluent « impressions », que Meta a retirée pour les médias
+        // récents (erreur 400) — vérifié en réel sur un post fraîchement publié.
+        const data = await exec(uid, 'INSTAGRAM_GET_POST_INSIGHTS', {
+          ig_post_id: igId,
+          metric: ['reach', 'likes', 'comments', 'shares', 'saved'],
+        });
+        const list = data?.data ?? data?.insights?.data;
+        if (!Array.isArray(list) || list.length === 0) {
+          return { handled: true, metrics: { found: false, note: 'Aucun insight renvoyé par Instagram pour ce média' } };
+        }
+        const val = (name: string) => toNum(list.find((i: any) => i?.name === name)?.values?.[0]?.value);
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: val('reach'),
+            likes: val('likes'),
+            comments: val('comments'),
+            shares: val('shares'),
+            clicks: 0,
+            note: 'Instagram : « reach » utilisé comme impressions',
+          },
+        };
+      }
+
+      case 'facebook': {
+        // L'id complet d'un post de Page est pageId_postId
+        const postId = externalRef.match(/(\d{6,}_\d+)/)?.[1];
+        if (!postId) return { handled: false };
+        const data = await exec(uid, 'FACEBOOK_GET_POST', {
+          post_id: postId,
+          fields: 'id,shares,likes.summary(true),comments.summary(true)',
+        });
+        const d = data?.data ?? data;
+        if (!d?.id) return { handled: true, metrics: { found: false, note: 'Post Facebook introuvable dans la réponse' } };
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: 0,
+            likes: toNum(d?.likes?.summary?.total_count),
+            comments: toNum(d?.comments?.summary?.total_count),
+            shares: toNum(d?.shares?.count),
+            clicks: 0,
+            note: 'Facebook n\'expose pas les impressions d\'un post via ce point d\'accès',
+          },
+        };
+      }
+
+      case 'linkedin': {
+        // L'API LinkedIn d'un compte personnel n'expose que les réactions —
+        // lisibles via l'outil du serveur MCP (absent du catalogue REST)
+        const urn = externalRef.match(/urn:li:(?:share|ugcPost|activity):\d+/)?.[0];
+        if (!urn || !isComposioConfigured()) return { handled: false };
+        const out = await mcp(uid, 'LINKEDIN_LIST_REACTIONS', { entity: urn, count: 100 });
+        let parsed: any = null;
+        try { parsed = JSON.parse(out); } catch { return { handled: false }; }
+        const dd = parsed?.data ?? parsed;
+        const total = dd?.paging?.total ?? (Array.isArray(dd?.elements) ? dd.elements.length : null);
+        if (total === null || total === undefined) {
+          return { handled: true, metrics: { found: false, note: 'Réactions illisibles dans la réponse LinkedIn' } };
+        }
+        return {
+          handled: true,
+          metrics: {
+            found: true,
+            impressions: 0,
+            likes: toNum(total),
+            comments: 0,
+            shares: 0,
+            clicks: 0,
+            note: 'LinkedIn n\'expose ni impressions ni commentaires pour un post personnel (seules les réactions sont lisibles)',
+          },
+        };
+      }
+
+      default:
+        return { handled: false };
+    }
+  } catch {
+    return { handled: false }; // outil en erreur : l'opérateur IA tente sa chance
   }
 }

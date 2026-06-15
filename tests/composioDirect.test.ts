@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
-import { publishDirect, sendEmailDirect, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
+import { publishDirect, sendEmailDirect, syncMetricsDirect, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
 import app from '../src/app';
 
 let userId: string;
@@ -182,6 +182,9 @@ describe('publishDirect — Instagram', () => {
     });
     const out = await publishDirect(userId, 'instagram', 'Ma légende', 'https://cdn.dev/visuel.png', '', exec);
     expect(out.result).toContain('OK:');
+    // l'id rapporté est celui du MÉDIA publié (réponse de CREATE_POST),
+    // exploitable ensuite par GET_POST_INSIGHTS
+    expect(out.result).toContain('id post-1');
     expect(calls.map((c) => c.slug)).toEqual([
       'INSTAGRAM_GET_USER_INFO', 'INSTAGRAM_CREATE_MEDIA_CONTAINER', 'INSTAGRAM_CREATE_POST',
     ]);
@@ -252,9 +255,9 @@ describe('sendEmailDirect — Gmail', () => {
 });
 
 describe('publishDirect — périmètre et erreurs', () => {
-  it('laisse Reddit, Facebook et les autres à l\'opérateur IA', async () => {
+  it('laisse blog, newsletter et plateformes sans API à l\'opérateur IA', async () => {
     const { exec } = recorder({});
-    for (const platform of ['reddit', 'facebook', 'blog', 'newsletter']) {
+    for (const platform of ['blog', 'newsletter', 'producthunt', 'hackernews']) {
       expect((await publishDirect(userId, platform, 'Texte', null, '', exec)).handled).toBe(false);
     }
   });
@@ -274,5 +277,218 @@ describe('publishDirect — périmètre et erreurs', () => {
     expect(out.handled).toBe(true);
     expect(out.result).toBe('ECHEC: aucun compte X / Twitter connecté — rattachez-le dans Configuration avant de publier.');
     expect(out.result).not.toContain('lf-');
+  });
+});
+
+describe('publishDirect — Reddit', () => {
+  it('post texte : subreddit extrait de la mention r/<nom>, kind self', async () => {
+    const { calls, exec } = recorder({
+      REDDIT_CREATE_REDDIT_POST: { json: { data: { id: 'ab12cd', name: 't3_ab12cd', url: 'https://www.reddit.com/r/startups/comments/ab12cd/mon_post/' } } },
+    });
+    const out = await publishDirect(userId, 'reddit', 'Lancement de LaunchForge sur r/startups aujourd\'hui !', null, 'Mon lancement', exec);
+    expect(out.handled).toBe(true);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('r/startups');
+    expect(out.result).toContain('https://www.reddit.com/r/startups/comments/ab12cd/mon_post/');
+    expect(calls[0].args).toEqual({
+      subreddit: 'startups', title: 'Mon lancement', kind: 'self',
+      text: 'Lancement de LaunchForge sur r/startups aujourd\'hui !',
+    });
+  });
+
+  it('avec média : post lien vers l\'image, texte publié en premier commentaire', async () => {
+    const { calls, exec } = recorder({
+      REDDIT_CREATE_REDDIT_POST: { json: { data: { id: 'xy99zz', name: 't3_xy99zz', url: 'https://www.reddit.com/r/SideProject/comments/xy99zz/demo/' } } },
+      REDDIT_POST_REDDIT_COMMENT: { json: { data: {} } },
+    });
+    const out = await publishDirect(userId, 'reddit', 'La démo complète en une image. r/SideProject', 'https://cdn.dev/demo.png', 'Démo', exec);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('premier commentaire');
+    expect(calls[0].args).toMatchObject({ subreddit: 'SideProject', kind: 'link', url: 'https://cdn.dev/demo.png' });
+    expect(calls[1].slug).toBe('REDDIT_POST_REDDIT_COMMENT');
+    expect(calls[1].args).toEqual({ thing_id: 't3_xy99zz', text: 'La démo complète en une image. r/SideProject' });
+  });
+
+  it('sans mention r/<nom> : ECHEC pédagogique, rien n\'est envoyé', async () => {
+    const { calls, exec } = recorder({});
+    const out = await publishDirect(userId, 'reddit', 'Un post sans cible', null, '', exec);
+    expect(out.handled).toBe(true);
+    expect(out.result).toMatch(/^ECHEC:/);
+    expect(out.result).toContain('r/<nom>');
+    expect(calls.length).toBe(0);
+  });
+});
+
+describe('syncMetricsDirect — lecture déterministe des métriques', () => {
+  it('X/Twitter : public_metrics depuis l\'id du tweet', async () => {
+    const { calls, exec } = recorder({
+      TWITTER_POST_LOOKUP_BY_POST_ID: { data: { public_metrics: { like_count: 5, reply_count: 2, retweet_count: 3, quote_count: 1, impression_count: 100 } } },
+    });
+    const out = await syncMetricsDirect(userId, 'twitter', 'https://x.com/i/web/status/1234567890', exec);
+    expect(out.handled).toBe(true);
+    expect(out.metrics).toMatchObject({ found: true, likes: 5, comments: 2, shares: 4, impressions: 100 });
+    expect(calls[0].args).toEqual({ id: '1234567890', tweet_fields: ['public_metrics'] });
+  });
+
+  it('YouTube : statistics de la vidéo (vues, likes, commentaires)', async () => {
+    // enveloppe response_data constatée sur l'API réelle
+    const { calls, exec } = recorder({
+      YOUTUBE_VIDEO_DETAILS: { response_data: { items: [{ statistics: { viewCount: '1000', likeCount: '50', commentCount: '7' } }] } },
+    });
+    const out = await syncMetricsDirect(userId, 'youtube', 'https://youtu.be/dQw4w9WgXcQ', exec);
+    expect(out.metrics).toMatchObject({ found: true, impressions: 1000, likes: 50, comments: 7 });
+    expect(calls[0].args).toEqual({ id: 'dQw4w9WgXcQ', part: 'statistics' });
+  });
+
+  it('Reddit : score et commentaires via le fullname t3_ du post (forme réelle things[])', async () => {
+    const { calls, exec } = recorder({
+      REDDIT_RETRIEVE_SPECIFIC_COMMENT: { things: [{ data: { score: 42, num_comments: 6, num_crossposts: 1 } }] },
+    });
+    const out = await syncMetricsDirect(userId, 'reddit', 'https://www.reddit.com/r/startups/comments/ab12cd/mon_post/', exec);
+    expect(out.metrics).toMatchObject({ found: true, likes: 42, comments: 6, shares: 1 });
+    expect(calls[0].args).toEqual({ id: 't3_ab12cd' });
+  });
+
+  it('Instagram : insights du média publié (reach, likes, comments, shares)', async () => {
+    const { calls, exec } = recorder({
+      INSTAGRAM_GET_POST_INSIGHTS: { data: [
+        { name: 'reach', values: [{ value: 200 }] },
+        { name: 'likes', values: [{ value: 12 }] },
+        { name: 'comments', values: [{ value: 3 }] },
+        { name: 'shares', values: [{ value: 2 }] },
+      ] },
+    });
+    const out = await syncMetricsDirect(userId, 'instagram', '17895695668004196', exec);
+    expect(out.metrics).toMatchObject({ found: true, impressions: 200, likes: 12, comments: 3, shares: 2 });
+    // métriques explicites (le preset par défaut inclut « impressions », retirée par Meta)
+    expect(calls[0].args).toEqual({ ig_post_id: '17895695668004196', metric: ['reach', 'likes', 'comments', 'shares', 'saved'] });
+  });
+
+  it('LinkedIn : réactions comptées via l\'outil du serveur MCP', async () => {
+    const prev = process.env.COMPOSIO_MCP_URL;
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/partner/composio/test/mcp?user_id=test';
+    try {
+      const { exec } = recorder({});
+      const mcpCalls: { tool: string; args: Record<string, unknown> }[] = [];
+      const mcp: McpToolCaller = async (_uid, tool, args) => {
+        mcpCalls.push({ tool, args });
+        return '{"data": {"paging": {"total": 9}, "elements": []}}';
+      };
+      const out = await syncMetricsDirect(userId, 'linkedin', 'urn:li:share:7021942390034694144', exec, mcp);
+      expect(out.metrics).toMatchObject({ found: true, likes: 9 });
+      expect(mcpCalls[0].tool).toBe('LINKEDIN_LIST_REACTIONS');
+      expect(mcpCalls[0].args).toMatchObject({ entity: 'urn:li:share:7021942390034694144' });
+    } finally {
+      if (prev === undefined) delete process.env.COMPOSIO_MCP_URL; else process.env.COMPOSIO_MCP_URL = prev;
+    }
+  });
+
+  it('référence inexploitable ou plateforme inconnue : main à l\'opérateur IA', async () => {
+    const { exec } = recorder({});
+    expect((await syncMetricsDirect(userId, 'twitter', 'pas-une-reference', exec)).handled).toBe(false);
+    expect((await syncMetricsDirect(userId, 'facebook', 'https://facebook.com/x', exec)).handled).toBe(false);
+  });
+});
+
+describe('publishDirect — Facebook (Page)', () => {
+  it('texte : résout la première Page gérée (cache) puis CREATE_POST', async () => {
+    const { calls, exec } = recorder({
+      FACEBOOK_GET_USER_PAGES: { data: [{ id: '101010101010', name: 'LaunchForge' }] },
+      FACEBOOK_CREATE_POST: { id: '101010101010_777' },
+    });
+    const out = await publishDirect(userId, 'facebook', 'Mon annonce', null, '', exec);
+    expect(out.handled).toBe(true);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('LaunchForge');
+    expect(out.result).toContain('https://www.facebook.com/101010101010_777');
+    expect(calls.map((c) => c.slug)).toEqual(['FACEBOOK_GET_USER_PAGES', 'FACEBOOK_CREATE_POST']);
+    expect(calls[1].args).toEqual({ page_id: '101010101010', message: 'Mon annonce' });
+
+    // 2e publication : la Page vient du cache
+    const second = recorder({ FACEBOOK_CREATE_POST: { id: '101010101010_778' } });
+    await publishDirect(userId, 'facebook', 'Autre annonce', null, '', second.exec);
+    expect(second.calls.map((c) => c.slug)).toEqual(['FACEBOOK_CREATE_POST']);
+  });
+
+  it('image : CREATE_PHOTO_POST avec l\'URL publique', async () => {
+    const { calls, exec } = recorder({ FACEBOOK_CREATE_PHOTO_POST: { post_id: '101010101010_779' } });
+    const out = await publishDirect(userId, 'facebook', 'Légende', 'https://cdn.dev/visuel.png', '', exec);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toEqual({ page_id: '101010101010', url: 'https://cdn.dev/visuel.png', message: 'Légende' });
+  });
+
+  it('vidéo : CREATE_VIDEO_POST avec file_url, titre et description', async () => {
+    const { calls, exec } = recorder({ FACEBOOK_CREATE_VIDEO_POST: { id: '101010101010_780' } });
+    const out = await publishDirect(userId, 'facebook', 'La démo en vidéo', 'https://cdn.dev/demo.mp4', 'Démo produit', exec);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toEqual({
+      page_id: '101010101010', file_url: 'https://cdn.dev/demo.mp4',
+      description: 'La démo en vidéo', title: 'Démo produit',
+    });
+  });
+});
+
+describe('publishDirect — TikTok', () => {
+  it('vidéo : PUBLISH_VIDEO puis suivi du statut jusqu\'à PUBLISH_COMPLETE', async () => {
+    const { calls, exec } = recorder({
+      TIKTOK_PUBLISH_VIDEO: { publish_id: 'v_pub_42' },
+      TIKTOK_FETCH_PUBLISH_STATUS: { status: 'PUBLISH_COMPLETE' },
+    });
+    const out = await publishDirect(userId, 'tiktok', 'Ma vidéo #launchforge', 'https://cdn.dev/clip.mp4', '', exec);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('publiée');
+    expect(calls[0].args).toMatchObject({
+      video_url: 'https://cdn.dev/clip.mp4',
+      caption: 'Ma vidéo #launchforge',
+      privacy_level: 'PUBLIC_TO_EVERYONE',
+    });
+    expect(calls[1].args).toEqual({ publish_id: 'v_pub_42' });
+  }, 15000);
+
+  it('image : POST_PHOTO en DIRECT_POST', async () => {
+    const { calls, exec } = recorder({ TIKTOK_POST_PHOTO: { publish_id: 'p_pub_7' } });
+    const out = await publishDirect(userId, 'tiktok', 'Mon visuel', 'https://cdn.dev/visuel.webp', 'Titre', exec);
+    expect(out.result).toContain('OK:');
+    expect(calls[0].args).toMatchObject({
+      photo_images: ['https://cdn.dev/visuel.webp'],
+      photo_cover_index: 0,
+      post_mode: 'DIRECT_POST',
+      title: 'Titre',
+      description: 'Mon visuel',
+    });
+  });
+
+  it('refuse sans média', async () => {
+    const { calls, exec } = recorder({});
+    const out = await publishDirect(userId, 'tiktok', 'Texte seul', null, '', exec);
+    expect(out.result).toMatch(/^ECHEC:/);
+    expect(calls.length).toBe(0);
+  });
+
+  it('vidéo refusée par TikTok : ECHEC avec la raison', async () => {
+    const { exec } = recorder({
+      TIKTOK_PUBLISH_VIDEO: { publish_id: 'v_pub_43' },
+      TIKTOK_FETCH_PUBLISH_STATUS: { status: 'FAILED', fail_reason: 'video_too_long' },
+    });
+    const out = await publishDirect(userId, 'tiktok', 'Vidéo', 'https://cdn.dev/long.mp4', '', exec);
+    expect(out.result).toMatch(/^ECHEC:/);
+    expect(out.result).toContain('video_too_long');
+  }, 15000);
+});
+
+describe('syncMetricsDirect — Facebook', () => {
+  it('résumés likes/commentaires/partages via GET_POST (id pageId_postId)', async () => {
+    const { calls, exec } = recorder({
+      FACEBOOK_GET_POST: {
+        id: '101010101010_777',
+        likes: { summary: { total_count: 11 } },
+        comments: { summary: { total_count: 4 } },
+        shares: { count: 2 },
+      },
+    });
+    const out = await syncMetricsDirect(userId, 'facebook', 'https://www.facebook.com/101010101010_777', exec);
+    expect(out.handled).toBe(true);
+    expect(out.metrics).toMatchObject({ found: true, likes: 11, comments: 4, shares: 2 });
+    expect(calls[0].args).toMatchObject({ post_id: '101010101010_777' });
   });
 });

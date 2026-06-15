@@ -9,7 +9,7 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured, getModel } from '../services/aiClient';
 import { isComposioConfigured } from '../services/mcpClient';
-import { composioUserIdFor, createConnectLink, disconnectToolkit } from '../services/composioConnect';
+import { composioUserIdFor, createConnectLink, disconnectToolkit, NeedsOwnAppError } from '../services/composioConnect';
 import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/telegramBot';
 import { availableThemes, generateCustomTheme, CUSTOM_THEMES, BUILTIN_THEMES } from '../services/decks';
 
@@ -121,8 +121,11 @@ router.get('/status', async (req: Request, res: Response) => {
 // ── POST /api/config/connect ─────────────────────────────────────────────────
 // Prépare la connexion d'un compte (config d'auth + toolkit sur le serveur MCP)
 // et renvoie le lien d'autorisation OAuth à ouvrir dans le navigateur.
+// Certains toolkits (X/Twitter, TikTok) n'ont pas d'auth gérée par Composio :
+// la route répond alors 409 NEEDS_OWN_APP avec les champs à fournir, et
+// l'appel suivant porte `credentials` (identifiants de l'app développeur).
 router.post('/connect', async (req: Request, res: Response) => {
-  const { toolkit } = req.body as { toolkit?: string };
+  const { toolkit, credentials } = req.body as { toolkit?: string; credentials?: Record<string, unknown> };
   if (!toolkit || typeof toolkit !== 'string' || !/^[a-z0-9_-]{2,40}$/i.test(toolkit)) {
     return res.status(400).json({ success: false, error: 'toolkit is required' });
   }
@@ -134,11 +137,20 @@ router.post('/connect', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
   }
   try {
-    const redirectUrl = await createConnectLink(req.user!.userId, toolkit.toLowerCase());
+    const redirectUrl = await createConnectLink(req.user!.userId, toolkit.toLowerCase(), creds);
     // Le statut de CET utilisateur devra refléter la connexion dès l'autorisation
     toolkitCache.delete(composioUserIdFor(req.user!.userId) ?? '__none__');
     res.json({ success: true, data: { redirectUrl } });
   } catch (err) {
+    if (err instanceof NeedsOwnAppError) {
+      return res.status(409).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+        fields: err.fields,
+        callbackUrl: err.callbackUrl,
+      });
+    }
     res.status(502).json({
       success: false,
       error: err instanceof Error ? err.message : 'Connexion impossible',
