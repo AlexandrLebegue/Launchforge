@@ -19,6 +19,8 @@ import ContentHubPage from './pages/ContentHubPage';
 import CalendarPage from './pages/CalendarPage';
 import KnowledgePage from './pages/KnowledgePage';
 import TeamsPage from './pages/TeamsPage';
+import AdminPage from './pages/AdminPage';
+import { isAdminEmail } from './utils/admin';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -70,6 +72,9 @@ export default function App() {
             <Route path="performance" element={<PerformancePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
             <Route path="teams" element={<TeamsPage />} />
+            {isAdminEmail(user.email) && (
+              <Route path="admin" element={<AdminPage />} />
+            )}
           </>
         )}
       </Route>

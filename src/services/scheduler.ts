@@ -12,7 +12,7 @@
  */
 
 import { storage } from './storage';
-import { publishViaComposio, extractPublishedRef, isComposioConfigured } from './composio';
+import { publishViaComposio, resolvePublishedUrl, isComposioConfigured } from './composio';
 import { isAIConfigured } from './aiClient';
 import { markPublished, cleanupPublishedVideo } from './postPublisher';
 import { syncPostsToCalendarInBackground } from './calendarSync';
@@ -50,10 +50,11 @@ export async function processDuePosts(
 
       if (result.trim().toUpperCase().startsWith('OK')) {
         const { next } = markPublished(fresh);
-        // L'URL/id du post créé (renvoyé par l'outil de publication) est
-        // enregistré : la synchro des métriques n'a plus besoin de saisie manuelle
-        const ref = extractPublishedRef(result);
-        if (ref) storage.updatePost(fresh.id, { externalUrl: ref });
+        // URL cliquable du post créé (reconstruite si besoin) : l'utilisateur
+        // peut constater le résultat depuis le Hub et les métriques se
+        // synchronisent sans saisie manuelle.
+        const url = resolvePublishedUrl(fresh.platform, result);
+        if (url) storage.updatePost(fresh.id, { externalUrl: url });
         // La plateforme a récupéré la vidéo : on libère le disque du serveur
         cleanupPublishedVideo(storage.getPostById(fresh.id)!);
         published += 1;

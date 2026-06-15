@@ -426,7 +426,16 @@ Si les données sont maigres (< 5 posts avec métriques), dis-le et concentre le
     maxTokens: 1200,
   });
 
-  return { report: result.content.trim(), stats };
+  const report = result.content.trim();
+  // Archive l'analyse pour pouvoir la relire plus tard (historique par projet)
+  storage.saveCampaignReport({
+    id: uuid(),
+    userId,
+    planId,
+    report,
+    createdAt: new Date().toISOString(),
+  });
+  return { report, stats };
 }
 
 // ── Rapport hebdomadaire automatique (Telegram, le lundi) ────────────────────

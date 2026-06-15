@@ -7,7 +7,8 @@ import { v4 as uuid } from 'uuid';
 import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
-import { isComposioConfigured, syncMetricsViaComposio, publishViaComposio, extractPublishedRef } from '../services/composio';
+import { isComposioConfigured, syncMetricsViaComposio, publishViaComposio, resolvePublishedUrl } from '../services/composio';
+import { logEvent } from '../services/adminLogger';
 import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { analyzePost } from '../services/analytics';
@@ -197,6 +198,7 @@ router.post('/:id/publish', (req: Request, res: Response) => {
   // La prochaine occurrence repart dans le calendrier personnel
   if (next) syncPostsToCalendarInBackground([next]);
 
+  logEvent(post.userId, 'post.published', post.id, { platform: post.platform, title: post.title });
   res.json({ success: true, data: { post: published, next } });
 });
 
@@ -314,15 +316,15 @@ router.post('/:id/publish-now', async (req: Request, res: Response) => {
     }
 
     const { next } = markPublished(storage.getPostById(target.id)!);
-    const ref = extractPublishedRef(result);
-    if (ref) storage.updatePost(target.id, { externalUrl: ref });
+    const url = resolvePublishedUrl(target.platform, result);
+    if (url) storage.updatePost(target.id, { externalUrl: url });
     cleanupPublishedVideo(storage.getPostById(target.id)!);
     if (next) syncPostsToCalendarInBackground([next]);
     results.push({
       platform: target.platform,
       ok: true,
       message: result.replace(/^OK:\s*/i, '').trim(),
-      url: ref && /^https?:/i.test(ref) ? ref : undefined,
+      url: url && /^https?:/i.test(url) ? url : undefined,
     });
   }
 
@@ -335,6 +337,11 @@ router.post('/:id/publish-now', async (req: Request, res: Response) => {
   if (!anyOk) {
     return res.status(502).json({ success: false, error: results[0]?.message ?? 'Publication échouée', data: payload });
   }
+  logEvent(post.userId, 'post.published', post.id, {
+    platform: post.platform,
+    title: post.title,
+    platforms: results.filter((r) => r.ok).map((r) => r.platform),
+  });
   res.json({ success: true, data: payload });
 });
 

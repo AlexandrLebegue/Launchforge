@@ -78,6 +78,7 @@ export class Storage {
       agents: all(`SELECT id, name, platform, approval_mode, status, lastRunAt, createdAt FROM agents WHERE userId = ?`),
       agentRuns: all(`SELECT r.* FROM agent_runs r JOIN agents a ON a.id = r.agentId WHERE a.userId = ?`),
       decks: all(`SELECT * FROM decks WHERE userId = ?`),
+      campaignReports: all(`SELECT * FROM campaign_reports WHERE userId = ?`),
       onboardingSessions: all(`SELECT * FROM onboarding_sessions WHERE userId = ?`),
       reminders: all(`SELECT * FROM reminders WHERE userId = ?`),
       telegramLinks: all(`SELECT chatId, createdAt FROM telegram_links WHERE userId = ?`),
@@ -101,7 +102,7 @@ export class Storage {
     db.transaction(() => {
       db.prepare(`DELETE FROM agent_runs WHERE agentId IN (SELECT id FROM agents WHERE userId = ?)`).run(userId);
       for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'knowledge_sources', 'contacts',
-                           'telegram_links', 'reminders', 'decks', 'onboarding_sessions', 'plans']) {
+                           'telegram_links', 'reminders', 'decks', 'campaign_reports', 'onboarding_sessions', 'plans']) {
         db.prepare(`DELETE FROM ${table} WHERE userId = ?`).run(userId);
       }
       // Équipes possédées : on supprime l'équipe, ses invitations et ses membres
@@ -292,6 +293,20 @@ export class Storage {
     getDb().prepare(`DELETE FROM decks WHERE id = ?`).run(id);
   }
 
+  // ── Rapports de campagne archivés (historique des analyses IA) ───────────
+
+  saveCampaignReport(r: { id: string; userId: string; planId: string | null; report: string; createdAt: string }): void {
+    getDb()
+      .prepare(`INSERT INTO campaign_reports (id, userId, planId, report, createdAt) VALUES (?, ?, ?, ?, ?)`)
+      .run(r.id, r.userId, r.planId, r.report, r.createdAt);
+  }
+
+  getCampaignReportsByPlan(userId: string, planId: string | null): { id: string; report: string; createdAt: string }[] {
+    return getDb()
+      .prepare(`SELECT id, report, createdAt FROM campaign_reports WHERE userId = ? AND planId IS ? ORDER BY createdAt DESC LIMIT 12`)
+      .all(userId, planId) as any[];
+  }
+
   // ── Rapport de campagne hebdomadaire ─────────────────────────────────────
 
   /** Utilisateurs avec un chat Telegram lié dont le rapport hebdo est dû (> 6 jours) */
@@ -321,6 +336,37 @@ export class Storage {
   getMetricsSyncMinutes(userId: string): number {
     const row = getDb().prepare(`SELECT metricsSyncMinutes FROM users WHERE id = ?`).get(userId) as any;
     return row?.metricsSyncMinutes ?? 0;
+  }
+
+  // ── Mise à jour automatique de la base de connaissances ───────────────────
+
+  /** Intervalle de mise à jour de la base de connaissances (minutes, 0 = off) */
+  setKnowledgeSyncMinutes(userId: string, minutes: number): void {
+    getDb().prepare(`UPDATE users SET knowledgeSyncMinutes = ? WHERE id = ?`).run(minutes, userId);
+  }
+
+  getKnowledgeSyncMinutes(userId: string): number {
+    const row = getDb().prepare(`SELECT knowledgeSyncMinutes FROM users WHERE id = ?`).get(userId) as any;
+    return row?.knowledgeSyncMinutes ?? 0;
+  }
+
+  /**
+   * Sources à ré-analyser : leur propriétaire a activé la mise à jour
+   * automatique et la fenêtre d'intervalle est écoulée (jamais synchronisée
+   * incluse). Les plus anciennes d'abord. julianday digère les dates ISO.
+   */
+  getKnowledgeSyncDueSources(nowIso: string, limit = 3): KnowledgeSource[] {
+    return getDb()
+      .prepare(
+        `SELECT s.* FROM knowledge_sources s
+         JOIN users u ON u.id = s.userId
+         WHERE u.knowledgeSyncMinutes > 0
+           AND (s.lastSyncedAt IS NULL
+                OR julianday(s.lastSyncedAt) <= julianday(?) - u.knowledgeSyncMinutes / 1440.0)
+         ORDER BY s.lastSyncedAt IS NOT NULL, s.lastSyncedAt ASC
+         LIMIT ?`
+      )
+      .all(nowIso, limit) as KnowledgeSource[];
   }
 
   /**
@@ -1275,6 +1321,81 @@ export class Storage {
       startedAt:   row.startedAt,
       completedAt: row.completedAt ?? null,
     };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Administration (founders only — lecture seule)
+  // ──────────────────────────────────────────────────────────────
+
+  adminGetStats(): import('../types').AdminStats {
+    const db = getDb();
+    const now = new Date();
+    const d7  = new Date(now.getTime() - 7  * 24 * 3600 * 1000).toISOString();
+    const d30 = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString();
+    const n = (sql: string, ...p: unknown[]) =>
+      (db.prepare(sql).get(...p) as { n: number }).n;
+    return {
+      totalUsers:           n(`SELECT COUNT(*) as n FROM users`),
+      newUsersLast7d:       n(`SELECT COUNT(*) as n FROM users WHERE createdAt >= ?`, d7),
+      activeUsersLast7d:    n(`SELECT COUNT(DISTINCT userId) as n FROM admin_events WHERE createdAt >= ?`, d7),
+      activeUsersLast30d:   n(`SELECT COUNT(DISTINCT userId) as n FROM admin_events WHERE createdAt >= ?`, d30),
+      totalPlans:           n(`SELECT COUNT(*) as n FROM plans`),
+      totalPosts:           n(`SELECT COUNT(*) as n FROM posts`),
+      postsLast7d:          n(`SELECT COUNT(*) as n FROM posts WHERE createdAt >= ?`, d7),
+      publishedPostsLast7d: n(`SELECT COUNT(*) as n FROM posts WHERE status = 'published' AND updatedAt >= ?`, d7),
+      totalKnowledgeEntries:n(`SELECT COUNT(*) as n FROM knowledge`),
+    };
+  }
+
+  adminGetAllUsers(): import('../types').AdminUserSummary[] {
+    return (getDb()
+      .prepare(
+        `SELECT u.id, u.email, u.name, u.createdAt,
+                (SELECT COUNT(*) FROM plans   WHERE userId = u.id) as planCount,
+                (SELECT COUNT(*) FROM posts   WHERE userId = u.id) as postCount,
+                (SELECT COUNT(*) FROM posts   WHERE userId = u.id AND status = 'published') as publishedPosts,
+                (SELECT MAX(createdAt) FROM admin_events WHERE userId = u.id) as lastActivityAt
+         FROM users u
+         ORDER BY u.createdAt DESC`
+      )
+      .all() as import('../types').AdminUserSummary[]);
+  }
+
+  adminGetActivity(limit = 100, before?: string): import('../types').AdminEvent[] {
+    const cursor = before ?? new Date(Date.now() + 60_000).toISOString();
+    return (getDb()
+      .prepare(
+        `SELECT ae.id, ae.userId, ae.action, ae.target, ae.metadata, ae.createdAt,
+                u.email as userEmail, u.name as userName
+         FROM admin_events ae
+         JOIN users u ON u.id = ae.userId
+         WHERE ae.createdAt < ?
+         ORDER BY ae.createdAt DESC
+         LIMIT ?`
+      )
+      .all(cursor, limit) as any[])
+      .map((r) => ({
+        ...r,
+        metadata: r.metadata ? JSON.parse(r.metadata) : null,
+      })) as import('../types').AdminEvent[];
+  }
+
+  adminGetUserActivity(userId: string, limit = 50): import('../types').AdminEvent[] {
+    return (getDb()
+      .prepare(
+        `SELECT ae.id, ae.userId, ae.action, ae.target, ae.metadata, ae.createdAt,
+                u.email as userEmail, u.name as userName
+         FROM admin_events ae
+         JOIN users u ON u.id = ae.userId
+         WHERE ae.userId = ?
+         ORDER BY ae.createdAt DESC
+         LIMIT ?`
+      )
+      .all(userId, limit) as any[])
+      .map((r) => ({
+        ...r,
+        metadata: r.metadata ? JSON.parse(r.metadata) : null,
+      })) as import('../types').AdminEvent[];
   }
 }
 

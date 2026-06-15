@@ -9,10 +9,11 @@
  * Anti-hallucination : l'analyse ne porte QUE sur le texte réellement téléchargé.
  */
 
+import { randomUUID } from 'crypto';
 import * as cheerio from 'cheerio';
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import { storage } from './storage';
-import { KnowledgeCategory, KnowledgeEntry, KnowledgeSourceType, KnowledgeSuggestion } from '../types';
+import { KnowledgeCategory, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, KnowledgeSuggestion } from '../types';
 
 const UA = 'Mozilla/5.0 (compatible; LaunchForge/1.0; +https://launchforge.dev)';
 
@@ -256,4 +257,105 @@ export async function analyzeSourcesForKnowledge(
   });
 
   return parseSuggestions(result.content, existing);
+}
+
+// ── Application des propositions à la base ─────────────────────────────────────
+
+const sameProject = (a: string | null, b: string | null) => (a ?? null) === (b ?? null);
+
+/**
+ * Écrit les propositions dans la base du projet (create/update). Partagé par la
+ * validation manuelle (route /sync/apply) et la mise à jour automatique.
+ * Les fiches d'un autre projet/propriétaire ne sont jamais touchées.
+ */
+export function applySuggestionsToKnowledge(
+  ownerUserId: string,
+  planId: string | null,
+  suggestions: KnowledgeSuggestion[],
+): KnowledgeEntry[] {
+  const applied: KnowledgeEntry[] = [];
+  const now = new Date().toISOString();
+
+  for (const s of suggestions) {
+    const title = typeof s?.title === 'string' ? s.title.trim() : '';
+    const content = typeof s?.content === 'string' ? s.content.trim() : '';
+    if (!title || !content) continue;
+    const category: KnowledgeCategory = CATEGORIES.includes(s.category) ? s.category : 'other';
+
+    // Mise à jour d'une fiche existante du même projet
+    if (s.action === 'update' && typeof s.targetId === 'string') {
+      const existing = storage.getKnowledgeById(s.targetId);
+      if (existing && existing.userId === ownerUserId && sameProject(existing.planId, planId)) {
+        storage.updateKnowledge(existing.id, { title, content, category });
+        const updated = storage.getKnowledgeById(existing.id);
+        if (updated) applied.push(updated);
+        continue;
+      }
+      // cible invalide / autre projet → on bascule en création
+    }
+
+    const entry: KnowledgeEntry = {
+      id: randomUUID(), userId: ownerUserId, planId,
+      category, title: title.slice(0, 200), content: content.slice(0, 8000),
+      createdAt: now, updatedAt: now,
+    };
+    storage.saveKnowledge(entry);
+    applied.push(entry);
+  }
+
+  return applied;
+}
+
+// ── Cycle complet : récupération → analyse → application ───────────────────────
+
+/** Récupérateurs/analyseur injectables (tests : pas de réseau ni d'IA) */
+export interface SyncDeps {
+  fetchGitHub?: (url: string) => Promise<FetchedSource>;
+  fetchWebsite?: (url: string, crawl: boolean) => Promise<FetchedSource>;
+  analyze?: (ownerUserId: string, planId: string | null, fetched: FetchedSource[]) => Promise<KnowledgeSuggestion[]>;
+}
+
+export interface SyncSourcesResult {
+  applied: KnowledgeEntry[];
+  /** Ids des sources réellement récupérées (à horodater par l'appelant) */
+  syncedSourceIds: string[];
+  errors: { id: string; url: string; error: string }[];
+}
+
+/**
+ * Récupère le contenu réel des sources, demande à l'IA d'en extraire des fiches
+ * et les applique directement à la base. Utilisé par la mise à jour manuelle
+ * « maintenant » et par le worker automatique. N'horodate PAS les sources :
+ * l'appelant décide (le worker marque avant pour éviter les boucles de retry).
+ */
+export async function syncSourcesNow(
+  ownerUserId: string,
+  planId: string | null,
+  sources: KnowledgeSource[],
+  crawl = false,
+  deps: SyncDeps = {},
+): Promise<SyncSourcesResult> {
+  const fetchGh = deps.fetchGitHub ?? fetchGitHubKnowledge;
+  const fetchWeb = deps.fetchWebsite ?? fetchWebsiteKnowledge;
+  const analyze = deps.analyze ?? analyzeSourcesForKnowledge;
+
+  const fetched: FetchedSource[] = [];
+  const syncedSourceIds: string[] = [];
+  const errors: { id: string; url: string; error: string }[] = [];
+
+  for (const src of sources) {
+    try {
+      const f = src.type === 'github' ? await fetchGh(src.url) : await fetchWeb(src.url, crawl);
+      fetched.push(f);
+      syncedSourceIds.push(src.id);
+    } catch (e) {
+      errors.push({ id: src.id, url: src.url, error: e instanceof Error ? e.message : 'Échec de récupération' });
+    }
+  }
+
+  if (fetched.length === 0) return { applied: [], syncedSourceIds, errors };
+
+  const suggestions = await analyze(ownerUserId, planId, fetched);
+  const applied = applySuggestionsToKnowledge(ownerUserId, planId, suggestions);
+  return { applied, syncedSourceIds, errors };
 }

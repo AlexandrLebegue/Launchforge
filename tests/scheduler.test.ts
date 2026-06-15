@@ -112,6 +112,16 @@ describe('Worker de publication automatique', () => {
     storage.deletePost(post.id);
   });
 
+  it('LinkedIn auto-publié : reconstruit l\'URL cliquable du feed depuis l\'URN renvoyé', async () => {
+    const post = await createDuePost({ platform: 'linkedin', title: 'Post LinkedIn auto' });
+    await processDuePosts(new Date(), async () => 'OK: post LinkedIn publié urn:li:share:7123456789 (image jointe)');
+    const fresh = storage.getPostById(post.id)!;
+    expect(fresh.status).toBe('published');
+    // URN seul → URL du feed, cliquable depuis le Hub ET lisible par les métriques
+    expect(fresh.externalUrl).toBe('https://www.linkedin.com/feed/update/urn:li:share:7123456789/');
+    storage.deletePost(post.id);
+  });
+
   it('publie les posts dus quand le publieur répond OK', async () => {
     const post = await createDuePost();
     const published = await processDuePosts(new Date(), async () => 'OK: publié (id 123)');

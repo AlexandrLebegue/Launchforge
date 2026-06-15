@@ -1,11 +1,12 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { BookOpen, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, RefreshCw, CheckCircle2, Settings } from 'lucide-react';
 import {
   getKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, getOverview,
-  KnowledgeEntry, KnowledgeCategory,
+  getKnowledgeSources, runKnowledgeSync, getConfigStatus,
+  KnowledgeEntry, KnowledgeCategory, KnowledgeSource,
 } from '../api/client';
 import ContactsPanel from '../components/ContactsPanel';
-import KnowledgeSyncModal from '../components/KnowledgeSyncModal';
 
 const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint: string }[] = [
   { value: 'company',  label: 'Entreprise',       icon: '', hint: 'Histoire, mission, valeurs, équipe…' },
@@ -19,6 +20,14 @@ const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint:
 ];
 
 const catMeta = (c: KnowledgeCategory) => CATEGORIES.find((x) => x.value === c) ?? CATEGORIES[CATEGORIES.length - 1];
+
+/** Cadence de mise à jour automatique en clair (cf. Configuration) */
+const syncFreqLabel = (m: number): string =>
+  ({ 1440: 'tous les jours', 4320: 'tous les 3 jours', 10080: 'toutes les semaines' } as Record<number, string>)[m]
+  ?? `tous les ${Math.max(1, Math.round(m / 1440))} jours`;
+
+const fmtSyncDate = (iso: string | null): string =>
+  iso ? new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'jamais';
 
 interface EditorProps {
   entry: KnowledgeEntry | null;
@@ -129,8 +138,12 @@ export default function KnowledgePage() {
   const [editing,  setEditing]  = useState<KnowledgeEntry | null | 'new'>(null);
   const [catFilter, setCatFilter] = useState<'all' | KnowledgeCategory>('all');
   const [search,   setSearch]   = useState('');
-  const [showSync, setShowSync] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
+  // Sources de la base (configurées dans Configuration) + mise à jour « maintenant »
+  const [sources,       setSources]       = useState<KnowledgeSource[]>([]);
+  const [kbSyncMinutes, setKbSyncMinutes] = useState(0);
+  const [syncing,       setSyncing]       = useState(false);
+  const [syncMsg,       setSyncMsg]       = useState('');
 
   useEffect(() => {
     getKnowledge().then((res) => {
@@ -141,6 +154,9 @@ export default function KnowledgePage() {
     getOverview().then((res) => {
       if (res.success && res.data) setReadOnly(res.data.project?.role === 'viewer');
     });
+    // État de la configuration : sources déclarées + fréquence de mise à jour auto
+    getKnowledgeSources().then((res) => { if (res.success && res.data) setSources(res.data); });
+    getConfigStatus().then((res) => { if (res.success && res.data) setKbSyncMinutes(res.data.knowledgeSync.intervalMinutes); });
   }, []);
 
   const handleSaved = (saved: KnowledgeEntry) => {
@@ -154,6 +170,27 @@ export default function KnowledgePage() {
   const handleApplied = (applied: KnowledgeEntry[]) => {
     const appliedIds = new Set(applied.map((e) => e.id));
     setEntries((prev) => [...applied, ...prev.filter((e) => !appliedIds.has(e.id))]);
+  };
+
+  const handleRunSync = async () => {
+    setSyncing(true);
+    setSyncMsg('');
+    const res = await runKnowledgeSync();
+    setSyncing(false);
+    if (res.success && res.data) {
+      handleApplied(res.data.applied);
+      const list = await getKnowledgeSources();
+      if (list.success && list.data) setSources(list.data);
+      const n = res.data.applied.length;
+      const failed = res.data.errors?.length ?? 0;
+      setSyncMsg(
+        n > 0 ? `✓ ${n} fiche${n > 1 ? 's' : ''} mise${n > 1 ? 's' : ''} à jour.`
+        : failed ? 'Sources illisibles pour le moment — réessayez plus tard.'
+        : 'Aucune nouveauté détectée dans vos sources.'
+      );
+    } else {
+      setSyncMsg(res.error || 'Mise à jour impossible.');
+    }
   };
 
   const handleDelete = async (entry: KnowledgeEntry) => {
@@ -171,6 +208,12 @@ export default function KnowledgePage() {
     return true;
   });
 
+  // Dernière mise à jour : source synchronisée la plus récente
+  const lastSync = sources.reduce<string | null>(
+    (acc, s) => (s.lastSyncedAt && (!acc || s.lastSyncedAt > acc) ? s.lastSyncedAt : acc),
+    null,
+  );
+
   if (loading) return <div className="loading">⏳ Chargement de la base de connaissances…</div>;
 
   return (
@@ -186,9 +229,11 @@ export default function KnowledgePage() {
         </div>
         {tab === 'knowledge' && !readOnly && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-ghost" data-tour="kb-sync" onClick={() => setShowSync(true)}>
-              <RefreshCw size={15} /> Mettre à jour
-            </button>
+            {sources.length > 0 && (
+              <button className="btn btn-ghost" data-tour="kb-sync" onClick={handleRunSync} disabled={syncing}>
+                <RefreshCw size={15} /> {syncing ? 'Mise à jour…' : 'Mettre à jour maintenant'}
+              </button>
+            )}
             <button className="btn btn-primary" data-tour="kb-new" onClick={() => setEditing('new')}>＋ Nouvelle fiche</button>
           </div>
         )}
@@ -207,6 +252,42 @@ export default function KnowledgePage() {
         <ContactsPanel />
       ) : (
       <>
+      {/* État de la mise à jour automatique depuis les sources (réglée dans Configuration) */}
+      {sources.length > 0 ? (
+        <div className="kb-status-box" data-tour="kb-sync-status">
+          <CheckCircle2 size={18} className="kb-status-icon" />
+          <div className="kb-status-main">
+            <div className="kb-status-title">
+              {sources.length} source{sources.length > 1 ? 's' : ''} connectée{sources.length > 1 ? 's' : ''} — base enrichie automatiquement
+            </div>
+            <div className="kb-status-meta">
+              Dernière mise à jour : <strong>{fmtSyncDate(lastSync)}</strong>
+              {kbSyncMinutes > 0
+                ? <> · automatique {syncFreqLabel(kbSyncMinutes)}</>
+                : <> · <span className="kb-status-warn">mise à jour automatique désactivée</span></>}
+            </div>
+            {syncMsg && <div className="kb-status-msg">{syncMsg}</div>}
+          </div>
+          <Link to="/config" className="btn btn-ghost btn-sm kb-status-action">
+            <Settings size={14} /> Configurer
+          </Link>
+        </div>
+      ) : (
+        <div className="kb-status-box kb-status-box-muted" data-tour="kb-sync-status">
+          <Settings size={18} className="kb-status-icon" />
+          <div className="kb-status-main">
+            <div className="kb-status-title">Enrichissez votre base automatiquement</div>
+            <div className="kb-status-meta">
+              Connectez un dépôt GitHub ou votre site web dans Configuration : l'IA en extrait
+              des fiches et les tient à jour toute seule.
+            </div>
+          </div>
+          <Link to="/config" className="btn btn-primary btn-sm kb-status-action">
+            <Settings size={14} /> Configurer
+          </Link>
+        </div>
+      )}
+
       {/* Filtres par catégorie */}
       <div className="knowledge-cats" data-tour="kb-cats">
         <button className={`knowledge-cat${catFilter === 'all' ? ' active' : ''}`} onClick={() => setCatFilter('all')}>
@@ -285,9 +366,6 @@ export default function KnowledgePage() {
         />
       )}
 
-      {showSync && (
-        <KnowledgeSyncModal onClose={() => setShowSync(false)} onApplied={handleApplied} />
-      )}
       </>
       )}
     </div>

@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from '../services/password';
 import { signToken, requireAuth } from '../middleware/auth';
 import { authRateLimit } from '../middleware/rateLimit';
 import { storage } from '../services/storage';
+import { logEvent } from '../services/adminLogger';
 import { ApiResponse, User, AuthPayload } from '../types';
 
 const router = Router();
@@ -48,6 +49,7 @@ router.post('/register', registerLimiter, (req: Request, res: Response) => {
     // Chaque nouveau compte a sa propre entité Composio (connexions isolées) ;
     // les comptes créés avant le multi-utilisateur restent sur l'identité legacy.
     storage.setComposioUserId(id, `lf-${id}`);
+    logEvent(id, 'user.register', id, { email });
 
     const token = signToken({ userId: id, email });
     const response: ApiResponse<{ user: User; token: string }> = { success: true, data: { user, token } };
@@ -86,6 +88,7 @@ router.post('/login', loginLimiter, (req: Request, res: Response) => {
 
     const token = signToken({ userId: user.id, email: user.email });
     const userData: User = { id: user.id, email: user.email, name: user.name, createdAt: user.createdAt };
+    logEvent(user.id, 'user.login', user.id, { email: user.email });
 
     const response: ApiResponse<{ user: User; token: string }> = { success: true, data: { user: userData, token } };
     res.json(response);
@@ -222,6 +225,7 @@ router.delete('/account', deleteLimiter, requireAuth, async (req: Request, res: 
   } catch { /* best-effort */ }
 
   console.log(`🗑️  RGPD : compte ${me.email} supprimé (${mediaFiles.length} média(s), ${composioRemoved} compte(s) Composio)`);
+  logEvent(me.id, 'user.delete', me.id, { email: me.email });
   res.json({ success: true, data: { deleted: true } });
 });
 

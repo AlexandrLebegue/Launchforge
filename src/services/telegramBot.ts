@@ -18,7 +18,7 @@ import { generateContent } from './contentAssistant';
 import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
 import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from './postPublisher';
-import { publishViaComposio, syncMetricsViaComposio, extractPublishedRef, isComposioConfigured, runMcpTask } from './composio';
+import { publishViaComposio, syncMetricsViaComposio, resolvePublishedUrl, isComposioConfigured, runMcpTask } from './composio';
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
 import { generateDeckMarkdown, themeForUser } from './decks';
@@ -653,11 +653,15 @@ export async function executeTool(userId: string, _chatId: string, name: string,
       const result = await publishViaComposio(userId, post.platform, post.content, post.imageUrl, post.title);
       if (result.trim().toUpperCase().startsWith('OK')) {
         markPublished(post);
-        // URL/id du post créé enregistré pour la synchro des métriques
-        const ref = extractPublishedRef(result);
-        if (ref) storage.updatePost(post.id, { externalUrl: ref });
+        // URL cliquable du post créé (reconstruite si besoin), enregistrée pour
+        // la synchro des métriques et renvoyée à l'utilisateur pour vérification
+        const url = resolvePublishedUrl(post.platform, result);
+        if (url) storage.updatePost(post.id, { externalUrl: url });
         cleanupPublishedVideo(storage.getPostById(post.id)!);
-        return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}${ref ? `\n🔗 URL enregistrée — les métriques se synchroniseront automatiquement.` : ''}`;
+        const link = url && /^https?:\/\//i.test(url)
+          ? `\n🔗 ${url}`
+          : (url ? `\n🔗 Référence enregistrée — les métriques se synchroniseront automatiquement.` : '');
+        return `Publié sur ${post.platform} : ${result.replace(/^OK:\s*/i, '')}${link}`;
       }
       return `Échec de publication : ${result.replace(/^ECHEC:\s*/i, '')}`;
     }

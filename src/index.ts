@@ -5,6 +5,7 @@ import { initEngine, getDb } from './db';
 import app from './app';
 import { startScheduler } from './services/scheduler';
 import { startMetricsSync } from './services/metricsSync';
+import { startKnowledgeSync } from './services/knowledgeSyncWorker';
 import { startTelegramBot } from './services/telegramBot';
 import { startMediaCleanup } from './services/mediaStore';
 import { startWeeklyReports } from './services/analytics';
@@ -22,6 +23,7 @@ async function main() {
     console.log(`📚 Plans:  http://localhost:${PORT}/api/plan`);
     startScheduler();
     startMetricsSync();
+    startKnowledgeSync();
     startTelegramBot();
     startMediaCleanup();
     startWeeklyReports();

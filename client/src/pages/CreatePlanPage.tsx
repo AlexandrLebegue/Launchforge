@@ -351,15 +351,6 @@ export default function CreatePlanPage() {
                   style={{ display: 'none' }}
                   onChange={handleFiles}
                 />
-                <button
-                  type="button"
-                  className="btn chat-attach-btn"
-                  title="Joindre un document (pdf, txt, md, csv, json, html)"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={sending}
-                >
-                  <Paperclip size={18} />
-                </button>
                 <textarea
                   ref={inputRef}
                   className="chat-input-field"
@@ -377,6 +368,15 @@ export default function CreatePlanPage() {
                   disabled={sending}
                   autoFocus
                 />
+                <button
+                  type="button"
+                  className="btn chat-attach-btn"
+                  title="Joindre un document (pdf, txt, md, csv, json, html)"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={sending}
+                >
+                  <Paperclip size={18} />
+                </button>
                 <button
                   type="submit"
                   className="btn btn-primary chat-send-btn"

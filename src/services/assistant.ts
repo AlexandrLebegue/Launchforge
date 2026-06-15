@@ -5,9 +5,10 @@
  * Sans état côté serveur : le client envoie l'historique complet.
  */
 
-import { chatComplete, ChatMessage, isAIConfigured } from './aiClient';
+import { chatComplete, ChatMessage, ContentPart, isAIConfigured } from './aiClient';
 import { TOOLS, executeTool } from './telegramBot';
 import { storage } from './storage';
+import { ChatAttachment, buildAttachmentParts } from './attachments';
 
 const MAX_TOOL_ITERATIONS = 6;
 
@@ -84,11 +85,23 @@ export async function runAssistantTurn(
   history: AssistantMessage[],
   onEvent?: (event: AssistantEvent) => void,
   signal?: AbortSignal,
+  attachments: ChatAttachment[] = [],
 ): Promise<AssistantResult> {
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt(userId) },
     ...history.slice(-16).map((m): ChatMessage => ({ role: m.role, content: m.text })),
   ];
+
+  // Les pièces jointes accompagnent le dernier message utilisateur : on
+  // transforme son contenu en blocs (image/fichier/texte extrait + le texte tapé).
+  if (attachments.length > 0 && messages.length > 1) {
+    const last = messages[messages.length - 1];
+    const parts: ContentPart[] = await buildAttachmentParts(attachments);
+    if (parts.length > 0) {
+      parts.push({ type: 'text', text: String(last.content || '') });
+      last.content = parts;
+    }
+  }
 
   const actions: string[] = [];
   let fullText = '';

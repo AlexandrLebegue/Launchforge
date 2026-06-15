@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
-  MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot,
+  MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot, Globe,
 } from 'lucide-react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
   exportMyData, deleteAccount, setToken,
   setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
   setMarpTheme, customizeMarpTheme, themePreviewUrl,
-  ConfigStatus, OwnAppField,
+  getKnowledgeSources, addKnowledgeSource, deleteKnowledgeSource, setKnowledgeSyncInterval,
+  ConfigStatus, OwnAppField, KnowledgeSource,
 } from '../api/client';
 
 const SYNC_INTERVALS = [
@@ -18,6 +19,17 @@ const SYNC_INTERVALS = [
   { value: 720,  label: 'Toutes les 12 h' },
   { value: 1440, label: 'Une fois par jour' },
 ];
+
+/** Base de connaissances : sources stables → cadence plus large que les métriques */
+const KB_SYNC_INTERVALS = [
+  { value: 0,     label: 'Désactivée' },
+  { value: 1440,  label: 'Une fois par jour' },
+  { value: 4320,  label: 'Tous les 3 jours' },
+  { value: 10080, label: 'Une fois par semaine' },
+];
+
+const fmtKbDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'jamais';
 
 /** Libellés lisibles des identifiants d'app développeur (NEEDS_OWN_APP) */
 const OWN_APP_FIELD_LABELS: Record<string, string> = {
@@ -41,6 +53,13 @@ export default function ConfigPage() {
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
   const [savingSync, setSavingSync] = useState(false);
+  // Base de connaissances : sources déclarées + fréquence de mise à jour auto
+  const [kbSources,    setKbSources]    = useState<KnowledgeSource[]>([]);
+  const [kbGithub,     setKbGithub]     = useState('');
+  const [kbWebsite,    setKbWebsite]    = useState('');
+  const [kbSaving,     setKbSaving]     = useState<'github' | 'website' | null>(null);
+  const [kbError,      setKbError]      = useState('');
+  const [savingKbSync, setSavingKbSync] = useState(false);
   // Thème des présentations
   const [themeBusy,    setThemeBusy]    = useState(false);
   const [themePrompt,  setThemePrompt]  = useState('');
@@ -103,6 +122,7 @@ export default function ConfigPage() {
 
   useEffect(() => {
     load();
+    getKnowledgeSources().then((res) => { if (res.success && res.data) setKbSources(res.data); });
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
   }, []);
 
@@ -186,6 +206,38 @@ export default function ConfigPage() {
     }
   };
 
+  // ── Base de connaissances ──────────────────────────────────────────────────
+  const handleAddSource = async (type: 'github' | 'website') => {
+    const url = (type === 'github' ? kbGithub : kbWebsite).trim();
+    if (!url) return;
+    setKbSaving(type);
+    setKbError('');
+    const res = await addKnowledgeSource({ type, url });
+    setKbSaving(null);
+    if (res.success && res.data) {
+      if (type === 'github') setKbGithub(''); else setKbWebsite('');
+      const list = await getKnowledgeSources();
+      if (list.success && list.data) setKbSources(list.data);
+    } else {
+      setKbError(res.error || 'Source refusée.');
+    }
+  };
+
+  const handleDeleteKbSource = async (id: string) => {
+    const res = await deleteKnowledgeSource(id);
+    if (res.success) setKbSources((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleKnowledgeSyncInterval = async (minutes: number) => {
+    if (!status) return;
+    setSavingKbSync(true);
+    const res = await setKnowledgeSyncInterval(minutes);
+    setSavingKbSync(false);
+    if (res.success && res.data) {
+      setStatus({ ...status, knowledgeSync: { intervalMinutes: res.data.intervalMinutes } });
+    }
+  };
+
   const handleTheme = async (theme: string) => {
     if (!status) return;
     setThemeBusy(true);
@@ -252,7 +304,7 @@ export default function ConfigPage() {
   const connectedCount = status.composio.toolkits.filter((t) => t.connected).length;
 
   return (
-    <div className="animate-fadeIn">
+    <div className="animate-fadeIn settings-page">
       <div className="dashboard-header">
         <div>
           <h1>Configuration</h1>
@@ -260,397 +312,501 @@ export default function ConfigPage() {
         </div>
       </div>
 
-      <div className="config-grid">
-        {/* ── IA ── */}
-        <div className="card config-card">
-          <div className="config-card-head">
-            <span className="config-card-title">Intelligence artificielle</span>
-            {status.ai.configured
-              ? <span className="config-badge ok">Fonctionnelle</span>
-              : <span className="config-badge ko">Non configurée</span>}
-          </div>
-          {status.ai.configured ? (
-            <p className="config-desc">
-              Modèle : <strong>{status.ai.model}</strong> (OpenRouter). Alimente l'onboarding,
-              les plans, la rédaction de contenu, le scoring de leads et le bot Telegram.
-            </p>
-          ) : (
-            <p className="config-desc">
-              Renseignez <code>OPENROUTER_API_KEY</code> dans le <code>.env</code> du serveur
-              (clé sur openrouter.ai/keys) pour activer toute l'IA.
-            </p>
-          )}
-        </div>
+      <div className="settings">
 
-        {/* ── Pipeline de publication ── */}
-        <div className="card config-card" data-tour="cfg-publish">
-          <div className="config-card-head">
-            <span className="config-card-title">Publication des contenus IA</span>
+        {/* ═══════════ Intelligence artificielle ═══════════ */}
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Intelligence artificielle</h2>
+              <p className="settings-group-sub">Le moteur qui rédige vos contenus et alimente les automatisations.</p>
+            </div>
           </div>
-          <p className="config-desc">
-            Quand l'IA rédige un contenu (tâche Kanban, demande Telegram), il est :
-            <span className="form-hint-inline"> — réglage propre au projet actif</span>
-          </p>
-          <div className="approval-mode-picker">
-            <button
-              type="button"
-              className={`approval-mode-option${status.publishMode === 'manual' ? ' selected' : ''}`}
-              onClick={() => handleMode('manual')}
-              disabled={savingMode}
-            >
-              <span className="approval-mode-title">Soumis à votre validation</span>
-              <span className="approval-mode-desc">Chaque contenu attend votre relecture dans Validations (recommandé)</span>
-            </button>
-            <button
-              type="button"
-              className={`approval-mode-option${status.publishMode === 'auto' ? ' selected' : ''}`}
-              onClick={() => handleMode('auto')}
-              disabled={savingMode}
-            >
-              <span className="approval-mode-title">Publié directement</span>
-              <span className="approval-mode-desc">Sans confirmation — réservé aux comptes de confiance</span>
-            </button>
-          </div>
-        </div>
 
-        {/* ── Synchro automatique des métriques ── */}
-        <div className="card config-card" data-tour="cfg-metrics">
-          <div className="config-card-head">
-            <span className="config-card-title">Synchro des métriques</span>
-            {status.metricsSync.intervalMinutes > 0
-              ? <span className="config-badge ok">Active</span>
-              : <span className="config-badge warn">Désactivée</span>}
-          </div>
-          <p className="config-desc">
-            Le serveur relit automatiquement les métriques réelles (vues, likes,
-            commentaires, partages) de vos posts publiés des 30 derniers jours,
-            via vos comptes Composio. L'URL du post est enregistrée automatiquement
-            quand la publication passe par l'app — à saisir uniquement pour les
-            posts publiés à la main.
-          </p>
-          <label className="form-label-block">
-            Fréquence
-            <select
-              className="form-input"
-              value={status.metricsSync.intervalMinutes}
-              onChange={(e) => handleSyncInterval(Number(e.target.value))}
-              disabled={savingSync}
-            >
-              {SYNC_INTERVALS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <span className="form-hint-inline">
-              Chaque synchro consomme un appel IA — une fréquence quotidienne suffit
-              dans la plupart des cas. Vous pouvez aussi demander une synchro ponctuelle
-              à l'assistant : « combien de likes sur mon dernier post ? ».
-            </span>
-          </label>
-        </div>
+          <div className="settings-panel">
+            {/* Moteur IA */}
+            <div className="settings-row">
+              <div className="settings-row-info">
+                <span className="settings-row-title">Moteur IA</span>
+                <span className="settings-row-desc">
+                  {status.ai.configured
+                    ? <>Modèle <strong>{status.ai.model}</strong> (OpenRouter) — onboarding, plans, rédaction, scoring de leads, bot Telegram.</>
+                    : <>Renseignez <code>OPENROUTER_API_KEY</code> dans le <code>.env</code> du serveur (clé sur openrouter.ai/keys) pour activer toute l'IA.</>}
+                </span>
+              </div>
+              <div className="settings-row-control">
+                {status.ai.configured
+                  ? <span className="config-badge ok">Fonctionnelle</span>
+                  : <span className="config-badge ko">Non configurée</span>}
+              </div>
+            </div>
 
-        {/* ── Thème des présentations (Marp) ── */}
-        <div className="card config-card">
-          <div className="config-card-head">
-            <span className="config-card-title">Thème des présentations</span>
-            <a
-              className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
-              href={themePreviewUrl()} target="_blank" rel="noopener noreferrer"
-            >
+            {/* Publication des contenus IA */}
+            <div className="settings-row settings-row--block" data-tour="cfg-publish">
+              <div className="settings-row-info">
+                <span className="settings-row-title">Publication des contenus IA</span>
+                <span className="settings-row-desc">
+                  Quand l'IA rédige un contenu (tâche Kanban, demande Telegram) — réglage propre au projet actif.
+                </span>
+              </div>
+              <div className="settings-row-control">
+                <div className="approval-mode-picker">
+                  <button
+                    type="button"
+                    className={`approval-mode-option${status.publishMode === 'manual' ? ' selected' : ''}`}
+                    onClick={() => handleMode('manual')}
+                    disabled={savingMode}
+                  >
+                    <span className="approval-mode-title">Soumis à votre validation</span>
+                    <span className="approval-mode-desc">Chaque contenu attend votre relecture dans Validations (recommandé)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`approval-mode-option${status.publishMode === 'auto' ? ' selected' : ''}`}
+                    onClick={() => handleMode('auto')}
+                    disabled={savingMode}
+                  >
+                    <span className="approval-mode-title">Publié directement</span>
+                    <span className="approval-mode-desc">Sans confirmation — réservé aux comptes de confiance</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Synchro des métriques */}
+            <div className="settings-row settings-row--block" data-tour="cfg-metrics">
+              <div className="settings-row-info">
+                <span className="settings-row-title">
+                  Synchro des métriques
+                  {status.metricsSync.intervalMinutes > 0
+                    ? <span className="config-badge ok">Active</span>
+                    : <span className="config-badge warn">Désactivée</span>}
+                </span>
+                <span className="settings-row-desc">
+                  Le serveur relit les métriques réelles (vues, likes, commentaires, partages) de vos posts
+                  publiés des 30 derniers jours, via vos comptes connectés.
+                </span>
+              </div>
+              <div className="settings-row-control">
+                <select
+                  className="form-input"
+                  value={status.metricsSync.intervalMinutes}
+                  onChange={(e) => handleSyncInterval(Number(e.target.value))}
+                  disabled={savingSync}
+                >
+                  {SYNC_INTERVALS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════ Base de connaissances ═══════════ */}
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Base de connaissances</h2>
+              <p className="settings-group-sub">L'IA enrichit votre base depuis vos sources officielles — propre au projet actif.</p>
+            </div>
+            {status.knowledgeSync.intervalMinutes > 0
+              ? <span className="config-badge ok">Mise à jour auto</span>
+              : <span className="config-badge warn">Manuelle</span>}
+          </div>
+
+          <div className="settings-panel">
+            <div className="settings-body" data-tour="cfg-knowledge">
+              <div className="settings-field-row">
+                <label className="form-label-block">
+                  <span className="kb-sync-field-label"><GitBranch size={15} /> Dépôt GitHub</span>
+                  <div className="ai-assist-row">
+                    <input
+                      className="form-input" value={kbGithub} disabled={kbSaving === 'github'}
+                      onChange={(e) => setKbGithub(e.target.value)}
+                      placeholder="github.com/utilisateur/depot"
+                    />
+                    <button className="btn btn-ghost" onClick={() => handleAddSource('github')}
+                      disabled={kbSaving === 'github' || !kbGithub.trim()}>
+                      {kbSaving === 'github' ? '⏳…' : 'Ajouter'}
+                    </button>
+                  </div>
+                </label>
+
+                <label className="form-label-block">
+                  <span className="kb-sync-field-label"><Globe size={15} /> Site web ou page</span>
+                  <div className="ai-assist-row">
+                    <input
+                      className="form-input" value={kbWebsite} disabled={kbSaving === 'website'}
+                      onChange={(e) => setKbWebsite(e.target.value)}
+                      placeholder="https://monsite.com"
+                    />
+                    <button className="btn btn-ghost" onClick={() => handleAddSource('website')}
+                      disabled={kbSaving === 'website' || !kbWebsite.trim()}>
+                      {kbSaving === 'website' ? '⏳…' : 'Ajouter'}
+                    </button>
+                  </div>
+                </label>
+              </div>
+
+              {kbError && <div className="chat-error">{kbError}</div>}
+
+              {kbSources.length > 0 && (
+                <div className="kb-sync-saved">
+                  <div className="kb-sync-saved-title">Sources enregistrées</div>
+                  {kbSources.map((s) => (
+                    <div key={s.id} className="kb-sync-source-row">
+                      <span className="kb-sync-source-icon">
+                        {s.type === 'github' ? <GitBranch size={15} /> : <Globe size={15} />}
+                      </span>
+                      <span className="kb-sync-source-info">
+                        <span className="kb-sync-source-label">{s.label || s.url}</span>
+                        <span className="kb-sync-source-meta">Mise à jour : {fmtKbDate(s.lastSyncedAt)}</span>
+                      </span>
+                      <button className="kanban-delete" title="Retirer" onClick={() => handleDeleteKbSource(s.id)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <label className="form-label-block">
+                Fréquence de mise à jour automatique
+                <select
+                  className="form-input"
+                  value={status.knowledgeSync.intervalMinutes}
+                  onChange={(e) => handleKnowledgeSyncInterval(Number(e.target.value))}
+                  disabled={savingKbSync}
+                >
+                  {KB_SYNC_INTERVALS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <span className="form-hint-inline">
+                  Chaque mise à jour consomme un appel IA et s'applique sans relecture — une fréquence
+                  hebdomadaire suffit dans la plupart des cas (les sources changent rarement).
+                </span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════ Présentations ═══════════ */}
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Présentations</h2>
+              <p className="settings-group-sub">Le style des decks générés par l'IA (onglet Slides du Hub).</p>
+            </div>
+            <a className="btn btn-ghost btn-sm" href={themePreviewUrl()} target="_blank" rel="noopener noreferrer">
               Aperçu
             </a>
           </div>
-          <p className="config-desc">
-            Habille les decks générés par l'IA (onglet Slides du Hub) : pitch decks,
-            carrousels LinkedIn, slides produit.
-          </p>
-          <label className="form-label-block">
-            Thème
-            <select
-              className="form-input"
-              value={status.marp.theme}
-              onChange={(e) => handleTheme(e.target.value)}
-              disabled={themeBusy}
-            >
-              {status.marp.themes
-                .filter((t) => t.value !== 'custom' || status.marp.hasCustomCss)
-                .map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-          </label>
-          <label className="form-label-block" style={{ marginTop: 8 }}>
-            Créer mon thème avec l'IA
-            <div className="ai-assist-row">
-              <input
-                className="form-input"
-                value={themePrompt}
-                onChange={(e) => setThemePrompt(e.target.value)}
-                placeholder="ex. « fond crème, accents vert forêt, typo élégante, très épuré »"
-                disabled={themeBusy}
-              />
-              <button type="button" className="btn btn-primary" onClick={handleCustomizeTheme} disabled={themeBusy || !themePrompt.trim()}>
-                {themeBusy ? '⏳…' : 'Générer'}
-              </button>
-            </div>
-            <span className="form-hint-inline">
-              L'IA fabrique la feuille de style (validée puis appliquée) et ouvre l'aperçu. Recommencez jusqu'à satisfaction.
-            </span>
-          </label>
-          {themeError && <div className="chat-error">{themeError}</div>}
-        </div>
 
-        {/* ── Composio ── */}
-        <div className="card config-card config-card-wide" data-tour="cfg-accounts">
-          <div className="config-card-head">
-            <span className="config-card-title">Connexions plateformes (Composio)</span>
+          <div className="settings-panel">
+            <div className="settings-body">
+              <label className="form-label-block">
+                Thème
+                <select
+                  className="form-input"
+                  value={status.marp.theme}
+                  onChange={(e) => handleTheme(e.target.value)}
+                  disabled={themeBusy}
+                >
+                  {status.marp.themes
+                    .filter((t) => t.value !== 'custom' || status.marp.hasCustomCss)
+                    .map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </label>
+              <label className="form-label-block">
+                Créer mon thème avec l'IA
+                <div className="ai-assist-row">
+                  <input
+                    className="form-input"
+                    value={themePrompt}
+                    onChange={(e) => setThemePrompt(e.target.value)}
+                    placeholder="ex. « fond crème, accents vert forêt, typo élégante, très épuré »"
+                    disabled={themeBusy}
+                  />
+                  <button type="button" className="btn btn-primary" onClick={handleCustomizeTheme} disabled={themeBusy || !themePrompt.trim()}>
+                    {themeBusy ? '⏳…' : 'Générer'}
+                  </button>
+                </div>
+                <span className="form-hint-inline">
+                  L'IA fabrique la feuille de style (validée puis appliquée) et ouvre l'aperçu. Recommencez jusqu'à satisfaction.
+                </span>
+              </label>
+              {themeError && <div className="chat-error">{themeError}</div>}
+            </div>
+          </div>
+        </section>
+
+        {/* ═══════════ Comptes connectés (Composio) ═══════════ */}
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Comptes connectés</h2>
+              <p className="settings-group-sub">Les plateformes utilisées pour publier, lire les métriques, gérer emails et agenda.</p>
+            </div>
             {status.composio.configured
               ? <span className="config-badge ok">{connectedCount} connectée{connectedCount > 1 ? 's' : ''}</span>
               : <span className="config-badge ko">Non configuré</span>}
             <a
               className="btn btn-primary btn-sm"
-              style={{ marginLeft: 'auto' }}
               href={status.composio.dashboardUrl}
               target="_blank" rel="noopener noreferrer"
             >
-              Gérer sur Composio ↗
+              Gérer ↗
             </a>
           </div>
-          {!status.composio.configured && (
-            <p className="config-desc">
-              Renseignez <code>COMPOSIO_MCP_URL</code> et <code>COMPOSIO_API_KEY</code> dans le{' '}
-              <code>.env</code> du serveur, puis connectez vos comptes sur le dashboard Composio.
-            </p>
-          )}
-          {status.composio.canManage === false && (
-            <div className="config-desc" style={{ background: 'var(--color-surface-2)', borderRadius: 'var(--radius)', padding: '8px 12px' }}>
-              👁️ Projet d'équipe : les comptes utilisés pour publier sont ceux de <strong>{status.composio.ownerName || 'son propriétaire'}</strong> — vous les voyez en lecture seule.
-            </div>
-          )}
-          <div className="config-toolkits">
-            {status.composio.toolkits.map((t) => (
-              <Fragment key={t.slug}>
-              <div className={`config-toolkit${t.connected ? ' on' : ''}`}>
-                <span className="config-toolkit-icon">{TOOLKIT_ICONS[t.slug] ?? <Plug size={18} />}</span>
-                <span className="config-toolkit-main">
-                  <span className="config-toolkit-name">{t.name}</span>
-                  <span className="config-toolkit-cap">{t.capability}</span>
-                  {connectErrors[t.slug] && (
-                    <span className="config-toolkit-cap" style={{ color: 'var(--color-danger, #f87171)' }}>
-                      {connectErrors[t.slug]}
-                    </span>
-                  )}
-                </span>
-                {status.composio.canManage === false ? (
-                  <span className={`config-badge ${t.connected ? 'ok' : 'warn'}`}>{t.connected ? 'Connecté' : 'Non connecté'}</span>
-                ) : t.connected ? (
-                  <>
-                    <span className="config-badge ok">Fonctionnel</span>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => handleDisconnect(t.slug, t.name)}
-                      disabled={disconnecting === t.slug}
-                      title="Supprime le compte connecté chez Composio — reconnectez ensuite pour re-autoriser avec les droits à jour"
-                    >
-                      {disconnecting === t.slug ? '⏳…' : '✕ Déconnecter'}
-                    </button>
-                  </>
-                ) : connectLinks[t.slug] ? (
-                  <a
-                    className="config-badge warn link"
-                    href={connectLinks[t.slug]}
-                    target="_blank" rel="noopener noreferrer"
-                    title="Ouvrez ce lien et autorisez l'accès — le statut se met à jour tout seul"
-                  >
-                    ⏳ Autoriser ↗
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => handleConnect(t.slug)}
-                    disabled={connecting === t.slug || !status.composio.configured}
-                    title="Génère le lien d'autorisation et l'ouvre dans un nouvel onglet"
-                  >
-                    {connecting === t.slug ? '⏳…' : 'Connecter'}
-                  </button>
-                )}
-              </div>
-              {/* Pas d'auth « clé en main » (X/Twitter, TikTok…) : identifiants
-                  de l'app développeur de l'utilisateur */}
-              {!t.connected && ownApp[t.slug] && (
-                <div className="config-ownapp">
-                  <p className="config-ownapp-help">
-                    {t.name} n'a pas d'authentification « clé en main » chez Composio : créez une app
-                    (gratuite) sur le portail développeur de la plateforme
-                    {t.slug === 'twitter' && <> (<a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener noreferrer">developer.x.com</a> → Projects &amp; Apps → User authentication settings, type « Web App », et notez aussi le Bearer Token de l'app)</>}
-                    {t.slug === 'tiktok' && <> (<a href="https://developers.tiktok.com/" target="_blank" rel="noopener noreferrer">developers.tiktok.com</a>)</>}
-                    , déclarez l'URL de callback ci-dessous dans ses « Redirect URLs », puis collez ses
-                    identifiants — ils restent chez Composio, jamais dans LaunchForge.
-                  </p>
-                  {ownApp[t.slug].callbackUrl && (
-                    <div className="config-ownapp-callback">
-                      <span>URL de callback à déclarer :</span>
-                      <code>{ownApp[t.slug].callbackUrl}</code>
-                      <button
-                        type="button" className="btn btn-ghost btn-sm"
-                        onClick={() => navigator.clipboard?.writeText(ownApp[t.slug].callbackUrl)}
-                      >
-                        Copier
-                      </button>
-                    </div>
-                  )}
-                  {ownApp[t.slug].fields.map((f) => (
-                    <label key={f.name} className="config-ownapp-field">
-                      <span>{OWN_APP_FIELD_LABELS[f.name] ?? f.name}</span>
-                      <input
-                        type={/secret/i.test(f.name) ? 'password' : 'text'}
-                        placeholder={f.description.slice(0, 90)}
-                        value={ownAppValues[t.slug]?.[f.name] ?? ''}
-                        onChange={(e) => setOwnAppValues((o) => ({
-                          ...o,
-                          [t.slug]: { ...o[t.slug], [f.name]: e.target.value },
-                        }))}
-                      />
-                    </label>
-                  ))}
-                  <div className="config-ownapp-actions">
-                    <button
-                      type="button" className="btn btn-primary btn-sm"
-                      disabled={connecting === t.slug
-                        || !ownApp[t.slug].fields.every((f) => (ownAppValues[t.slug]?.[f.name] ?? '').trim())}
-                      onClick={() => handleConnect(t.slug)}
-                    >
-                      {connecting === t.slug ? '⏳…' : 'Enregistrer et connecter'}
-                    </button>
-                    <button
-                      type="button" className="btn btn-ghost btn-sm"
-                      onClick={() => setOwnApp((o) => { const { [t.slug]: _gone, ...rest } = o; return rest; })}
-                    >
-                      Annuler
-                    </button>
-                  </div>
+
+          <div className="settings-panel">
+            <div className="settings-body" data-tour="cfg-accounts">
+              {!status.composio.configured && (
+                <p className="config-desc">
+                  Renseignez <code>COMPOSIO_MCP_URL</code> et <code>COMPOSIO_API_KEY</code> dans le{' '}
+                  <code>.env</code> du serveur, puis connectez vos comptes sur le dashboard Composio.
+                </p>
+              )}
+              {status.composio.canManage === false && (
+                <div className="settings-note">
+                  👁️ Projet d'équipe : les comptes utilisés pour publier sont ceux de <strong>{status.composio.ownerName || 'son propriétaire'}</strong> — vous les voyez en lecture seule.
                 </div>
               )}
-              </Fragment>
-            ))}
+              <div className="config-toolkits">
+                {status.composio.toolkits.map((t) => (
+                  <Fragment key={t.slug}>
+                  <div className={`config-toolkit${t.connected ? ' on' : ''}`}>
+                    <span className="config-toolkit-icon">{TOOLKIT_ICONS[t.slug] ?? <Plug size={18} />}</span>
+                    <span className="config-toolkit-main">
+                      <span className="config-toolkit-name">{t.name}</span>
+                      <span className="config-toolkit-cap">{t.capability}</span>
+                      {connectErrors[t.slug] && (
+                        <span className="config-toolkit-cap" style={{ color: 'var(--color-danger, #f87171)' }}>
+                          {connectErrors[t.slug]}
+                        </span>
+                      )}
+                    </span>
+                    {status.composio.canManage === false ? (
+                      <span className={`config-badge ${t.connected ? 'ok' : 'warn'}`}>{t.connected ? 'Connecté' : 'Non connecté'}</span>
+                    ) : t.connected ? (
+                      <>
+                        <span className="config-badge ok">Fonctionnel</span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleDisconnect(t.slug, t.name)}
+                          disabled={disconnecting === t.slug}
+                          title="Supprime le compte connecté chez Composio — reconnectez ensuite pour re-autoriser avec les droits à jour"
+                        >
+                          {disconnecting === t.slug ? '⏳…' : '✕ Déconnecter'}
+                        </button>
+                      </>
+                    ) : connectLinks[t.slug] ? (
+                      <a
+                        className="config-badge warn link"
+                        href={connectLinks[t.slug]}
+                        target="_blank" rel="noopener noreferrer"
+                        title="Ouvrez ce lien et autorisez l'accès — le statut se met à jour tout seul"
+                      >
+                        ⏳ Autoriser ↗
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => handleConnect(t.slug)}
+                        disabled={connecting === t.slug || !status.composio.configured}
+                        title="Génère le lien d'autorisation et l'ouvre dans un nouvel onglet"
+                      >
+                        {connecting === t.slug ? '⏳…' : 'Connecter'}
+                      </button>
+                    )}
+                  </div>
+                  {/* Pas d'auth « clé en main » (X/Twitter, TikTok…) : identifiants
+                      de l'app développeur de l'utilisateur */}
+                  {!t.connected && ownApp[t.slug] && (
+                    <div className="config-ownapp">
+                      <p className="config-ownapp-help">
+                        {t.name} n'a pas d'authentification « clé en main » chez Composio : créez une app
+                        (gratuite) sur le portail développeur de la plateforme
+                        {t.slug === 'twitter' && <> (<a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener noreferrer">developer.x.com</a> → Projects &amp; Apps → User authentication settings, type « Web App », et notez aussi le Bearer Token de l'app)</>}
+                        {t.slug === 'tiktok' && <> (<a href="https://developers.tiktok.com/" target="_blank" rel="noopener noreferrer">developers.tiktok.com</a>)</>}
+                        , déclarez l'URL de callback ci-dessous dans ses « Redirect URLs », puis collez ses
+                        identifiants — ils restent chez Composio, jamais dans LaunchForge.
+                      </p>
+                      {ownApp[t.slug].callbackUrl && (
+                        <div className="config-ownapp-callback">
+                          <span>URL de callback à déclarer :</span>
+                          <code>{ownApp[t.slug].callbackUrl}</code>
+                          <button
+                            type="button" className="btn btn-ghost btn-sm"
+                            onClick={() => navigator.clipboard?.writeText(ownApp[t.slug].callbackUrl)}
+                          >
+                            Copier
+                          </button>
+                        </div>
+                      )}
+                      {ownApp[t.slug].fields.map((f) => (
+                        <label key={f.name} className="config-ownapp-field">
+                          <span>{OWN_APP_FIELD_LABELS[f.name] ?? f.name}</span>
+                          <input
+                            type={/secret/i.test(f.name) ? 'password' : 'text'}
+                            placeholder={f.description.slice(0, 90)}
+                            value={ownAppValues[t.slug]?.[f.name] ?? ''}
+                            onChange={(e) => setOwnAppValues((o) => ({
+                              ...o,
+                              [t.slug]: { ...o[t.slug], [f.name]: e.target.value },
+                            }))}
+                          />
+                        </label>
+                      ))}
+                      <div className="config-ownapp-actions">
+                        <button
+                          type="button" className="btn btn-primary btn-sm"
+                          disabled={connecting === t.slug
+                            || !ownApp[t.slug].fields.every((f) => (ownAppValues[t.slug]?.[f.name] ?? '').trim())}
+                          onClick={() => handleConnect(t.slug)}
+                        >
+                          {connecting === t.slug ? '⏳…' : 'Enregistrer et connecter'}
+                        </button>
+                        <button
+                          type="button" className="btn btn-ghost btn-sm"
+                          onClick={() => setOwnApp((o) => { const { [t.slug]: _gone, ...rest } = o; return rest; })}
+                        >
+                          Annuler
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  </Fragment>
+                ))}
+              </div>
+              <p className="form-hint">
+                Cliquez sur « Connecter », autorisez l'accès dans l'onglet qui s'ouvre, et le compte
+                devient utilisable — publication, métriques, emails, agenda. Le statut se rafraîchit
+                automatiquement après l'autorisation.
+              </p>
+            </div>
           </div>
-          <p className="form-hint">
-            Cliquez sur « Connecter », autorisez l'accès dans l'onglet qui s'ouvre, et le compte
-            devient utilisable — publication, métriques, emails, agenda. Le statut se rafraîchit
-            automatiquement après l'autorisation.
-          </p>
-        </div>
+        </section>
 
-        {/* ── Telegram ── */}
-        <div className="card config-card">
-          <div className="config-card-head">
-            <span className="config-card-title">Bot Telegram</span>
+        {/* ═══════════ Bot Telegram ═══════════ */}
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Bot Telegram</h2>
+              <p className="settings-group-sub">Pilotez tout depuis un chat : validation des contenus, rédaction, agenda, rappels.</p>
+            </div>
             {!status.telegram.configured
               ? <span className="config-badge ko">Non configuré</span>
               : status.telegram.linked
                 ? <span className="config-badge ok">Compte lié</span>
                 : <span className="config-badge warn">À lier</span>}
           </div>
-          <p className="config-desc">
-            Pilotez tout depuis un chat : état des activités, validation des contenus,
-            rédaction de posts/emails, agenda, rappels.
-          </p>
 
-          {/* Bot personnel : chaque utilisateur branche le sien */}
-          {status.telegram.ownBot ? (
-            <div className="config-toolkit on" style={{ marginBottom: 10 }}>
-              <span className="config-toolkit-icon"><Bot size={18} /></span>
-              <span className="config-toolkit-main">
-                <span className="config-toolkit-name">Votre bot {status.telegram.botUsername}</span>
-                <span className="config-toolkit-cap">Écrivez-lui /start sur Telegram — la liaison est automatique.</span>
-              </span>
-              <button className="btn btn-ghost btn-sm" onClick={handleRemoveBot} disabled={botSaving}>
-                Supprimer
-              </button>
-            </div>
-          ) : (
-            <div style={{ marginBottom: 10 }}>
-              <label className="form-label-block">
-                Token de votre bot <span className="form-hint-inline">(créez-le en 1 min : @BotFather → /newbot)</span>
-                <div className="ai-assist-row">
-                  <input
-                    className="form-input"
-                    value={botToken}
-                    onChange={(e) => setBotToken(e.target.value)}
-                    placeholder="123456789:ABCdef…"
-                    disabled={botSaving}
-                  />
-                  <button className="btn btn-primary" onClick={handleSaveBot} disabled={botSaving || !botToken.trim()}>
-                    {botSaving ? '⏳…' : 'Activer'}
+          <div className="settings-panel">
+            <div className="settings-body">
+              {/* Bot personnel : chaque utilisateur branche le sien */}
+              {status.telegram.ownBot ? (
+                <div className="config-toolkit on">
+                  <span className="config-toolkit-icon"><Bot size={18} /></span>
+                  <span className="config-toolkit-main">
+                    <span className="config-toolkit-name">Votre bot {status.telegram.botUsername}</span>
+                    <span className="config-toolkit-cap">Écrivez-lui /start sur Telegram — la liaison est automatique.</span>
+                  </span>
+                  <button className="btn btn-ghost btn-sm" onClick={handleRemoveBot} disabled={botSaving}>
+                    Supprimer
                   </button>
                 </div>
-              </label>
+              ) : (
+                <label className="form-label-block">
+                  Token de votre bot <span className="form-hint-inline">(créez-le en 1 min : @BotFather → /newbot)</span>
+                  <div className="ai-assist-row">
+                    <input
+                      className="form-input"
+                      value={botToken}
+                      onChange={(e) => setBotToken(e.target.value)}
+                      placeholder="123456789:ABCdef…"
+                      disabled={botSaving}
+                    />
+                    <button className="btn btn-primary" onClick={handleSaveBot} disabled={botSaving || !botToken.trim()}>
+                      {botSaving ? '⏳…' : 'Activer'}
+                    </button>
+                  </div>
+                </label>
+              )}
+              {botError && <div className="chat-error">{botError}</div>}
+
+              {/* Liaison par code (bot global partagé, ou 2e chat) */}
+              {status.telegram.configured && (
+                tgCode ? (
+                  <div>
+                    <div className="telegram-code">{tgCode}</div>
+                    <p className="form-hint">Envoyez ce code à votre bot Telegram (valable 10 minutes).</p>
+                  </div>
+                ) : (
+                  <button className="btn btn-ghost" style={{ alignSelf: 'flex-start' }} onClick={handleTelegramCode}>
+                    {status.telegram.linked ? 'Lier un autre chat' : 'Générer le code de liaison'}
+                  </button>
+                )
+              )}
+              {tgError && <div className="chat-error">{tgError}</div>}
             </div>
-          )}
-          {botError && <div className="chat-error" style={{ marginBottom: 8 }}>{botError}</div>}
-
-          {/* Liaison par code (bot global partagé, ou 2e chat) */}
-          {status.telegram.configured && (
-            tgCode ? (
-              <>
-                <div className="telegram-code">{tgCode}</div>
-                <p className="form-hint">Envoyez ce code à votre bot Telegram (valable 10 minutes).</p>
-              </>
-            ) : (
-              <button className="btn btn-ghost" onClick={handleTelegramCode}>
-                {status.telegram.linked ? 'Lier un autre chat' : 'Générer le code de liaison'}
-              </button>
-            )
-          )}
-          {tgError && <div className="chat-error">{tgError}</div>}
-        </div>
-
-        {/* ── Vos données (RGPD) ── */}
-        <div className="card config-card">
-          <div className="config-card-head">
-            <span className="config-card-title">Vos données (RGPD)</span>
           </div>
-          <p className="config-desc">
-            Vous disposez du droit à la portabilité et à l'effacement de vos données
-            (articles 20 et 17 du RGPD) — en libre-service, sans rien demander à personne.
-          </p>
-          <button className="btn btn-ghost" onClick={handleExport} disabled={exporting} style={{ alignSelf: 'flex-start' }}>
-            {exporting ? '⏳ Préparation…' : 'Télécharger toutes mes données (JSON)'}
-          </button>
+        </section>
 
-          <div className="danger-zone">
-            <div className="danger-zone-title">Zone dangereuse</div>
-            {!deleteOpen ? (
-              <button className="btn btn-ghost btn-danger" onClick={() => setDeleteOpen(true)}>
-                Supprimer mon compte et toutes mes données
-              </button>
-            ) : (
-              <>
-                <p className="form-hint" style={{ marginBottom: 8 }}>
-                  Suppression <strong>définitive et immédiate</strong> : compte, projets, posts,
-                  contacts, base de connaissances, médias hébergés, liaisons Telegram et comptes
-                  connectés Composio. Confirmez avec votre mot de passe.
-                </p>
-                <div className="ai-assist-row">
-                  <input
-                    type="password"
-                    className="form-input"
-                    value={deletePwd}
-                    onChange={(e) => setDeletePwd(e.target.value)}
-                    placeholder="Votre mot de passe"
-                    autoComplete="current-password"
-                  />
-                  <button className="btn btn-danger-solid" onClick={handleDeleteAccount} disabled={deleting}>
-                    {deleting ? '⏳ Suppression…' : 'Supprimer définitivement'}
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => { setDeleteOpen(false); setDeletePwd(''); setDeleteError(''); }}>
-                    Annuler
-                  </button>
-                </div>
-                {deleteError && <div className="chat-error" style={{ marginTop: 8 }}>{deleteError}</div>}
-              </>
-            )}
+        {/* ═══════════ Vos données (RGPD) ═══════════ */}
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Vos données</h2>
+              <p className="settings-group-sub">Portabilité et effacement (RGPD, articles 20 et 17) — en libre-service.</p>
+            </div>
           </div>
-        </div>
+
+          <div className="settings-panel">
+            <div className="settings-body">
+              <button className="btn btn-ghost" onClick={handleExport} disabled={exporting} style={{ alignSelf: 'flex-start' }}>
+                {exporting ? '⏳ Préparation…' : 'Télécharger toutes mes données (JSON)'}
+              </button>
+
+              <div className="danger-zone">
+                <div className="danger-zone-title">Zone dangereuse</div>
+                {!deleteOpen ? (
+                  <button className="btn btn-ghost btn-danger" onClick={() => setDeleteOpen(true)}>
+                    Supprimer mon compte et toutes mes données
+                  </button>
+                ) : (
+                  <>
+                    <p className="form-hint" style={{ marginBottom: 8 }}>
+                      Suppression <strong>définitive et immédiate</strong> : compte, projets, posts,
+                      contacts, base de connaissances, médias hébergés, liaisons Telegram et comptes
+                      connectés Composio. Confirmez avec votre mot de passe.
+                    </p>
+                    <div className="ai-assist-row">
+                      <input
+                        type="password"
+                        className="form-input"
+                        value={deletePwd}
+                        onChange={(e) => setDeletePwd(e.target.value)}
+                        placeholder="Votre mot de passe"
+                        autoComplete="current-password"
+                      />
+                      <button className="btn btn-danger-solid" onClick={handleDeleteAccount} disabled={deleting}>
+                        {deleting ? '⏳ Suppression…' : 'Supprimer définitivement'}
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => { setDeleteOpen(false); setDeletePwd(''); setDeleteError(''); }}>
+                        Annuler
+                      </button>
+                    </div>
+                    {deleteError && <div className="chat-error" style={{ marginTop: 8 }}>{deleteError}</div>}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
       </div>
     </div>
   );

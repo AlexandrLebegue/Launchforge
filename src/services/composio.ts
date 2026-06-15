@@ -257,14 +257,70 @@ IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant, p
 /**
  * Extrait l'URL (ou l'identifiant) du post créé depuis la réponse de
  * publication — enregistrée dans externalUrl pour la synchro des métriques.
+ *
+ * L'URN LinkedIn est préservé ENTIER (urn:li:share:…) : l'amputer du préfixe
+ * « urn: » cassait à la fois le lien cliquable ET la lecture des métriques
+ * (dont le regex attend urn:li:…).
  */
 export function extractPublishedRef(reply: string): string | null {
   if (!reply.trim().toUpperCase().startsWith('OK')) return null;
   const url = reply.match(/https?:\/\/[^\s)\]»"']+/);
   if (url) return url[0].replace(/[.,;:!?]+$/, '');
-  // À défaut d'URL : identifiant/URN renvoyé par l'outil (ex. urn:li:share:…)
+  // URN complet (LinkedIn : urn:li:share:…, urn:li:activity:…, urn:li:ugcPost:…)
+  const urn = reply.match(/urn:[a-z]+:[a-zA-Z]+:[\w-]+/i);
+  if (urn) return urn[0];
+  // À défaut : identifiant long renvoyé par l'outil (id média Instagram, etc.)
   const id = reply.match(/\b(?:id|urn)\s*[:=]?\s*([\w:.-]{8,})/i);
   return id ? id[1] : null;
+}
+
+/**
+ * Reconstruit une URL publique CLIQUABLE à partir de la référence renvoyée à
+ * la publication, quand la plateforme le permet de façon déterministe — pour
+ * que l'utilisateur puisse constater le résultat depuis le Hub.
+ *
+ * Garantit que l'URL produite contient toujours l'identifiant nécessaire à la
+ * synchro des métriques (le regex de syncMetricsDirect continue de matcher).
+ * Renvoie null si aucune URL fiable ne peut être construite (Instagram/TikTok :
+ * l'API ne renvoie qu'un id non résolvable en permalien public).
+ */
+export function canonicalPostUrl(platform: string, ref: string | null): string | null {
+  if (!ref) return null;
+  const r = ref.trim();
+  if (/^https?:\/\//i.test(r)) return r.replace(/[.,;:!?]+$/, '');
+
+  switch (platform) {
+    case 'linkedin': {
+      // urn:li:share:123 | li:share:123 (préfixe historiquement perdu) | share:123
+      const m = r.match(/(?:urn:)?(?:li:)?(share|ugcPost|activity):(\d+)/i);
+      return m ? `https://www.linkedin.com/feed/update/urn:li:${m[1]}:${m[2]}/` : null;
+    }
+    case 'twitter': {
+      const id = r.match(/(\d{8,})/)?.[1];
+      return id ? `https://x.com/i/web/status/${id}` : null;
+    }
+    case 'youtube': {
+      const id = /^[\w-]{11}$/.test(r) ? r : r.match(/(?:youtu\.be\/|v=|\/shorts\/)([\w-]{11})/)?.[1];
+      return id ? `https://youtu.be/${id}` : null;
+    }
+    default:
+      // facebook & reddit renvoient déjà une URL (gérée plus haut) ;
+      // instagram & tiktok n'ont qu'un id non résolvable → pas de lien.
+      return null;
+  }
+}
+
+/**
+ * Référence à enregistrer dans externalUrl après une publication réussie :
+ * une URL cliquable quand on peut la reconstruire, sinon l'identifiant brut
+ * (qui reste utile à la synchro des métriques). Point d'entrée unique partagé
+ * par le worker auto, la route publish-now et le bot Telegram — pour que les
+ * trois voies produisent exactement le même résultat.
+ */
+export function resolvePublishedUrl(platform: string, reply: string): string | null {
+  const ref = extractPublishedRef(reply);
+  if (!ref) return null;
+  return canonicalPostUrl(platform, ref) ?? ref;
 }
 
 // ── Synchronisation des métriques ─────────────────────────────────────────────

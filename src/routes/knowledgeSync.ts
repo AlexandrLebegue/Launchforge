@@ -8,20 +8,18 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { v4 as uuid } from 'uuid';
 import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import {
   fetchGitHubKnowledge, fetchWebsiteKnowledge, analyzeSourcesForKnowledge,
+  applySuggestionsToKnowledge, syncSourcesNow,
   parseGitHubRepo, FetchedSource,
 } from '../services/knowledgeSync';
-import { KnowledgeCategory, KnowledgeEntry, KnowledgeSourceType } from '../types';
+import { KnowledgeSourceType } from '../types';
 
 const router = Router();
 router.use(requireAuth);
-
-const CATEGORIES: KnowledgeCategory[] = ['company', 'product', 'audience', 'tone', 'offers', 'learnings', 'news', 'other'];
 
 type Ctx = { planId: string | null; ownerUserId: string; role: string };
 
@@ -168,38 +166,34 @@ router.post('/sync/apply', (req: Request, res: Response) => {
   if (suggestions.length === 0) {
     return res.status(400).json({ success: false, error: 'Aucune fiche à intégrer' });
   }
+  const applied = applySuggestionsToKnowledge(ctx.ownerUserId, ctx.planId, suggestions);
+  res.json({ success: true, data: { applied } });
+});
 
-  const applied: KnowledgeEntry[] = [];
-  const now = new Date().toISOString();
-
-  for (const s of suggestions) {
-    const title = typeof s?.title === 'string' ? s.title.trim() : '';
-    const content = typeof s?.content === 'string' ? s.content.trim() : '';
-    if (!title || !content) continue;
-    const category: KnowledgeCategory = CATEGORIES.includes(s.category) ? s.category : 'other';
-
-    // Mise à jour d'une fiche existante du même projet
-    if (s.action === 'update' && typeof s.targetId === 'string') {
-      const existing = storage.getKnowledgeById(s.targetId);
-      if (existing && existing.userId === ctx.ownerUserId && sameProject(existing.planId, ctx.planId)) {
-        storage.updateKnowledge(existing.id, { title, content, category });
-        const updated = storage.getKnowledgeById(existing.id);
-        if (updated) applied.push(updated);
-        continue;
-      }
-      // cible invalide / autre projet → on bascule en création
-    }
-
-    const entry: KnowledgeEntry = {
-      id: uuid(), userId: ctx.ownerUserId, planId: ctx.planId,
-      category, title: title.slice(0, 200), content: content.slice(0, 8000),
-      createdAt: now, updatedAt: now,
-    };
-    storage.saveKnowledge(entry);
-    applied.push(entry);
+// ── Mise à jour « maintenant » : analyse + application automatiques ─────────────
+// Récupère les sources enregistrées du projet actif, en extrait des fiches via
+// l'IA et les applique directement (même cycle que le worker automatique). À
+// déclencher manuellement depuis la base de connaissances ; la planification se
+// règle dans Configuration.
+router.post('/sync/run', async (req: Request, res: Response) => {
+  const ctx = writableCtx(req, res); if (!ctx) return;
+  if (!isAIConfigured()) {
+    return res.status(503).json({ success: false, error: 'IA non configurée (OPENROUTER_API_KEY manquante)' });
+  }
+  const crawl = Boolean((req.body as { crawl?: unknown }).crawl);
+  const sources = storage.getKnowledgeSources(ctx.ownerUserId, ctx.planId);
+  if (sources.length === 0) {
+    return res.status(400).json({ success: false, error: 'Aucune source enregistrée — ajoutez-en dans Configuration.' });
   }
 
-  res.json({ success: true, data: { applied } });
+  try {
+    const now = new Date().toISOString();
+    const { applied, syncedSourceIds, errors } = await syncSourcesNow(ctx.ownerUserId, ctx.planId, sources, crawl);
+    for (const id of syncedSourceIds) storage.markKnowledgeSourceSynced(id, now);
+    res.json({ success: true, data: { applied, errors, syncedAt: syncedSourceIds.length ? now : null } });
+  } catch (e) {
+    res.status(502).json({ success: false, error: e instanceof Error ? e.message : 'Mise à jour impossible' });
+  }
 });
 
 export default router;

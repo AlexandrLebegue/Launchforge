@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare, LayoutGrid, Table2, ArrowUpDown } from 'lucide-react';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   previewRecurrence, crosspostPost, publishPostNow, PublishOutcome,
@@ -54,6 +54,9 @@ export function engagementRate(p: Post): number | null {
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+const fmtDateShort = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : <span style={{ color: 'var(--color-border)' }}>—</span>;
 
 const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0', '')}k` : String(n));
 
@@ -1164,6 +1167,10 @@ export default function ContentHubPage() {
   const [statusFilter,   setStatusFilter]   = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [search,   setSearch]   = useState('');
+  const [sortBy,   setSortBy]   = useState<'createdAt' | 'scheduledAt' | 'publishedAt'>('createdAt');
+  const [sortDir,  setSortDir]  = useState<'desc' | 'asc'>('desc');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [actionMenu, setActionMenu] = useState<{ post: Post; x: number; y: number } | null>(null);
 
   const load = useCallback(async () => {
     // Posts déjà scopés au projet actif côté serveur ; l'overview (léger,
@@ -1178,6 +1185,19 @@ export default function ContentHubPage() {
   }, []);
 
   const posts = allPosts;
+
+  // Le menu d'actions est en position: fixed — on le ferme dès qu'on scrolle
+  // (n'importe quel conteneur) ou qu'on redimensionne pour éviter qu'il se détache.
+  useEffect(() => {
+    if (!actionMenu) return;
+    const close = () => setActionMenu(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [actionMenu]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1273,15 +1293,23 @@ export default function ContentHubPage() {
     };
   }, [posts, published]);
 
-  const filtered = posts.filter((p) => {
-    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
-    if (platformFilter !== 'all' && p.platform !== platformFilter) return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      if (!p.title.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const result = posts.filter((p) => {
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      if (platformFilter !== 'all' && p.platform !== platformFilter) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!p.title.toLowerCase().includes(q) && !p.content.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+    result.sort((a, b) => {
+      const av = a[sortBy] ? new Date(a[sortBy]!).getTime() : 0;
+      const bv = b[sortBy] ? new Date(b[sortBy]!).getTime() : 0;
+      return sortDir === 'desc' ? bv - av : av - bv;
+    });
+    return result;
+  }, [posts, statusFilter, platformFilter, search, sortBy, sortDir]);
 
   if (loading) return <div className="loading">⏳ Chargement du hub de contenu…</div>;
 
@@ -1404,6 +1432,20 @@ export default function ContentHubPage() {
               <option value="all">Toutes plateformes</option>
               {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
+            <select className="kanban-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+              <option value="createdAt">Trier par création</option>
+              <option value="scheduledAt">Trier par programmation</option>
+              <option value="publishedAt">Trier par publication</option>
+            </select>
+            <button className="btn btn-ghost btn-icon-sm" title={sortDir === 'desc' ? 'Du plus récent au plus ancien' : 'Du plus ancien au plus récent'}
+                    onClick={() => setSortDir((d) => d === 'desc' ? 'asc' : 'desc')}>
+              <ArrowUpDown size={15} />
+              {sortDir === 'desc' ? '↓' : '↑'}
+            </button>
+            <div className="view-toggle">
+              <button className={`view-toggle-btn${viewMode === 'cards' ? ' active' : ''}`} title="Vue cartes" onClick={() => setViewMode('cards')}><LayoutGrid size={16} /></button>
+              <button className={`view-toggle-btn${viewMode === 'table' ? ' active' : ''}`} title="Vue tableau" onClick={() => setViewMode('table')}><Table2 size={16} /></button>
+            </div>
           </div>
 
           {filtered.length === 0 ? (
@@ -1415,6 +1457,126 @@ export default function ContentHubPage() {
                 <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
                   ＋ Créer un post
                 </button>
+              )}
+            </div>
+          ) : viewMode === 'table' ? (
+            <div className="post-table-wrap">
+              <table className="post-table">
+                <colgroup>
+                  <col className="col-platform" />
+                  <col className="col-title" />
+                  <col className="col-status" />
+                  <col className="col-date" />
+                  <col className="col-date" />
+                  <col className="col-date" />
+                  <col className="col-recur" />
+                  <col className="col-auto" />
+                  <col className="col-num" />
+                  <col className="col-num" />
+                  <col className="col-num" />
+                  <col className="col-num" />
+                  <col className="col-num" />
+                  <col className="col-engage" />
+                  <col className="col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Plateforme</th>
+                    <th>Titre</th>
+                    <th>Statut</th>
+                    <th>Créé</th>
+                    <th>Programmé</th>
+                    <th>Publié</th>
+                    <th>Récurrence</th>
+                    <th>Auto</th>
+                    <th>Imp.</th>
+                    <th>Likes</th>
+                    <th>Com.</th>
+                    <th>Part.</th>
+                    <th>Clics</th>
+                    <th>Engage.</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((p) => {
+                    const rate = engagementRate(p);
+                    return (
+                      <tr key={p.id} className={`post-table-row${p.publishError ? ' post-table-row-error' : ''}`}
+                          title={p.publishError ? `Échec de publication : ${p.publishError}` : undefined}
+                          onClick={() => setEditing(p)}>
+                        <td className="post-table-platform">
+                          <span className="post-platform">{platformLabel(p.platform)}</span>
+                          {p.crossPostId && <span className="chip chip-recur" title="Multi-plateformes">multi</span>}
+                        </td>
+                        <td className="post-table-title">{p.title || <em>(sans titre)</em>}</td>
+                        <td><span className={`post-status ${STATUS_META[p.status].cls}`}>{STATUS_META[p.status].label}</span></td>
+                        <td className="post-table-date">{fmtDateShort(p.createdAt)}</td>
+                        <td className="post-table-date">{fmtDateShort(p.scheduledAt)}</td>
+                        <td className="post-table-date">{fmtDateShort(p.publishedAt)}</td>
+                        <td>
+                          {p.recurrence !== 'none' ? (
+                            <span className="chip chip-recur" title={p.recurrenceBrief ?? undefined}>
+                              {RECURRENCE_LABELS[p.recurrence]}{p.recurrenceBrief ? ' IA' : ''}
+                            </span>
+                          ) : <span className="post-table-muted">—</span>}
+                        </td>
+                        <td>{Boolean(p.autoPublish) ? <span className="chip chip-auto">auto</span> : <span className="post-table-muted">—</span>}</td>
+                        <td className="post-table-num">{fmtNum(p.impressions)}</td>
+                        <td className="post-table-num">{fmtNum(p.likes)}</td>
+                        <td className="post-table-num">{fmtNum(p.comments)}</td>
+                        <td className="post-table-num">{fmtNum(p.shares)}</td>
+                        <td className="post-table-num">{fmtNum(p.clicks)}</td>
+                        <td className="post-table-num">{rate !== null ? `${rate.toFixed(1)} %` : <span className="post-table-muted">—</span>}</td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="btn-table-menu"
+                            title="Actions"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActionMenu((cur) => (cur?.post.id === p.id ? null : { post: p, x: e.clientX, y: e.clientY }));
+                            }}
+                          >⋯</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {actionMenu && createPortal(
+                <div className="table-action-layer" onClick={() => setActionMenu(null)} onContextMenu={() => setActionMenu(null)}>
+                  <div
+                    className="table-action-dropdown"
+                    style={{ top: actionMenu.y + 4, left: actionMenu.x }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button className="table-action-item" onClick={() => { setEditing(actionMenu.post); setActionMenu(null); }}>
+                      Modifier
+                    </button>
+                    {actionMenu.post.status === 'scheduled' && (
+                      <button className="table-action-item" disabled={publishingNowId !== null}
+                              onClick={() => { handlePublishNow(actionMenu.post); setActionMenu(null); }}>
+                        {publishingNowId === actionMenu.post.id ? 'Publication…' : 'Publier maintenant'}
+                      </button>
+                    )}
+                    {actionMenu.post.status === 'scheduled' && (
+                      <button className="table-action-item" onClick={() => { handlePublish(actionMenu.post); setActionMenu(null); }}>
+                        Marquer publié
+                      </button>
+                    )}
+                    {actionMenu.post.status === 'published' && actionMenu.post.externalUrl && /^https?:/i.test(actionMenu.post.externalUrl) && (
+                      <a className="table-action-item" href={actionMenu.post.externalUrl} target="_blank" rel="noopener noreferrer"
+                         onClick={() => setActionMenu(null)}>
+                        Voir le post ↗
+                      </a>
+                    )}
+                    <button className="table-action-item table-action-danger"
+                            onClick={() => { handleDelete(actionMenu.post); setActionMenu(null); }}>
+                      Supprimer
+                    </button>
+                  </div>
+                </div>,
+                document.body,
               )}
             </div>
           ) : (

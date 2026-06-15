@@ -292,6 +292,22 @@ function runMigrations(database: Database.Database): void {
     `);
   }
 
+  // Réparation : anciens posts LinkedIn auto-publiés dont externalUrl n'est
+  // qu'un URN (le lien cliquable du Hub exige une URL http). On reconstruit
+  // l'URL du feed à partir de l'URN. Idempotent (les valeurs déjà en https ne
+  // matchent plus). Couvre la forme complète « urn:li:… » et la forme « li:… »
+  // (préfixe urn: amputé par l'ancien extracteur).
+  database.exec(`
+    UPDATE posts
+    SET externalUrl = 'https://www.linkedin.com/feed/update/' || externalUrl || '/'
+    WHERE platform = 'linkedin' AND externalUrl LIKE 'urn:li:%'
+  `);
+  database.exec(`
+    UPDATE posts
+    SET externalUrl = 'https://www.linkedin.com/feed/update/urn:' || externalUrl || '/'
+    WHERE platform = 'linkedin' AND externalUrl LIKE 'li:%'
+  `);
+
   // ── Multi-utilisateur ──────────────────────────────────────────────────────
   // Identité Composio par utilisateur (entité user_id distincte sur le même
   // workspace) + bot Telegram personnel (token chiffré).
@@ -309,6 +325,12 @@ function runMigrations(database: Database.Database): void {
   // 0 = désactivée) + horodatage de dernière synchro par post
   if (!userCols.some((c) => c.name === 'metricsSyncMinutes')) {
     database.exec(`ALTER TABLE users ADD COLUMN metricsSyncMinutes INTEGER NOT NULL DEFAULT 0`);
+  }
+  // Mise à jour automatique de la base de connaissances : intervalle par
+  // utilisateur (minutes, 0 = désactivée). L'horodatage de dernière synchro
+  // est porté par chaque source (knowledge_sources.lastSyncedAt).
+  if (!userCols.some((c) => c.name === 'knowledgeSyncMinutes')) {
+    database.exec(`ALTER TABLE users ADD COLUMN knowledgeSyncMinutes INTEGER NOT NULL DEFAULT 0`);
   }
   if (!postCols.some((c) => c.name === 'metricsSyncedAt')) {
     database.exec(`ALTER TABLE posts ADD COLUMN metricsSyncedAt TEXT`);
@@ -388,6 +410,19 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_decks_user_plan ON decks(userId, planId);
   `);
 
+  // Rapports de campagne IA archivés (historique des analyses)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS campaign_reports (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      planId    TEXT,
+      report    TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_campaign_reports_user_plan ON campaign_reports(userId, planId, createdAt);
+  `);
+
   // ── Équipes (collaboration multi-utilisateur sur un projet) ────────────────
   // Une équipe possède des projets (plans.teamId) ; ses membres y accèdent
   // selon leur rôle (owner/editor/viewer). Les invitations se font par code.
@@ -463,5 +498,22 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_agents_user_plan    ON agents(userId, planId);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_agent    ON agent_runs(agentId, status);
     CREATE INDEX IF NOT EXISTS idx_agent_runs_plan     ON agent_runs(planId, status);
+  `);
+
+  // ── Journal d'audit fondateur ──────────────────────────────────────────────
+  // Trace les actions clés de tous les utilisateurs (inscriptions, publications,
+  // créations de projets…). Lecture seule depuis le panneau d'administration.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS admin_events (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      action    TEXT NOT NULL,
+      target    TEXT,
+      metadata  TEXT,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_events_time   ON admin_events(createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_events_user   ON admin_events(userId, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_events_action ON admin_events(action, createdAt DESC);
   `);
 }

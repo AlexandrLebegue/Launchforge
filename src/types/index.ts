@@ -472,3 +472,39 @@ declare global {
     }
   }
 }
+
+// ── Administration (founders only) ────────────────────────────────────────────
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  planCount: number;
+  postCount: number;
+  publishedPosts: number;
+  lastActivityAt: string | null;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  newUsersLast7d: number;
+  activeUsersLast7d: number;
+  activeUsersLast30d: number;
+  totalPlans: number;
+  totalPosts: number;
+  postsLast7d: number;
+  publishedPostsLast7d: number;
+  totalKnowledgeEntries: number;
+}
+
+export interface AdminEvent {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  action: string;
+  target: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}

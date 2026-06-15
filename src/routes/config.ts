@@ -107,6 +107,10 @@ router.get('/status', async (req: Request, res: Response) => {
         // Intervalle de synchro automatique des métriques (minutes, 0 = off)
         intervalMinutes: storage.getMetricsSyncMinutes(req.user!.userId),
       },
+      knowledgeSync: {
+        // Intervalle de mise à jour auto de la base de connaissances (minutes, 0 = off)
+        intervalMinutes: storage.getKnowledgeSyncMinutes(req.user!.userId),
+      },
       telegram: {
         configured: isTelegramConfigured(req.user!.userId),
         linked: storage.getTelegramLinksByUserId(req.user!.userId).length > 0,
@@ -137,7 +141,7 @@ router.post('/connect', async (req: Request, res: Response) => {
     return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
   }
   try {
-    const redirectUrl = await createConnectLink(req.user!.userId, toolkit.toLowerCase(), creds);
+    const redirectUrl = await createConnectLink(req.user!.userId, toolkit.toLowerCase(), credentials as Record<string, string> | undefined);
     // Le statut de CET utilisateur devra refléter la connexion dès l'autorisation
     toolkitCache.delete(composioUserIdFor(req.user!.userId) ?? '__none__');
     res.json({ success: true, data: { redirectUrl } });
@@ -250,6 +254,20 @@ router.patch('/metrics-sync', (req: Request, res: Response) => {
   }
   const minutes = raw === 0 ? 0 : Math.max(15, Math.min(10080, Math.round(raw)));
   storage.setMetricsSyncMinutes(req.user!.userId, minutes);
+  res.json({ success: true, data: { intervalMinutes: minutes } });
+});
+
+// ── PATCH /api/config/knowledge-sync ─────────────────────────────────────────
+// Intervalle de mise à jour automatique de la base de connaissances (0 = off).
+// Chaque mise à jour coûte un appel modèle ; les sources évoluent lentement :
+// on borne entre 1 h et 30 jours.
+router.patch('/knowledge-sync', (req: Request, res: Response) => {
+  const raw = Number((req.body as { intervalMinutes?: unknown }).intervalMinutes);
+  if (!Number.isFinite(raw) || raw < 0) {
+    return res.status(400).json({ success: false, error: 'intervalMinutes must be a positive number (0 = disabled)' });
+  }
+  const minutes = raw === 0 ? 0 : Math.max(60, Math.min(43200, Math.round(raw)));
+  storage.setKnowledgeSyncMinutes(req.user!.userId, minutes);
   res.json({ success: true, data: { intervalMinutes: minutes } });
 });
 

@@ -83,6 +83,22 @@ function tableCells(line: string): string[] {
   return line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
 }
 
+/**
+ * Vrai tableau = une ligne `|…|` SUIVIE d'un séparateur (`|---|`). On l'utilise
+ * à la fois pour ouvrir le bloc tableau et comme condition d'arrêt du
+ * paragraphe : une ligne `|…|` orpheline (fréquente en cours de streaming,
+ * avant l'arrivée du séparateur) doit alors être traitée comme du texte, sinon
+ * la boucle de parsing reste bloquée sur elle (i n'avance pas → boucle infinie).
+ */
+function isTableStart(lines: string[], idx: number): boolean {
+  return (
+    RE_TABLE.test(lines[idx]) &&
+    idx + 1 < lines.length &&
+    RE_TSEP.test(lines[idx + 1]) &&
+    lines[idx + 1].includes('-')
+  );
+}
+
 export default function Markdown({ text }: { text: string }) {
   const lines = text.split('\n');
   const blocks: ReactNode[] = [];
@@ -154,7 +170,7 @@ export default function Markdown({ text }: { text: string }) {
     }
 
     // Tableau
-    if (RE_TABLE.test(line) && i + 1 < lines.length && RE_TSEP.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+    if (isTableStart(lines, i)) {
       const header = tableCells(line);
       i += 2;
       const rows: string[][] = [];
@@ -190,11 +206,15 @@ export default function Markdown({ text }: { text: string }) {
       !lines[i].trimStart().startsWith('```') &&
       !RE_HEADING.test(lines[i]) && !RE_UL.test(lines[i]) && !RE_OL.test(lines[i]) &&
       !RE_QUOTE.test(lines[i]) && !(RE_HR.test(lines[i]) && lines[i].trim().length >= 3) &&
-      !RE_TABLE.test(lines[i])
+      !isTableStart(lines, i)
     ) {
       para.push(lines[i]);
       i++;
     }
+    // Filet de sécurité : si aucune ligne n'a été consommée (un détecteur de
+    // bloc a matché sans que son bloc ne la prenne en charge), on avance quand
+    // même pour garantir la progression — jamais de boucle infinie.
+    if (para.length === 0) { para.push(line); i++; }
     blocks.push(
       <p key={key++} className="md-p">
         {para.map((p, j) => <Fragment key={j}>{j > 0 && <br />}{renderInline(p)}</Fragment>)}

@@ -3,9 +3,10 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Flame, LayoutDashboard, Megaphone, CalendarDays, MessageSquare,
   TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut, HelpCircle,
-  Compass, PenLine, Users,
+  Compass, PenLine, Users, Shield,
 } from 'lucide-react';
 import { User, setToken, getOverview, activatePlan, ProjectSummary } from '../api/client';
+import { isAdminEmail } from '../utils/admin';
 import LogoEmbers from './LogoEmbers';
 import GuidedTour, { TourStep } from './GuidedTour';
 import TutorialMenu, { TutorialMeta } from './TutorialMenu';
@@ -413,6 +414,18 @@ export default function Layout({ user, onLogout }: Props) {
               <div className="layout-user-role">Founder</div>
             </div>
           </div>
+
+          {isAdminEmail(user.email) && (
+            <Link
+              to="/admin"
+              className={`layout-nav-item${location.pathname.startsWith('/admin') ? ' active' : ''}`}
+              onClick={closeSidebar}
+              title="Panneau d'administration fondateur"
+            >
+              <span className="layout-nav-icon"><Shield size={17} /></span>
+              Administration
+            </Link>
+          )}
 
           <button
             className="layout-nav-item"

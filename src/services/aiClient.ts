@@ -24,7 +24,8 @@ export function getModel(): string {
 
 export type ContentPart =
   | { type: 'text'; text: string }
-  | { type: 'file'; file: { filename: string; file_data: string } };
+  | { type: 'file'; file: { filename: string; file_data: string } }
+  | { type: 'image_url'; image_url: { url: string } };
 
 export interface ToolCall {
   id: string;

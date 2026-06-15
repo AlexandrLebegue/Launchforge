@@ -11,6 +11,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { runAssistantTurn, isAIConfigured, AssistantMessage } from '../services/assistant';
+import { ChatAttachment } from '../services/attachments';
 
 const router = Router();
 router.use(requireAuth);
@@ -31,6 +32,14 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'messages must end with a user message' });
   }
 
+  const rawAtt = (req.body as { attachments?: unknown }).attachments;
+  const attachments: ChatAttachment[] = Array.isArray(rawAtt)
+    ? rawAtt
+        .filter((a: any) => a && typeof a.name === 'string' && typeof a.mime === 'string' && typeof a.data === 'string')
+        .slice(0, 4)
+        .map((a: any) => ({ name: String(a.name), mime: String(a.mime), data: String(a.data) }))
+    : [];
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -38,15 +47,21 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
 
   // L'utilisateur peut interrompre : à la fermeture de la connexion, on coupe
   // l'appel modèle en cours (économie de tokens) et on n'écrit plus rien.
+  // ⚠️ On écoute 'close' sur la RÉPONSE, pas sur req : une fois le corps POST
+  // entièrement lu par express.json(), req peut émettre 'close' immédiatement
+  // alors que la connexion est saine — ce qui annulait le tour et supprimait
+  // l'événement {done}, d'où un faux « connexion interrompue » côté client.
+  // res 'close' survient aussi en fin normale : le garde-fou writableEnded
+  // distingue une vraie déconnexion d'une réponse déjà terminée.
   const ac = new AbortController();
-  req.on('close', () => ac.abort());
+  res.on('close', () => { if (!res.writableEnded) ac.abort(); });
 
   const send = (payload: unknown) => {
     if (!ac.signal.aborted && !res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
   try {
-    const result = await runAssistantTurn(req.user!.userId, history, send, ac.signal);
+    const result = await runAssistantTurn(req.user!.userId, history, send, ac.signal, attachments);
     if (!ac.signal.aborted) send({ type: 'done', reply: result.reply, actions: result.actions });
   } catch (err) {
     if (!ac.signal.aborted) send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });

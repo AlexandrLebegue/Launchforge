@@ -20,6 +20,7 @@ import overviewRoutes from './routes/overview';
 import assistantRoutes from './routes/assistant';
 import deckRoutes from './routes/decks';
 import teamRoutes from './routes/teams';
+import adminRoutes from './routes/admin';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -53,6 +54,7 @@ app.use('/api/overview', overviewRoutes);
 app.use('/api/assistant', assistantRoutes);
 app.use('/api/decks', deckRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Médias générés (GIF/MP4 des decks, visuels) — purge automatique à 90 jours.
 // Le dossier est résolu à chaque requête : UPLOADS_DIR peut être posé après l'import.

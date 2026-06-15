@@ -159,6 +159,13 @@ router.get('/report', async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /api/content/reports — historique des analyses archivées (sans IA) ──
+router.get('/reports', (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const planId = storage.getActivePlanId(userId);
+  res.json({ success: true, data: storage.getCampaignReportsByPlan(userId, planId) });
+});
+
 // ── POST /api/content/image — génère un visuel (IA) et l'héberge ─────────────
 // Retourne une URL publique ; si postId est fourni, l'image est attachée au post.
 router.post('/image', async (req: Request, res: Response) => {

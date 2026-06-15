@@ -716,6 +716,16 @@ export async function applyKnowledgeSuggestions(
   return request('/knowledge/sync/apply', { method: 'POST', body: JSON.stringify({ suggestions }) });
 }
 
+/** Mise à jour « maintenant » : analyse les sources enregistrées et applique
+ *  directement les fiches (même cycle que la mise à jour automatique). */
+export async function runKnowledgeSync(crawl = false): Promise<ApiResponse<{
+  applied: KnowledgeEntry[];
+  errors: { id: string; url: string; error: string }[];
+  syncedAt: string | null;
+}>> {
+  return request('/knowledge/sync/run', { method: 'POST', body: JSON.stringify({ crawl }) });
+}
+
 // ── Contacts (prospects / clients / partenaires) ──────────────────────────────
 
 export type ContactType = 'prospect' | 'client' | 'partner';
@@ -865,6 +875,7 @@ export interface ConfigStatus {
   composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[]; canManage?: boolean; ownerName?: string | null };
   marp: { theme: string; hasCustomCss: boolean; themes: { value: string; label: string }[] };
   metricsSync: { intervalMinutes: number };
+  knowledgeSync: { intervalMinutes: number };
   telegram: { configured: boolean; linked: boolean; ownBot: boolean; botUsername: string | null };
   publishMode: 'auto' | 'manual';
 }
@@ -984,6 +995,11 @@ export async function setMetricsSyncInterval(intervalMinutes: number): Promise<A
   return request('/config/metrics-sync', { method: 'PATCH', body: JSON.stringify({ intervalMinutes }) });
 }
 
+/** Intervalle de mise à jour auto de la base de connaissances (minutes, 0 = désactivée) */
+export async function setKnowledgeSyncInterval(intervalMinutes: number): Promise<ApiResponse<{ intervalMinutes: number }>> {
+  return request('/config/knowledge-sync', { method: 'PATCH', body: JSON.stringify({ intervalMinutes }) });
+}
+
 export async function setPublishMode(mode: 'auto' | 'manual'): Promise<ApiResponse<{ publishMode: string }>> {
   return request('/config/publish-mode', { method: 'PATCH', body: JSON.stringify({ mode }) });
 }
@@ -1022,6 +1038,13 @@ export async function getCampaignReport(): Promise<ApiResponse<{ report: string;
   return request('/content/report');
 }
 
+export interface CampaignReportItem { id: string; report: string; createdAt: string }
+
+/** Historique des analyses de campagne archivées (projet actif) */
+export async function getCampaignReports(): Promise<ApiResponse<CampaignReportItem[]>> {
+  return request('/content/reports');
+}
+
 /** Synchronise tous les posts programmés vers le calendrier personnel */
 export async function syncAllToCalendar(): Promise<ApiResponse<{ synced: number; message?: string }>> {
   return request('/posts/sync-calendar', { method: 'POST' });
@@ -1050,7 +1073,8 @@ async function streamChat(
   path: string,
   messages: { role: 'user' | 'assistant'; text: string }[],
   handlers: Omit<PostChatHandlers, 'onSaved'> & { onSaved?: PostChatHandlers['onSaved'] },
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  extra?: Record<string, unknown>
 ): Promise<void> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1063,7 +1087,7 @@ async function streamChat(
     res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, ...extra }),
       signal,
     });
   } catch (err) {
@@ -1130,13 +1154,23 @@ export async function streamPostChat(
   return streamChat('/content/chat/stream', messages, handlers);
 }
 
+/** Pièce jointe envoyée à l'assistant (fichier brut en base64) */
+export interface AssistantAttachment {
+  name: string;
+  mime: string;
+  /** contenu base64 sans préfixe data: */
+  data: string;
+}
+
 /** Assistant LaunchForge intégré (vue 💬 Assistant) — mêmes outils que le bot Telegram */
 export async function streamAssistantChat(
   messages: { role: 'user' | 'assistant'; text: string }[],
   handlers: Omit<PostChatHandlers, 'onSaved'>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  attachments: AssistantAttachment[] = []
 ): Promise<void> {
-  return streamChat('/assistant/chat/stream', messages, handlers, signal);
+  return streamChat('/assistant/chat/stream', messages, handlers, signal,
+    attachments.length ? { attachments } : undefined);
 }
 
 // ── Telegram ──────────────────────────────────────────────────────────────────
@@ -1275,4 +1309,58 @@ export interface InvitePreview {
 /** Aperçu PUBLIC d'une invitation (nom de l'équipe + validité), sans connexion */
 export async function getInvitePreview(code: string): Promise<ApiResponse<InvitePreview>> {
   return request(`/teams/invite/${encodeURIComponent(code)}`);
+}
+
+// ── Administration (fondateurs) ───────────────────────────────────────────────
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  planCount: number;
+  postCount: number;
+  publishedPosts: number;
+  lastActivityAt: string | null;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  newUsersLast7d: number;
+  activeUsersLast7d: number;
+  activeUsersLast30d: number;
+  totalPlans: number;
+  totalPosts: number;
+  postsLast7d: number;
+  publishedPostsLast7d: number;
+  totalKnowledgeEntries: number;
+}
+
+export interface AdminEvent {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  action: string;
+  target: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export async function getAdminStats(): Promise<ApiResponse<AdminStats>> {
+  return request('/admin/stats');
+}
+
+export async function getAdminUsers(): Promise<ApiResponse<AdminUserSummary[]>> {
+  return request('/admin/users');
+}
+
+export async function getAdminUserActivity(userId: string, limit = 50): Promise<ApiResponse<AdminEvent[]>> {
+  return request(`/admin/users/${userId}/activity?limit=${limit}`);
+}
+
+export async function getAdminActivity(limit = 50, before?: string): Promise<ApiResponse<AdminEvent[]>> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set('before', before);
+  return request(`/admin/activity?${params}`);
 }

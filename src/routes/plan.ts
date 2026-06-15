@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { generateContentCalendar } from '../services/calendarGenerator';
 import { platformsForNiche, bootstrapKnowledgeFromProfile } from '../services/bootstrap';
 import { notifyLinkedChats } from '../services/telegramBot';
+import { logEvent } from '../services/adminLogger';
 import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState, Post } from '../types';
 
 const router = Router();
@@ -63,6 +64,8 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
         ).catch(() => { /* best-effort */ });
       } catch { /* le plan reste valide même si le bootstrap contenu échoue */ }
     }
+
+    logEvent(user.userId, 'plan.created', plan.id, { productName: input.productName, niche: input.niche });
 
     const response: ApiResponse<LaunchPlan> & { bootstrappedPosts?: number } = {
       success: true,
