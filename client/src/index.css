@@ -3592,7 +3592,22 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   font-size: 0.74rem;
   color: var(--color-text-muted);
 }
-.post-card-date, .post-card-metrics { white-space: nowrap; }
+.post-card-metrics { white-space: nowrap; }
+/* Date toujours affichée, sur sa propre ligne tout en bas de la carte */
+.post-card-date {
+  white-space: nowrap;
+  width: 100%;
+  order: 10;
+  color: var(--color-text-faint, var(--color-text-muted));
+  font-size: 0.72rem;
+}
+/* Boutons d'action du post programmé : compacts et collés à droite */
+.post-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  align-items: center;
+}
 
 /* Éditeur de post */
 .post-editor { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }

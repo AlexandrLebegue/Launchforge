@@ -60,6 +60,13 @@ const fmtDateShort = (iso: string | null) =>
 
 const fmtNum = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0', '')}k` : String(n));
 
+/** Date affichée en bas de chaque carte, selon le statut du post */
+const cardDateLabel = (p: Post): string => {
+  if (p.status === 'published') return `Publié le ${fmtDate(p.publishedAt ?? p.updatedAt)}`;
+  if (p.status === 'scheduled') return `Programmé le ${fmtDate(p.scheduledAt)}`;
+  return `Créé le ${fmtDate(p.createdAt)}`;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Éditeur de post (modal) avec assistant IA
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1604,7 +1611,6 @@ export default function ContentHubPage() {
                       {p.publishError && (
                         <span className="chip chip-error" title={p.publishError}>échec auto</span>
                       )}
-                      {p.status === 'scheduled' && <span className="post-card-date">{fmtDate(p.scheduledAt)}</span>}
                       {p.status === 'published' && p.externalUrl && /^https?:/i.test(p.externalUrl) && (
                         <a className="post-card-link" href={p.externalUrl} target="_blank" rel="noopener noreferrer"
                            onClick={(e) => e.stopPropagation()} title="Ouvrir le post publié sur la plateforme">
@@ -1617,18 +1623,19 @@ export default function ContentHubPage() {
                         </span>
                       )}
                       {p.status === 'scheduled' && (
-                        <>
-                          <button className="btn btn-sm btn-primary" disabled={publishingNowId !== null}
+                        <div className="post-card-actions">
+                          <button className="btn btn-xs btn-primary" disabled={publishingNowId !== null}
                                   title="Publie réellement sur la plateforme via vos comptes connectés"
                                   onClick={(e) => { e.stopPropagation(); handlePublishNow(p); }}>
                             {publishingNowId === p.id ? 'Publication…' : 'Publier maintenant'}
                           </button>
-                          <button className="btn btn-sm btn-ghost" title="Marque le post comme publié sans rien envoyer"
+                          <button className="btn btn-xs btn-ghost" title="Marque le post comme publié sans rien envoyer"
                                   onClick={(e) => { e.stopPropagation(); handlePublish(p); }}>
                             ✓ Marquer publié
                           </button>
-                        </>
+                        </div>
                       )}
+                      <span className="post-card-date">{cardDateLabel(p)}</span>
                     </div>
                   </div>
                 );
