@@ -1512,30 +1512,30 @@ export default function ContentHubPage() {
                       <tr key={p.id} className={`post-table-row${p.publishError ? ' post-table-row-error' : ''}`}
                           title={p.publishError ? `Échec de publication : ${p.publishError}` : undefined}
                           onClick={() => setEditing(p)}>
-                        <td className="post-table-platform">
+                        <td className="post-table-platform" data-label="Plateforme">
                           <span className="post-platform">{platformLabel(p.platform)}</span>
                           {p.crossPostId && <span className="chip chip-recur" title="Multi-plateformes">multi</span>}
                         </td>
-                        <td className="post-table-title">{p.title || <em>(sans titre)</em>}</td>
-                        <td><span className={`post-status ${STATUS_META[p.status].cls}`}>{STATUS_META[p.status].label}</span></td>
-                        <td className="post-table-date">{fmtDateShort(p.createdAt)}</td>
-                        <td className="post-table-date">{fmtDateShort(p.scheduledAt)}</td>
-                        <td className="post-table-date">{fmtDateShort(p.publishedAt)}</td>
-                        <td>
+                        <td className="post-table-title" data-label="Titre">{p.title || <em>(sans titre)</em>}</td>
+                        <td data-label="Statut"><span className={`post-status ${STATUS_META[p.status].cls}`}>{STATUS_META[p.status].label}</span></td>
+                        <td className="post-table-date" data-label="Créé">{fmtDateShort(p.createdAt)}</td>
+                        <td className="post-table-date" data-label="Programmé">{fmtDateShort(p.scheduledAt)}</td>
+                        <td className="post-table-date" data-label="Publié">{fmtDateShort(p.publishedAt)}</td>
+                        <td data-label="Récurrence">
                           {p.recurrence !== 'none' ? (
                             <span className="chip chip-recur" title={p.recurrenceBrief ?? undefined}>
                               {RECURRENCE_LABELS[p.recurrence]}{p.recurrenceBrief ? ' IA' : ''}
                             </span>
                           ) : <span className="post-table-muted">—</span>}
                         </td>
-                        <td>{Boolean(p.autoPublish) ? <span className="chip chip-auto">auto</span> : <span className="post-table-muted">—</span>}</td>
-                        <td className="post-table-num">{fmtNum(p.impressions)}</td>
-                        <td className="post-table-num">{fmtNum(p.likes)}</td>
-                        <td className="post-table-num">{fmtNum(p.comments)}</td>
-                        <td className="post-table-num">{fmtNum(p.shares)}</td>
-                        <td className="post-table-num">{fmtNum(p.clicks)}</td>
-                        <td className="post-table-num">{rate !== null ? `${rate.toFixed(1)} %` : <span className="post-table-muted">—</span>}</td>
-                        <td onClick={(e) => e.stopPropagation()}>
+                        <td data-label="Auto">{Boolean(p.autoPublish) ? <span className="chip chip-auto">auto</span> : <span className="post-table-muted">—</span>}</td>
+                        <td className="post-table-num" data-label="Impressions">{fmtNum(p.impressions)}</td>
+                        <td className="post-table-num" data-label="Likes">{fmtNum(p.likes)}</td>
+                        <td className="post-table-num" data-label="Commentaires">{fmtNum(p.comments)}</td>
+                        <td className="post-table-num" data-label="Partages">{fmtNum(p.shares)}</td>
+                        <td className="post-table-num" data-label="Clics">{fmtNum(p.clicks)}</td>
+                        <td className="post-table-num" data-label="Engagement">{rate !== null ? `${rate.toFixed(1)} %` : <span className="post-table-muted">—</span>}</td>
+                        <td data-label="Actions" onClick={(e) => e.stopPropagation()}>
                           <button
                             className="btn-table-menu"
                             title="Actions"

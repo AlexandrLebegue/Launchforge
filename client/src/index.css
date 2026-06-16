@@ -363,6 +363,8 @@ input, textarea, select {
 
 .layout-nav {
   flex: 1;
+  min-height: 0;          /* autorise le rétrécissement → la zone défile */
+  overflow-y: auto;       /* nav défilable ; logo et pied restent fixes */
   padding: 16px 12px;
   display: flex;
   flex-direction: column;
@@ -502,16 +504,24 @@ input, textarea, select {
   top: 14px;
   left: 14px;
   z-index: 300;
-  background: var(--color-surface);
+  background: var(--color-surface-solid);   /* opaque : reste lisible sur le contenu */
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 8px 11px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   line-height: 1;
   color: var(--color-text);
   transition: var(--transition-fast);
   box-shadow: var(--shadow-card);
+}
+/* Sidebar ouverte : la croix passe à droite pour ne plus recouvrir le
+   logo « LaunchForge » en haut de la barre latérale. */
+.layout-hamburger.open {
+  left: auto;
+  right: 14px;
 }
 .layout-hamburger:hover {
   background: var(--color-surface-2);
@@ -2775,6 +2785,13 @@ form .btn { margin-top: 8px; }
   .landing-hero h1 { font-size: 2.4rem; }
   .landing-section-title { font-size: 1.5rem; }
   .landing-nav-links a:not(.btn) { display: none; }
+  /* Barre du haut resserrée : logo + langue + « Se connecter » tiennent sans
+     déborder. Le bouton « Commencer » est masqué (doublon du gros CTA du hero). */
+  .landing-nav-inner { padding: 0 12px; }
+  .landing-nav-links { gap: 8px; }
+  .landing-nav-links .btn-sm { padding: 6px 10px; font-size: 0.8rem; }
+  .landing-nav-links .btn-primary { display: none; }
+  .landing-logo { font-size: 1.05rem; }
   .landing-stats { gap: 28px; }
   .landing-stat-value { font-size: 1.5rem; }
   .slide-item { padding: 32px 18px 28px; }
@@ -3480,6 +3497,51 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
 .post-table-muted { color: var(--color-border); }
 .post-table-platform { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .post-table-actions { display: flex; gap: 3px; align-items: center; flex-wrap: nowrap; }
+
+/* Téléphones : un tableau de 15 colonnes est inutilisable même en scroll
+   horizontal. On transforme chaque ligne en carte « étiquette : valeur »
+   (les libellés viennent des data-label posés sur chaque <td>). */
+@media (max-width: 640px) {
+  .post-table-wrap { overflow-x: visible; border: none; border-radius: 0; }
+  .post-table { font-size: 0.82rem; }
+  .post-table colgroup,
+  .post-table thead { display: none; }
+  .post-table, .post-table tbody, .post-table tr, .post-table td { display: block; width: auto; }
+  .post-table-row {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    margin-bottom: 10px;
+    padding: 4px 12px;
+  }
+  .post-table-row:last-child { margin-bottom: 0; }
+  .post-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 7px 0;
+    overflow: visible;
+    white-space: normal;
+    text-align: right;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+  .post-table-row td:last-child { border-bottom: none; }
+  .post-table td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    text-align: left;
+  }
+  /* La plateforme et le titre, mis en avant en haut de la carte */
+  .post-table-platform { justify-content: flex-end; }
+  .post-table-title { white-space: normal; overflow: visible; text-overflow: clip; }
+  .post-table-num { text-align: right; }
+}
 
 /* Bouton ⋯ menu actions tableau */
 .btn-table-menu {

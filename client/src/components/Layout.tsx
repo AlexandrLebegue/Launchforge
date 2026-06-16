@@ -301,7 +301,7 @@ export default function Layout({ user, onLogout }: Props) {
     <div className="layout-root">
       {/* ── Mobile hamburger ── */}
       <button
-        className="layout-hamburger"
+        className={`layout-hamburger${sidebarOpen ? ' open' : ''}`}
         onClick={() => setSidebarOpen((o) => !o)}
         aria-label="Toggle navigation"
       >
