@@ -5034,6 +5034,18 @@ video.md-media { background: #000; }
   .cal-cell { min-height: 76px; }
   .cal-chip { font-size: 0.62rem; }
 }
+/* Téléphones : 7 colonnes très étroites → on ne garde que l'heure et la
+   couleur de statut dans chaque pastille (le titre, illisible une fois
+   tronqué, reste accessible au tap qui ouvre le post). */
+@media (max-width: 540px) {
+  .cal-grid { gap: 4px; }
+  .cal-dayname { font-size: 0.6rem; }
+  .cal-cell { min-height: 68px; padding: 4px 3px; gap: 3px; border-radius: 4px; }
+  .cal-daynum { font-size: 0.7rem; }
+  .cal-chip { font-size: 0; gap: 0; padding: 3px 4px; border-radius: 3px; }
+  .cal-chip-time { font-size: 0.62rem; }
+  .cal-more { font-size: 0.6rem; padding: 0 3px; }
+}
 
 /* ============================================================
    SÉRIES RÉCURRENTES — pilotage IA + mode simulé
@@ -5276,12 +5288,36 @@ video.md-media { background: #000; }
 }
 .pe-footer-error { margin-right: auto; }
 
-/* Mobile : une seule colonne, IA sous la composition */
+/* Mobile : une seule colonne, IA sous la composition.
+   On bascule en flux bloc naturel (et non plus flex/grid à hauteur
+   contrainte) : sinon .pe-col, plafonnée en hauteur mais en overflow
+   visible, débordait par-dessus l'aperçu et le pied de modale. */
 @media (max-width: 920px) {
-  .modal-box-xl { max-height: 92vh; overflow-y: auto; padding: 22px 18px 0; }
-  .pe-grid { grid-template-columns: 1fr; }
-  .pe-col { overflow: visible; padding-right: 0; }
-  .pe-col-right { border-left: none; padding-left: 0; }
+  .modal-box-xl {
+    display: block;
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 22px 18px 0;
+  }
+  .pe-form  { display: block; }
+  .pe-grid  { display: block; }
+  .pe-col   { overflow: visible; padding-right: 0; }
+  .pe-col-right { border-left: none; padding-left: 0; margin-top: 14px; }
+
+  /* Pied collé en bas de la modale, fond opaque, boutons pleine largeur :
+     toujours atteignable et plus aucun texte qui transparaît derrière. */
+  .modal-box-xl .pe-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 14px -18px 0;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--color-surface-solid);
+    border-top: 1px solid var(--color-border);
+    flex-wrap: wrap;
+  }
+  .modal-box-xl .pe-footer .btn { flex: 1 1 auto; min-height: 44px; }
+  .modal-box-xl .pe-footer-error { flex-basis: 100%; }
 }
 
 /* ============================================================
@@ -6346,4 +6382,49 @@ video.md-media { background: #000; }
 @media (max-width: 720px) {
   .page-header .admin-tabs { width: 100%; }
   .admin-tab { flex: 1; justify-content: center; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   AFFINAGE MOBILE — lisibilité & ergonomie smartphone
+   Placé en fin de fichier pour primer sur les règles précédentes.
+   Cible les téléphones (≤ 640 px) : en-têtes empilés, boutons pleine
+   largeur faciles à toucher, grilles de cartes compactes.
+   ════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* ── En-têtes de page (Dashboard, Hub, Calendrier, Connaissances…) ──
+     Titre + description sur une ligne, actions empilées dessous en pleine
+     largeur — fini le titre et les boutons qui se chevauchent. */
+  .dashboard-header,
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .dashboard-header h1,
+  .page-header h1,
+  .page-title { font-size: 1.45rem; }
+
+  /* Boutons d'action : grande cible tactile ; les groupes se partagent
+     la largeur et se replient proprement. */
+  .dashboard-header .btn,
+  .page-header .btn { min-height: 42px; }
+  .dashboard-header > div > .btn,
+  .page-header > div > .btn { flex: 1 1 140px; }
+
+  /* La chip « Projet : … » reste lisible, sur sa propre ligne au besoin. */
+  .dashboard-header .chip-project { margin-bottom: 2px; }
+
+  /* ── Cartes statistiques : 2 colonnes compactes, pas une pile qui scroll ── */
+  .dashboard-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card { padding: 14px 14px; }
+  .stat-card-icon { margin-bottom: 6px; }
+  .stat-card-value { font-size: 1.55rem; }
+
+  /* ── Choix du mode de publication (Config) : empilé pour respirer ── */
+  .approval-mode-picker { grid-template-columns: 1fr; }
 }
