@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardCheck } from 'lucide-react';
-import { getApprovals, getApprovalHistory, approveRun, rejectRun, ApprovalItem } from '../api/client';
+import { getApprovals, getApprovalHistory, approveRun, rejectRun, getAgents, ApprovalItem } from '../api/client';
 
 const PLATFORM_ICONS: Record<string, string> = {
   reddit: '', twitter: '', linkedin: '', instagram: '',
@@ -19,12 +19,16 @@ export default function ApprovalsPage() {
   const [items,    setItems]    = useState<ApprovalItem[]>([]);
   const [history,  setHistory]  = useState<ApprovalItem[]>([]);
   const [states,   setStates]   = useState<Record<string, CardState>>({});
+  const [hasAgents, setHasAgents] = useState(false);
   const [loading,  setLoading]  = useState(true);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     getApprovalHistory().then((r) => {
       if (r.success && r.data) setHistory(r.data);
+    });
+    getAgents().then((r) => {
+      if (r.success && r.data) setHasAgents(r.data.length > 0);
     });
     const res = await getApprovals();
     if (res.success && res.data) {
@@ -103,9 +107,11 @@ export default function ApprovalsPage() {
             Quand un agent en mode « validation » prépare un contenu, il apparaît ici
             pour relecture avant publication. Les agents en mode « auto » publient directement.
           </p>
-          <Link to="/agents" className="btn btn-primary" style={{ display: 'inline-flex' }}>
-            Gérer mes agents
-          </Link>
+          {hasAgents && (
+            <Link to="/agents" className="btn btn-primary" style={{ display: 'inline-flex' }}>
+              Gérer mes agents
+            </Link>
+          )}
         </div>
       ) : (
         <div className="approvals-list">
