@@ -13,6 +13,11 @@ function getToken(): string | null {
 export function setToken(token: string | null): void {
   if (token) localStorage.setItem('launchforge_token', token);
   else localStorage.removeItem('launchforge_token');
+  // Le cache « vue d'ensemble » est un singleton de module : on le vide à tout
+  // changement d'identité (connexion, inscription, déconnexion) pour qu'un
+  // utilisateur ne lise jamais les projets du précédent — ce qui, combiné au
+  // tutoriel, le déclencherait à tort sur 0 projet réel.
+  invalidateOverview();
 }
 
 async function request<T>(
@@ -53,6 +58,9 @@ export interface User {
   email: string;
   name: string;
   createdAt: string;
+  /** Tutoriel d'accueil en attente : posé à la création du compte, lancé après
+   *  le 1er projet. Absent/false = déjà vu ou compte ancien. */
+  tutorialPending?: boolean;
 }
 
 export interface CompanyProfile {
@@ -163,6 +171,11 @@ export async function login(
 
 export async function getMe(): Promise<ApiResponse<User>> {
   return request('/auth/me');
+}
+
+/** Consomme le drapeau « tutoriel d'accueil » côté serveur (montré une seule fois) */
+export async function markTutorialSeen(): Promise<ApiResponse<{ tutorialPending: boolean }>> {
+  return request('/auth/tutorial-seen', { method: 'POST' });
 }
 
 /** Fournisseurs OAuth activés côté serveur (bouton affiché en conséquence) */
@@ -1223,10 +1236,50 @@ export async function streamAssistantChat(
   messages: { role: 'user' | 'assistant'; text: string }[],
   handlers: Omit<PostChatHandlers, 'onSaved'>,
   signal?: AbortSignal,
-  attachments: AssistantAttachment[] = []
+  attachments: AssistantAttachment[] = [],
+  conversationId?: string
 ): Promise<void> {
+  const extra: Record<string, unknown> = {};
+  if (attachments.length) extra.attachments = attachments;
+  if (conversationId) extra.conversationId = conversationId;
   return streamChat('/assistant/chat/stream', messages, handlers, signal,
-    attachments.length ? { attachments } : undefined);
+    Object.keys(extra).length ? extra : undefined);
+}
+
+// ── Historique des conversations avec l'assistant ─────────────────────────────
+
+/** Entrée légère de la liste d'historique (sans le corps des messages) */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  preview: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  planId: string | null;
+  title: string;
+  messages: PostChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Liste les fils de l'utilisateur (du plus récent au plus ancien) */
+export async function listConversations(): Promise<ApiResponse<ConversationSummary[]>> {
+  return request('/assistant/conversations');
+}
+
+/** Récupère un fil complet (avec tous ses messages) */
+export async function getConversation(id: string): Promise<ApiResponse<Conversation>> {
+  return request(`/assistant/conversations/${id}`);
+}
+
+/** Supprime définitivement un fil */
+export async function deleteConversation(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
+  return request(`/assistant/conversations/${id}`, { method: 'DELETE' });
 }
 
 // ── Telegram ──────────────────────────────────────────────────────────────────

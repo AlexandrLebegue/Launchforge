@@ -1,14 +1,35 @@
 import { useState, useRef, useEffect, FormEvent, ChangeEvent, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Flame, User, Square, Send, Paperclip, X, FileText } from 'lucide-react';
-import { streamAssistantChat, getOverview, PostChatMessage, AssistantAttachment } from '../api/client';
+import { Flame, User, Square, Send, Paperclip, X, FileText, History, Trash2, Plus } from 'lucide-react';
+import {
+  streamAssistantChat, getOverview, listConversations, getConversation, deleteConversation,
+  PostChatMessage, AssistantAttachment, ConversationSummary,
+} from '../api/client';
 import Markdown from '../components/Markdown';
 
 const STORAGE_KEY = 'lf_assistant_chat';
+const CONV_ID_KEY = 'lf_assistant_conv_id';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 Mo / fichier
 const MAX_FILES = 4;
 const ACCEPT = '.pdf,.docx,.xlsx,.xls,.txt,.md,.csv,image/*';
+
+/** Identifiant de fil — crypto.randomUUID en contexte sécurisé, repli sinon */
+function newConversationId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch { /* indisponible → repli */ }
+  return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Date courte et lisible pour la liste d'historique */
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  } catch {
+    return '';
+  }
+}
 
 /** Lit un fichier en base64 (sans le préfixe data:) */
 function readAsBase64(file: File): Promise<string> {
@@ -50,6 +71,15 @@ function loadHistory(): PostChatMessage[] {
   return [WELCOME];
 }
 
+/** Restaure l'id du fil courant (ou en crée un neuf) */
+function loadConversationId(): string {
+  const saved = sessionStorage.getItem(CONV_ID_KEY);
+  if (saved) return saved;
+  const id = newConversationId();
+  sessionStorage.setItem(CONV_ID_KEY, id);
+  return id;
+}
+
 export default function AssistantPage() {
   const [messages, setMessages] = useState<PostChatMessage[]>(loadHistory);
   const [input,    setInput]    = useState('');
@@ -60,6 +90,10 @@ export default function AssistantPage() {
   const [projectName, setProjectName] = useState<string | null>(null);
   const [files,    setFiles]    = useState<AssistantAttachment[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
+  // Historisation : id du fil courant + liste des fils + ouverture du panneau (mobile)
+  const [conversationId, setConversationId] = useState<string>(loadConversationId);
+  const [conversations, setConversations]   = useState<ConversationSummary[]>([]);
+  const [historyOpen,   setHistoryOpen]     = useState(false);
   const chatEnd  = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef  = useRef<HTMLInputElement>(null);
@@ -68,10 +102,17 @@ export default function AssistantPage() {
   const streamTextRef = useRef('');
   const actionsRef = useRef<string[]>([]);
 
+  const refreshConversations = () => {
+    listConversations().then((res) => {
+      if (res.success && res.data) setConversations(res.data);
+    });
+  };
+
   useEffect(() => {
     getOverview().then((res) => {
       if (res.success && res.data?.project) setProjectName(res.data.project.productName);
     });
+    refreshConversations();
   }, []);
 
   // Prompt pré-rempli depuis une autre page (ex. « Discuter avec l'IA » des analyses)
@@ -92,6 +133,10 @@ export default function AssistantPage() {
   useEffect(() => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40)));
   }, [messages]);
+
+  useEffect(() => {
+    sessionStorage.setItem(CONV_ID_KEY, conversationId);
+  }, [conversationId]);
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
@@ -132,6 +177,8 @@ export default function AssistantPage() {
           setStreamActions([]);
           setMessages((prev) => [...prev, { role: 'assistant', text: reply, actions: actions.length ? actions : undefined }]);
           inputRef.current?.focus();
+          // Le serveur vient d'enregistrer le fil : on rafraîchit la liste
+          refreshConversations();
         },
         onError: (err) => {
           abortRef.current = null;
@@ -162,6 +209,7 @@ export default function AssistantPage() {
       },
       controller.signal,
       attachments,
+      conversationId,
     );
   };
 
@@ -199,140 +247,221 @@ export default function AssistantPage() {
     }
   };
 
-  const handleReset = () => {
+  /** Démarre un nouveau fil (vide le courant, en crée un id neuf) */
+  const startNewConversation = () => {
+    if (sending) return;
     setMessages([WELCOME]);
     setError(null);
     setFiles([]);
     sessionStorage.removeItem(STORAGE_KEY);
+    setConversationId(newConversationId());
+    setHistoryOpen(false);
     inputRef.current?.focus();
+  };
+
+  /** Ouvre un fil de l'historique (charge ses messages depuis le serveur) */
+  const openConversation = async (id: string) => {
+    if (sending || id === conversationId) { setHistoryOpen(false); return; }
+    setError(null);
+    const res = await getConversation(id);
+    if (res.success && res.data) {
+      const loaded = res.data.messages.length ? res.data.messages : [WELCOME];
+      setMessages(loaded);
+      setConversationId(id);
+      setHistoryOpen(false);
+    } else {
+      setError('Conversation introuvable — elle a peut-être été supprimée.');
+      refreshConversations();
+    }
+  };
+
+  /** Supprime un fil. Si c'est le fil ouvert, on repart sur un fil neuf. */
+  const removeConversation = async (id: string) => {
+    const res = await deleteConversation(id);
+    if (res.success) {
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (id === conversationId) startNewConversation();
+    }
   };
 
   const fresh = messages.length <= 1;
 
   return (
-    <div className="assistant-page animate-fadeIn">
-      {/* En-tête */}
-      <div className="assistant-page-header">
-        <div>
-          <h1>Assistant</h1>
-          <p>
-            Pilote tout LaunchForge en discutant{projectName ? <> — projet : <strong>{projectName}</strong></> : ''}.
-            Posts, emails, agenda, validations, recherche web.
-          </p>
+    <div className="assistant-layout">
+      {/* Panneau d'historique */}
+      {historyOpen && <div className="assistant-history-backdrop" onClick={() => setHistoryOpen(false)} />}
+      <aside className={`assistant-history ${historyOpen ? 'open' : ''}`} data-tour="asst-history">
+        <div className="assistant-history-head">
+          <span>Historique</span>
+          <button className="btn btn-ghost btn-sm" onClick={startNewConversation} disabled={sending} title="Nouvelle conversation">
+            <Plus size={15} /> Nouvelle
+          </button>
         </div>
-        <button className="btn btn-ghost" data-tour="asst-reset" onClick={handleReset} title="Nouvelle conversation">
-          ↺ Nouvelle conversation
-        </button>
-      </div>
+        <div className="assistant-history-list">
+          {conversations.length === 0 ? (
+            <p className="assistant-history-empty">Aucune conversation enregistrée pour l'instant.</p>
+          ) : (
+            conversations.map((c) => (
+              <div
+                key={c.id}
+                className={`assistant-history-item ${c.id === conversationId ? 'active' : ''}`}
+                onClick={() => openConversation(c.id)}
+                role="button"
+                tabIndex={0}
+              >
+                <div className="assistant-history-item-main">
+                  <span className="assistant-history-title">{c.title}</span>
+                  {c.preview && <span className="assistant-history-preview">{c.preview}</span>}
+                </div>
+                <span className="assistant-history-date">{formatDate(c.updatedAt)}</span>
+                <button
+                  type="button"
+                  className="assistant-history-del"
+                  onClick={(e) => { e.stopPropagation(); removeConversation(c.id); }}
+                  title="Supprimer cette conversation"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+        <p className="assistant-history-note">🗑️ Les conversations sont supprimées automatiquement après 1 mois d'inactivité.</p>
+      </aside>
 
-      {/* Fil de conversation */}
-      <div className="assistant-page-messages">
-        {messages.map((msg, i) => (
-          <Fragment key={i}>
-            {msg.actions && msg.actions.length > 0 && (
-              <div className="chat-actions" style={{ padding: '2px 0 6px' }}>
-                {msg.actions.map((a, j) => <span key={j} className="chat-action-chip">{a}</span>)}
+      <div className="assistant-page animate-fadeIn">
+        {/* En-tête */}
+        <div className="assistant-page-header">
+          <div>
+            <h1>Assistant</h1>
+            <p>
+              Pilote tout LaunchForge en discutant{projectName ? <> — projet : <strong>{projectName}</strong></> : ''}.
+              Posts, emails, agenda, validations, recherche web.
+            </p>
+          </div>
+          <div className="assistant-page-header-actions">
+            <button
+              className="btn btn-ghost assistant-history-toggle"
+              onClick={() => setHistoryOpen((v) => !v)}
+              title="Historique des conversations"
+            >
+              <History size={16} /> Historique
+            </button>
+            <button className="btn btn-ghost" data-tour="asst-reset" onClick={startNewConversation} disabled={sending} title="Nouvelle conversation">
+              ↺ Nouvelle conversation
+            </button>
+          </div>
+        </div>
+
+        {/* Fil de conversation */}
+        <div className="assistant-page-messages">
+          {messages.map((msg, i) => (
+            <Fragment key={i}>
+              {msg.actions && msg.actions.length > 0 && (
+                <div className="chat-actions" style={{ padding: '2px 0 6px' }}>
+                  {msg.actions.map((a, j) => <span key={j} className="chat-action-chip">{a}</span>)}
+                </div>
+              )}
+              <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                <div className={`chat-avatar ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                  {msg.role === 'assistant' ? <Flame size={16} /> : <User size={16} />}
+                </div>
+                <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
+                  <Markdown text={msg.text} />
+                </div>
               </div>
-            )}
-            <div className={`chat-msg chat-msg-${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-              <div className={`chat-avatar ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                {msg.role === 'assistant' ? <Flame size={16} /> : <User size={16} />}
-              </div>
-              <div className={`chat-bubble ${msg.role === 'assistant' ? 'bot' : 'user'}`}>
-                <Markdown text={msg.text} />
-              </div>
+            </Fragment>
+          ))}
+
+          {sending && streamActions.length > 0 && (
+            <div className="chat-actions" style={{ padding: '2px 0 6px' }}>
+              {streamActions.map((a, j) => <span key={j} className="chat-action-chip">{a}</span>)}
             </div>
-          </Fragment>
-        ))}
+          )}
+          {sending && (
+            <div className="chat-msg chat-msg-bot">
+              <div className="chat-avatar bot"><Flame size={16} /></div>
+              {streamText
+                ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
+                : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
+            </div>
+          )}
 
-        {sending && streamActions.length > 0 && (
-          <div className="chat-actions" style={{ padding: '2px 0 6px' }}>
-            {streamActions.map((a, j) => <span key={j} className="chat-action-chip">{a}</span>)}
-          </div>
-        )}
-        {sending && (
-          <div className="chat-msg chat-msg-bot">
-            <div className="chat-avatar bot"><Flame size={16} /></div>
-            {streamText
-              ? <div className="chat-bubble bot"><Markdown text={streamText} /><span className="chat-cursor">▋</span></div>
-              : <div className="chat-bubble-thinking"><span /><span /><span /></div>}
-          </div>
-        )}
+          {/* Suggestions (conversation vierge) */}
+          {fresh && !sending && (
+            <div className="assistant-suggestions" data-tour="asst-suggestions">
+              {SUGGESTIONS.map((s) => (
+                <button key={s.label} className="assistant-suggestion" onClick={() => send(s.prompt)}>
+                  <span className="assistant-suggestion-icon">{s.icon}</span>
+                  <span>{s.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
-        {/* Suggestions (conversation vierge) */}
-        {fresh && !sending && (
-          <div className="assistant-suggestions" data-tour="asst-suggestions">
-            {SUGGESTIONS.map((s) => (
-              <button key={s.label} className="assistant-suggestion" onClick={() => send(s.prompt)}>
-                <span className="assistant-suggestion-icon">{s.icon}</span>
-                <span>{s.label}</span>
-              </button>
+          <div ref={chatEnd} />
+        </div>
+
+        {error && <div className="chat-error" style={{ margin: '0 0 8px' }}>{error}</div>}
+
+        {/* Fichiers joints en attente d'envoi */}
+        {files.length > 0 && (
+          <div className="assistant-attachments">
+            {files.map((f, i) => (
+              <span key={i} className="assistant-attachment-chip" title={f.name}>
+                <FileText size={13} />
+                <span className="assistant-attachment-name">{f.name}</span>
+                <button type="button" onClick={() => removeFile(i)} title="Retirer"><X size={13} /></button>
+              </span>
             ))}
           </div>
         )}
 
-        <div ref={chatEnd} />
-      </div>
-
-      {error && <div className="chat-error" style={{ margin: '0 0 8px' }}>{error}</div>}
-
-      {/* Fichiers joints en attente d'envoi */}
-      {files.length > 0 && (
-        <div className="assistant-attachments">
-          {files.map((f, i) => (
-            <span key={i} className="assistant-attachment-chip" title={f.name}>
-              <FileText size={13} />
-              <span className="assistant-attachment-name">{f.name}</span>
-              <button type="button" onClick={() => removeFile(i)} title="Retirer"><X size={13} /></button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Saisie */}
-      <form className="assistant-page-input" data-tour="asst-input" onSubmit={handleSend}>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          hidden
-          onChange={handleFiles}
-        />
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Demande-moi n'importe quoi sur ton projet… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
-          rows={2}
-          disabled={sending}
-          autoFocus
-        />
-        <button
-          type="button"
-          className="assistant-input-btn assistant-attach"
-          onClick={() => fileRef.current?.click()}
-          disabled={sending || files.length >= MAX_FILES}
-          title="Joindre un fichier (PDF, Word, Excel, image)"
-        >
-          <Paperclip size={18} />
-        </button>
-        {sending ? (
-          <button type="button" className="assistant-input-btn assistant-stop" onClick={stop} title="Interrompre la réponse">
-            <Square size={16} fill="currentColor" />
-          </button>
-        ) : (
+        {/* Saisie */}
+        <form className="assistant-page-input" data-tour="asst-input" onSubmit={handleSend}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            hidden
+            onChange={handleFiles}
+          />
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Demande-moi n'importe quoi sur ton projet… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
+            rows={2}
+            disabled={sending}
+            autoFocus
+          />
           <button
-            type="submit"
-            className="assistant-input-btn assistant-send"
-            disabled={!input.trim() && files.length === 0}
-            title="Envoyer"
+            type="button"
+            className="assistant-input-btn assistant-attach"
+            onClick={() => fileRef.current?.click()}
+            disabled={sending || files.length >= MAX_FILES}
+            title="Joindre un fichier (PDF, Word, Excel, image)"
           >
-            <Send size={18} />
+            <Paperclip size={18} />
           </button>
-        )}
-      </form>
+          {sending ? (
+            <button type="button" className="assistant-input-btn assistant-stop" onClick={stop} title="Interrompre la réponse">
+              <Square size={16} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="assistant-input-btn assistant-send"
+              disabled={!input.trim() && files.length === 0}
+              title="Envoyer"
+            >
+              <Send size={18} />
+            </button>
+          )}
+        </form>
+      </div>
     </div>
   );
 }

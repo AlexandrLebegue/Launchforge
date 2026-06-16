@@ -151,6 +151,39 @@ export interface Overview {
   approvals: number;
 }
 
+// ── Historique des conversations avec l'assistant ─────────────────────────────
+// Chaque fil de la vue 💬 Assistant est persisté côté serveur. Les conversations
+// inactives depuis plus d'un mois sont purgées automatiquement.
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  /** Outils utilisés pendant ce tour (recherche web, agenda…) — purement décoratif */
+  actions?: string[];
+}
+
+export interface Conversation {
+  id: string;
+  userId: string;
+  /** Projet actif au moment du dernier message (null = aucun projet) */
+  planId: string | null;
+  title: string;
+  messages: ConversationMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Entrée légère de la liste d'historique (sans le corps des messages) */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  /** Début du dernier message, pour l'aperçu dans la liste */
+  preview: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FeedbackInput {
   planId: string;
   rating: number;
@@ -171,6 +204,9 @@ export interface User {
   email: string;
   name: string;
   createdAt: string;
+  /** Tutoriel d'accueil en attente (posé à la création du compte, montré après
+   *  le 1er projet puis consommé). Absent/false = déjà vu ou compte ancien. */
+  tutorialPending?: boolean;
 }
 
 export interface AuthRequest {

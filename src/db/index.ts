@@ -386,6 +386,13 @@ function runMigrations(database: Database.Database): void {
   if (!userCols.some((c) => c.name === 'providerId')) {
     database.exec(`ALTER TABLE users ADD COLUMN providerId TEXT`);
   }
+  // Tutoriel d'accueil : 1 à la création du compte, consommé (remis à 0) une
+  // fois le tutoriel lancé — après le 1er projet. Lié au compte (et non au
+  // navigateur), il ne se redéclenche donc pas aux connexions suivantes
+  // (Google incluse). Les comptes existants restent à 0 → jamais redéclenché.
+  if (!userCols.some((c) => c.name === 'tutorialPending')) {
+    database.exec(`ALTER TABLE users ADD COLUMN tutorialPending INTEGER NOT NULL DEFAULT 0`);
+  }
 
   // Historique des métriques : un instantané par synchro — alimente les
   // courbes temporelles de la vue Performances
@@ -547,5 +554,25 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_admin_events_time   ON admin_events(createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_admin_events_user   ON admin_events(userId, createdAt DESC);
     CREATE INDEX IF NOT EXISTS idx_admin_events_action ON admin_events(action, createdAt DESC);
+  `);
+
+  // ── Historique des conversations avec l'assistant ──────────────────────────
+  // Chaque conversation de la vue 💬 Assistant est persistée (un enregistrement
+  // par fil, messages stockés en blob JSON — même schéma que onboarding_sessions).
+  // Rétention : purge automatique des conversations inactives depuis plus d'un
+  // mois (cf. conversationCleanup.ts), d'où l'index sur updatedAt.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      planId    TEXT,
+      title     TEXT NOT NULL DEFAULT '',
+      messages  TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversations_user   ON conversations(userId, updatedAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversations_expiry ON conversations(updatedAt);
   `);
 }

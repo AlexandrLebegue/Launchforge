@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -21,10 +21,11 @@ export class Storage {
   // ──────────────────────────────────────────────────────────────
 
   saveUser(user: User, hashedPassword: string): void {
+    // tutorialPending = 1 : nouveau compte → tutoriel d'accueil à montrer
     getDb()
       .prepare(
-        `INSERT INTO users (id, email, name, password, createdAt)
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT INTO users (id, email, name, password, createdAt, tutorialPending)
+         VALUES (?, ?, ?, ?, ?, 1)`
       )
       .run(user.id, user.email, user.name, hashedPassword, user.createdAt);
   }
@@ -32,25 +33,38 @@ export class Storage {
   getUserByEmail(
     email: string
   ): { id: string; email: string; name: string; password: string; createdAt: string } | undefined {
+    // COLLATE NOCASE : recherche insensible à la casse. Sans cela, une connexion
+    // Google (qui force l'email en minuscules) ne retrouve pas un compte inscrit
+    // avec une casse mixte (« Alex@… ») et en crée un DOUBLON — ce qui relance le
+    // tutoriel et scinde les données. Couvre login, /register et le lien OAuth.
     return getDb()
-      .prepare(`SELECT * FROM users WHERE email = ?`)
+      .prepare(`SELECT * FROM users WHERE email = ? COLLATE NOCASE`)
       .get(email) as any;
   }
 
   getUserById(id: string): User | undefined {
-    return getDb()
-      .prepare(`SELECT id, email, name, createdAt FROM users WHERE id = ?`)
+    const row = getDb()
+      .prepare(`SELECT id, email, name, createdAt, tutorialPending FROM users WHERE id = ?`)
       .get(id) as any;
+    if (!row) return undefined;
+    // SQLite stocke le booléen en INTEGER (0/1) → conversion explicite
+    return { ...row, tutorialPending: !!row.tutorialPending };
+  }
+
+  /** Marque le tutoriel d'accueil comme vu (ne se reproposera plus) */
+  clearTutorialPending(userId: string): void {
+    getDb().prepare(`UPDATE users SET tutorialPending = 0 WHERE id = ?`).run(userId);
   }
 
   // ── Authentification OAuth (Google & co) ─────────────────────────────────
 
   /** Crée un compte issu d'un fournisseur OAuth (password vide, jamais utilisé) */
   saveOAuthUser(user: User, provider: string, providerId: string): void {
+    // tutorialPending = 1 : nouveau compte (même init que /register)
     getDb()
       .prepare(
-        `INSERT INTO users (id, email, name, password, createdAt, authProvider, providerId)
-         VALUES (?, ?, ?, '', ?, ?, ?)`
+        `INSERT INTO users (id, email, name, password, createdAt, authProvider, providerId, tutorialPending)
+         VALUES (?, ?, ?, '', ?, ?, ?, 1)`
       )
       .run(user.id, user.email, user.name, user.createdAt, provider, providerId);
   }
@@ -108,6 +122,7 @@ export class Storage {
       decks: all(`SELECT * FROM decks WHERE userId = ?`),
       campaignReports: all(`SELECT * FROM campaign_reports WHERE userId = ?`),
       onboardingSessions: all(`SELECT * FROM onboarding_sessions WHERE userId = ?`),
+      conversations: all(`SELECT * FROM conversations WHERE userId = ?`),
       reminders: all(`SELECT * FROM reminders WHERE userId = ?`),
       telegramLinks: all(`SELECT chatId, createdAt FROM telegram_links WHERE userId = ?`),
       metricHistory: all(`SELECT * FROM metric_history WHERE userId = ?`),
@@ -130,7 +145,7 @@ export class Storage {
     db.transaction(() => {
       db.prepare(`DELETE FROM agent_runs WHERE agentId IN (SELECT id FROM agents WHERE userId = ?)`).run(userId);
       for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'knowledge_sources', 'contacts',
-                           'telegram_links', 'reminders', 'decks', 'campaign_reports', 'onboarding_sessions', 'plans']) {
+                           'telegram_links', 'reminders', 'decks', 'campaign_reports', 'onboarding_sessions', 'conversations', 'plans']) {
         db.prepare(`DELETE FROM ${table} WHERE userId = ?`).run(userId);
       }
       // Équipes possédées : on supprime l'équipe, ses invitations et ses membres
@@ -881,6 +896,106 @@ export class Storage {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Conversations avec l'assistant (historique)
+  // ──────────────────────────────────────────────────────────────
+
+  /** Liste des fils de l'utilisateur, du plus récent au plus ancien (sans le corps des messages) */
+  listConversations(userId: string): ConversationSummary[] {
+    const rows = getDb()
+      .prepare(
+        `SELECT id, title, messages, createdAt, updatedAt
+           FROM conversations WHERE userId = ? ORDER BY updatedAt DESC`
+      )
+      .all(userId) as { id: string; title: string; messages: string; createdAt: string; updatedAt: string }[];
+
+    return rows.map((row) => {
+      let messages: ConversationMessage[] = [];
+      try { messages = JSON.parse(row.messages); } catch { /* blob corrompu → fil vide */ }
+      const last = messages[messages.length - 1];
+      return {
+        id:           row.id,
+        title:        row.title || 'Nouvelle conversation',
+        preview:      last ? last.text.replace(/\s+/g, ' ').slice(0, 120) : '',
+        messageCount: messages.length,
+        createdAt:    row.createdAt,
+        updatedAt:    row.updatedAt,
+      };
+    });
+  }
+
+  /** Un fil complet — scopé à l'utilisateur (renvoie undefined si absent ou appartenant à un autre) */
+  getConversation(id: string, userId: string): Conversation | undefined {
+    const row = getDb()
+      .prepare(`SELECT * FROM conversations WHERE id = ? AND userId = ?`)
+      .get(id, userId) as any;
+    if (!row) return undefined;
+    let messages: ConversationMessage[] = [];
+    try { messages = JSON.parse(row.messages); } catch { /* blob corrompu */ }
+    return {
+      id:        row.id,
+      userId:    row.userId,
+      planId:    row.planId ?? null,
+      title:     row.title,
+      messages,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  /**
+   * Crée ou met à jour un fil (UPSERT sur l'id). Le titre est dérivé du premier
+   * message utilisateur si non fourni ; createdAt est préservé à la mise à jour.
+   */
+  upsertConversation(params: {
+    id: string;
+    userId: string;
+    planId: string | null;
+    messages: ConversationMessage[];
+    title?: string;
+  }): void {
+    const now = new Date().toISOString();
+    const firstUser = params.messages.find((m) => m.role === 'user');
+    const title = (params.title || firstUser?.text || 'Nouvelle conversation')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+
+    getDb()
+      .prepare(
+        `INSERT INTO conversations (id, userId, planId, title, messages, createdAt, updatedAt)
+         VALUES (@id, @userId, @planId, @title, @messages, @now, @now)
+         ON CONFLICT(id) DO UPDATE SET
+           planId    = excluded.planId,
+           title     = excluded.title,
+           messages  = excluded.messages,
+           updatedAt = excluded.updatedAt`
+      )
+      .run({
+        id:       params.id,
+        userId:   params.userId,
+        planId:   params.planId,
+        title,
+        messages: JSON.stringify(params.messages),
+        now,
+      });
+  }
+
+  /** Supprime un fil de l'utilisateur. Retourne true si une ligne a été supprimée. */
+  deleteConversation(id: string, userId: string): boolean {
+    const info = getDb()
+      .prepare(`DELETE FROM conversations WHERE id = ? AND userId = ?`)
+      .run(id, userId);
+    return info.changes > 0;
+  }
+
+  /** Purge les fils inactifs depuis avant `cutoffIso` (rétention). Retourne le nombre supprimé. */
+  deleteExpiredConversations(cutoffIso: string): number {
+    return getDb()
+      .prepare(`DELETE FROM conversations WHERE updatedAt < ?`)
+      .run(cutoffIso).changes;
   }
 
   // ──────────────────────────────────────────────────────────────

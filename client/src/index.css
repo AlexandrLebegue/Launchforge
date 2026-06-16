@@ -4539,6 +4539,44 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 .settings { display: flex; flex-direction: column; gap: 26px; }
 
+/* Onglets de la Configuration : une thématique à la fois, scrollables si étroits */
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 22px 0 24px;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;            /* Firefox : barre masquée, scroll au geste/molette */
+}
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tab {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.settings-tab svg { flex-shrink: 0; }
+.settings-tab:hover { color: var(--color-text); }
+.settings-tab.active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+
+@media (max-width: 680px) {
+  .settings-tab { padding: 10px 12px; font-size: 0.82rem; }
+}
+
 .settings-group { display: flex; flex-direction: column; gap: 12px; }
 .settings-group-head { display: flex; align-items: center; gap: 12px; }
 .settings-group-head-main { flex: 1; min-width: 0; }
@@ -4941,8 +4979,145 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   transform: translateY(-1px);
 }
 .assistant-suggestion-icon { font-size: 1.1rem; }
+
+/* ── Historique des conversations ── */
+.assistant-layout {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 48px);
+  max-width: 1180px;
+  margin: 0 auto;
+  position: relative;
+}
+/* Dans le layout, la colonne de chat occupe l'espace restant (la hauteur est
+   portée par le conteneur flex, plus par .assistant-page lui-même) */
+.assistant-layout .assistant-page {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  max-width: none;
+  margin: 0;
+}
+.assistant-history {
+  flex: 0 0 264px;
+  width: 264px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  background: var(--color-surface, rgba(255, 255, 255, 0.02));
+  overflow: hidden;
+}
+.assistant-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.assistant-history-head .btn-sm { display: inline-flex; align-items: center; gap: 4px; }
+.assistant-history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.assistant-history-empty {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  padding: 12px 8px;
+  line-height: 1.5;
+}
+.assistant-history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.assistant-history-item:hover { background: var(--color-surface-2, rgba(255, 255, 255, 0.05)); }
+.assistant-history-item.active {
+  background: rgba(124, 92, 252, 0.10);
+  border-color: rgba(124, 92, 252, 0.35);
+}
+.assistant-history-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.assistant-history-title {
+  font-size: 0.84rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.assistant-history-preview {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.assistant-history-date {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+.assistant-history-del {
+  display: none;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 0;
+}
+.assistant-history-item:hover .assistant-history-del { display: inline-flex; }
+.assistant-history-del:hover { color: #f87171; }
+.assistant-history-note {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+}
+.assistant-history-backdrop { display: none; }
+/* Le bouton « Historique » (mobile) est caché tant que le panneau est docké */
+.assistant-history-toggle { display: none; }
+.assistant-page-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 @media (max-width: 768px) {
-  .assistant-page { height: calc(100vh - 80px); }
+  .assistant-layout { height: calc(100vh - 80px); }
+  /* Le panneau devient un tiroir qui glisse par-dessus le chat */
+  .assistant-history {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    width: 80vw;
+    max-width: 320px;
+    border-radius: 0;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+  .assistant-history.open { transform: translateX(0); }
+  .assistant-history-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .assistant-history-toggle { display: inline-flex; align-items: center; gap: 4px; }
+  .assistant-history-del { display: inline-flex; }
 }
 
 /* ── Markdown dans les bulles de chat ── */
