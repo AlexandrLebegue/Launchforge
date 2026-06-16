@@ -42,6 +42,11 @@ services:
       # ── Auth (requis) ─────────────────────────────────────────
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
 
+      # ── Connexion Google (OAuth, optionnel) ───────────────────
+      # Sans ces deux variables, le bouton « Continuer avec Google » est masqué.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+
       # ── IA — OpenRouter (requis) ──────────────────────────────
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/auto}
