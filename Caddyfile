@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# LaunchForge — Caddy reverse-proxy (HTTPS automatique via Let's Encrypt)
+#
+# Caddy obtient et renouvelle le certificat TLS tout seul, à condition que
+# le domaine pointe DÉJÀ vers l'IP du serveur (enregistrement A) avant le
+# premier démarrage. Les ports 80 et 443 doivent être ouverts (HTTP-01 ACME).
+# ─────────────────────────────────────────────────────────────────────────────
+
+{
+	# Email pour les notifications Let's Encrypt (expiration, etc.)
+	email alexandrelebegue12@gmail.com
+}
+
+launchforge.alexandre-lebegue.com {
+	# Compression des réponses
+	encode zstd gzip
+
+	# Proxy vers le conteneur applicatif (réseau interne Docker).
+	# flush_interval -1 : streaming immédiat des réponses (utile pour le
+	# SSE / réponses longues des agents IA, pas de buffering).
+	reverse_proxy app:3000 {
+		flush_interval -1
+	}
+
+	# Pas de limite de taille d'upload : l'app accepte des vidéos jusqu'à
+	# ~3 Go (src/index.ts : server.requestTimeout = 0). Caddy streame le
+	# corps de requête sans le bufferiser par défaut, donc rien à régler ;
+	# on documente juste l'intention ici.
+
+	# Journaux d'accès
+	log {
+		output stdout
+		format console
+	}
+}

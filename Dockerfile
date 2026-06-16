@@ -32,6 +32,10 @@ RUN npm ci --prefer-offline
 FROM client-deps AS client-build
 WORKDIR /app/client
 COPY client/ ./
+# VITE_ADMIN_EMAILS est lu au BUILD du front (Vite inline les import.meta.env).
+# Passé via build-arg en prod pour afficher le lien /admin dans la sidebar.
+ARG VITE_ADMIN_EMAILS=""
+ENV VITE_ADMIN_EMAILS=$VITE_ADMIN_EMAILS
 RUN npm run build
 # Result: /app/client/dist
 

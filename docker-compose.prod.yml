@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# LaunchForge — Docker Compose PRODUCTION (VPS Hetzner + Caddy HTTPS)
+#
+# Diffère de docker-compose.yml (dev) sur 3 points :
+#   1. L'app n'expose PAS le port 3000 publiquement (expose interne seulement).
+#      Seul Caddy est exposé sur 80/443 et proxifie vers app:3000.
+#   2. Ajout du service Caddy (TLS Let's Encrypt automatique).
+#   3. VITE_ADMIN_EMAILS passé en build-arg pour le lien /admin de la sidebar.
+#
+# Usage :
+#   cp .env.production.example .env   # puis remplir les secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml logs -f
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        # Lu au build du front (Vite). Doit matcher ADMIN_EMAILS côté serveur.
+        VITE_ADMIN_EMAILS: ${VITE_ADMIN_EMAILS:-}
+    container_name: launchforge
+    restart: unless-stopped
+
+    # Pas de "ports:" — l'app reste sur le réseau interne Docker.
+    # Caddy y accède via le hostname "app".
+    expose:
+      - "3000"
+
+    environment:
+      # ── Serveur ───────────────────────────────────────────────
+      NODE_ENV: production
+      PORT: "3000"
+
+      # ── Base de données / médias (volume persistant) ──────────
+      DB_PATH: /app/data/launchforge.db
+      # UPLOADS_DIR par défaut = /app/data/uploads (dans le volume) → OK
+
+      # ── Auth (requis) ─────────────────────────────────────────
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+
+      # ── IA — OpenRouter (requis) ──────────────────────────────
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/auto}
+      IMAGE_MODEL: ${IMAGE_MODEL:-}
+
+      # ── URL publique (liens emails, reset mdp) ────────────────
+      APP_URL: ${APP_URL:-https://launchforge.alexandre-lebegue.com}
+
+      # ── Administration ────────────────────────────────────────
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+
+      # ── Intégrations optionnelles ─────────────────────────────
+      COMPOSIO_MCP_URL: ${COMPOSIO_MCP_URL:-}
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      COMPOSIO_PROXY_API_KEY: ${COMPOSIO_PROXY_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      FREEIMAGE_API_KEY: ${FREEIMAGE_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LINKEDIN_VERSION: ${LINKEDIN_VERSION:-}
+
+    volumes:
+      - launchforge_data:/app/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: launchforge-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certificats TLS — NE PAS perdre (rate-limit ACME)
+      - caddy_config:/config
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  launchforge_data:   # SQLite + uploads
+  caddy_data:         # certificats Let's Encrypt
+  caddy_config:
