@@ -260,6 +260,103 @@ export function computePerformanceSeries(userId: string, planId: string | null):
   return { weekly: trimmedWeekly, daily, hasHistory: daily.length >= 2 };
 }
 
+// ── Commentaires des posts (contenu réel, regroupé par type de post) ─────────
+
+export interface CommentStatsEntry {
+  platform: string;
+  total: number;
+  comments: { author: string | null; text: string; likeCount: number; commentedAt: string | null }[];
+}
+
+export interface CommentStats {
+  total: number;
+  /** Regroupés par plateforme (type de post), du plus commenté au moins commenté */
+  byPlatform: CommentStatsEntry[];
+}
+
+/** Agrégat local des commentaires récupérés, groupés par plateforme — aucun appel IA */
+export function computeCommentStats(userId: string, planId: string | null): CommentStats {
+  const comments = storage.getPostCommentsByPlan(userId, planId);
+  const platforms = [...new Set(comments.map((c) => c.platform))];
+  const byPlatform = platforms.map((platform) => {
+    const sub = comments.filter((c) => c.platform === platform);
+    return {
+      platform,
+      total: sub.length,
+      comments: sub.slice(0, 100).map((c) => ({
+        author: c.author, text: c.text, likeCount: c.likeCount, commentedAt: c.commentedAt,
+      })),
+    };
+  }).sort((a, b) => b.total - a.total);
+  return { total: comments.length, byPlatform };
+}
+
+export type CommentSentiment = 'positif' | 'mitigé' | 'négatif' | 'n/a';
+
+export interface CommentAnalysis {
+  byPlatform: { platform: string; total: number; sentiment: CommentSentiment; summary: string; themes: string[] }[];
+  overall: string;
+}
+
+/**
+ * Lecture IA des commentaires récupérés : sentiment + thèmes récurrents PAR
+ * plateforme (type de post). Les enseignements alimentent la boucle
+ * d'apprentissage existante (fiche « learnings » du projet).
+ */
+export async function analyzeComments(userId: string, planId: string | null): Promise<CommentAnalysis> {
+  if (!isAIConfigured()) throw new Error('AI_NOT_CONFIGURED');
+  const stats = computeCommentStats(userId, planId);
+  if (stats.total === 0) {
+    return {
+      byPlatform: [],
+      overall: 'Aucun commentaire récupéré pour ce projet — synchronisez les métriques d\'un post publié pour en récupérer les commentaires.',
+    };
+  }
+
+  // Digest compact (borné) par plateforme pour le prompt
+  const digest = stats.byPlatform.map((p) => {
+    const lines = p.comments.slice(0, 30)
+      .map((c) => `- ${c.author ? `@${c.author}: ` : ''}${c.text.replace(/\s+/g, ' ').slice(0, 300)}`)
+      .join('\n');
+    return `### ${p.platform} (${p.total} commentaires)\n${lines}`;
+  }).join('\n\n');
+
+  const result = await chatComplete({
+    messages: [
+      {
+        role: 'system',
+        content: `Tu es un analyste social media. On te donne les commentaires reçus sur les posts d'un fondateur, groupés par plateforme. Pour CHAQUE plateforme, dégage le sentiment dominant et les thèmes récurrents — concret, honnête, sans jargon, en français. N'invente rien : appuie-toi uniquement sur les commentaires fournis.
+Réponds UNIQUEMENT avec un objet JSON :
+{"byPlatform":[{"platform":"<nom exact>","sentiment":"positif|mitigé|négatif","summary":"1-2 phrases sur ce que disent les gens","themes":["thème court", "..."]}],"overall":"2-3 phrases : la tendance générale et ce qu'il faut en retenir","learnings":["enseignement actionnable et généralisable (max 2)"]}`,
+      },
+      { role: 'user', content: digest.slice(0, 8000) },
+    ],
+    maxTokens: 1200,
+    jsonMode: true,
+  });
+
+  const parsed = JSON.parse(sanitizeJson(result.content));
+  const fromModel: any[] = Array.isArray(parsed.byPlatform) ? parsed.byPlatform : [];
+  const byPlatform = stats.byPlatform.map((p) => {
+    const m = fromModel.find((x) => String(x?.platform).toLowerCase() === p.platform.toLowerCase());
+    const sentiment: CommentSentiment = ['positif', 'mitigé', 'négatif'].includes(String(m?.sentiment))
+      ? (m.sentiment as CommentSentiment) : 'n/a';
+    return {
+      platform: p.platform,
+      total: p.total,
+      sentiment,
+      summary: typeof m?.summary === 'string' ? m.summary.slice(0, 500) : '',
+      themes: Array.isArray(m?.themes) ? m.themes.map((t: unknown) => String(t).slice(0, 80)).slice(0, 6) : [],
+    };
+  });
+
+  const learnings: string[] = Array.isArray(parsed.learnings)
+    ? parsed.learnings.map((l: unknown) => String(l)).slice(0, 2) : [];
+  if (learnings.length > 0) upsertLearnings(userId, planId, learnings);
+
+  return { byPlatform, overall: typeof parsed.overall === 'string' ? parsed.overall.slice(0, 800) : '' };
+}
+
 const LEARNINGS_TITLE = '📈 Enseignements de performance (auto)';
 const NEWS_TITLE = '📰 Veille — actus utilisées par l\'IA (auto)';
 const MAX_AUTO_LINES = 25;

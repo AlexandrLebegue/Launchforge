@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -449,6 +449,79 @@ export class Storage {
          ORDER BY at ASC`
       )
       .all(userId, planId) as any[];
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Commentaires des posts (contenu réel récupéré chez la plateforme)
+  // ──────────────────────────────────────────────────────────────
+
+  /** Nombre de commentaires conservés par post (borne la croissance) */
+  private static readonly MAX_COMMENTS_PER_POST = 50;
+
+  /**
+   * Persiste les commentaires d'un post (dédup par externalId, idempotent).
+   * Les commentaires sans externalId reçoivent un id de repli stable
+   * (hash texte+auteur) pour rester dédupliqués entre deux synchros.
+   * Borne le total conservé par post aux plus récents/likés.
+   * Retourne le nombre de NOUVEAUX commentaires insérés.
+   */
+  upsertPostComments(post: Post, items: CommentItem[], fetchedAtIso = new Date().toISOString()): number {
+    const clean = items
+      .filter((c) => c && typeof c.text === 'string' && c.text.trim().length > 0)
+      .map((c) => ({
+        externalId: c.externalId ? String(c.externalId).slice(0, 200) : null,
+        author: c.author ? String(c.author).slice(0, 200) : null,
+        text: String(c.text).trim().slice(0, 4000),
+        likeCount: Number.isFinite(Number(c.likeCount)) && Number(c.likeCount) >= 0 ? Math.round(Number(c.likeCount)) : 0,
+        commentedAt: c.commentedAt ? String(c.commentedAt) : null,
+      }));
+    if (clean.length === 0) return 0;
+
+    const db = getDb();
+    // Repli pour la dédup quand la plateforme ne renvoie pas d'id : un dérivé
+    // stable du contenu (le UNIQUE(postId, externalId) ignore alors les doublons).
+    const dedupId = (c: { externalId: string | null; author: string | null; text: string }) =>
+      c.externalId ?? `t:${(c.author ?? '').toLowerCase()}:${c.text.slice(0, 80).toLowerCase()}`;
+
+    const insert = db.prepare(
+      `INSERT OR IGNORE INTO post_comments
+         (id, postId, userId, planId, platform, externalId, author, text, likeCount, commentedAt, fetchedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const tx = db.transaction((rows: typeof clean) => {
+      let added = 0;
+      for (const c of rows) {
+        const info = insert.run(
+          randomUUID(), post.id, post.userId, post.planId, post.platform,
+          dedupId(c), c.author, c.text, c.likeCount, c.commentedAt, fetchedAtIso,
+        );
+        added += info.changes;
+      }
+      return added;
+    });
+    const added = tx(clean);
+
+    // Borne : ne garde que les N plus pertinents (likes puis récence) pour ce post
+    db.prepare(
+      `DELETE FROM post_comments WHERE postId = ? AND id NOT IN (
+         SELECT id FROM post_comments WHERE postId = ?
+         ORDER BY likeCount DESC, COALESCE(commentedAt, fetchedAt) DESC
+         LIMIT ?
+       )`
+    ).run(post.id, post.id, Storage.MAX_COMMENTS_PER_POST);
+
+    return added;
+  }
+
+  /** Commentaires du projet (les plus likés/récents d'abord) */
+  getPostCommentsByPlan(userId: string, planId: string | null): PostComment[] {
+    return getDb()
+      .prepare(
+        `SELECT * FROM post_comments
+         WHERE userId = ? AND planId IS ?
+         ORDER BY likeCount DESC, COALESCE(commentedAt, fetchedAt) DESC`
+      )
+      .all(userId, planId) as PostComment[];
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -909,6 +982,7 @@ export class Storage {
   }
 
   deletePost(id: string): void {
+    getDb().prepare(`DELETE FROM post_comments WHERE postId = ?`).run(id);
     getDb().prepare(`DELETE FROM posts WHERE id = ?`).run(id);
   }
 

@@ -53,6 +53,7 @@
 import { createHash } from 'crypto';
 import { composioUserIdFor } from './composioConnect';
 import { McpSession, isComposioConfigured } from './mcpClient';
+import { CommentItem } from '../types';
 
 const COMPOSIO_API = 'https://backend.composio.dev/api/v3';
 
@@ -609,6 +610,8 @@ export interface DirectMetrics {
   shares?: number;
   clicks?: number;
   note?: string;
+  /** Contenu réel des commentaires — rempli uniquement si withComments=true */
+  commentItems?: CommentItem[];
 }
 
 export interface DirectMetricsResult {
@@ -622,12 +625,152 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
 };
 
+/** Normalise et borne une liste brute de commentaires extraite d'une API */
+function toCommentItems(raw: { externalId?: unknown; author?: unknown; text?: unknown; likeCount?: unknown; commentedAt?: unknown }[]): CommentItem[] {
+  return raw
+    .map((c) => ({
+      externalId: c.externalId != null && String(c.externalId).trim() ? String(c.externalId) : null,
+      author: c.author != null && String(c.author).trim() ? String(c.author).trim() : null,
+      text: (c.text == null ? '' : String(c.text)).trim(),
+      likeCount: toNum(c.likeCount),
+      commentedAt: c.commentedAt != null && String(c.commentedAt).trim() ? String(c.commentedAt) : null,
+    }))
+    .filter((c) => c.text.length > 0)
+    .slice(0, 50);
+}
+
+const asArray = (v: unknown): any[] => (Array.isArray(v) ? v : []);
+
+/**
+ * Récupération best-effort du CONTENU des commentaires d'un post publié.
+ * N'est appelée que lorsque l'appelant le demande (withComments) — jamais
+ * dans la boucle de synchro automatique des compteurs. Ne jette jamais :
+ * toute erreur (slug absent, schéma inattendu, API muette) → liste vide,
+ * pour ne pas perturber la lecture des métriques.
+ */
+async function fetchCommentsDirect(
+  uid: string,
+  platform: string,
+  externalRef: string,
+  exec: ToolExecutor,
+): Promise<CommentItem[]> {
+  try {
+    switch (platform) {
+      case 'reddit': {
+        const article = externalRef.match(/comments\/([a-z0-9]{4,})/i)?.[1];
+        if (!article) return [];
+        const data = await exec(uid, 'REDDIT_RETRIEVE_POST_COMMENTS', { article });
+        // Reddit renvoie [post_listing, comments_listing] ; Composio peut l'envelopper
+        const listings = asArray(data).length ? asArray(data)
+          : asArray(data?.data).length ? asArray(data?.data)
+          : asArray(data?.response_data);
+        const children = listings?.[1]?.data?.children
+          ?? data?.comments?.data?.children
+          ?? data?.comments
+          ?? [];
+        return toCommentItems(asArray(children)
+          .map((ch) => ch?.data ?? ch)
+          .filter((c) => c && (c.body || c.text))
+          .map((c) => ({
+            externalId: c.name ?? (c.id ? `t1_${c.id}` : null),
+            author: c.author,
+            text: c.body ?? c.text,
+            likeCount: c.score ?? c.ups,
+            commentedAt: c.created_utc ? new Date(Number(c.created_utc) * 1000).toISOString() : null,
+          })));
+      }
+
+      case 'facebook': {
+        const postId = externalRef.match(/(\d{6,}_\d+)/)?.[1];
+        if (!postId) return [];
+        const data = await exec(uid, 'FACEBOOK_GET_POST', {
+          post_id: postId,
+          fields: 'comments.limit(50){message,from,created_time,like_count}',
+        });
+        const list = (data?.data ?? data)?.comments?.data ?? [];
+        return toCommentItems(asArray(list).map((c) => ({
+          externalId: c.id,
+          author: c?.from?.name,
+          text: c.message,
+          likeCount: c.like_count,
+          commentedAt: c.created_time,
+        })));
+      }
+
+      case 'youtube': {
+        const id = externalRef.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/)([\w-]{6,})/)?.[1]
+          ?? (/^[\w-]{11}$/.test(externalRef.trim()) ? externalRef.trim() : null);
+        if (!id) return [];
+        for (const slug of ['YOUTUBE_LIST_COMMENT_THREADS', 'YOUTUBE_COMMENT_THREADS', 'YOUTUBE_GET_COMMENT_THREADS']) {
+          try {
+            const data = await exec(uid, slug, { part: 'snippet', videoId: id, maxResults: 50 });
+            const items = data?.items ?? data?.response_data?.items ?? data?.data?.items ?? [];
+            const mapped = toCommentItems(asArray(items).map((it) => {
+              const s = it?.snippet?.topLevelComment?.snippet ?? it?.snippet ?? {};
+              return { externalId: it?.id, author: s.authorDisplayName, text: s.textDisplay ?? s.textOriginal, likeCount: s.likeCount, commentedAt: s.publishedAt };
+            }));
+            if (mapped.length > 0) return mapped;
+          } catch { /* slug suivant */ }
+        }
+        return [];
+      }
+
+      case 'instagram': {
+        const mediaId = externalRef.match(/\b(\d{10,})\b/)?.[1];
+        if (!mediaId) return [];
+        for (const slug of ['INSTAGRAM_GET_COMMENTS', 'INSTAGRAM_GET_MEDIA_COMMENTS', 'INSTAGRAM_LIST_COMMENTS']) {
+          try {
+            const data = await exec(uid, slug, { ig_media_id: mediaId, media_id: mediaId, id: mediaId });
+            const list = data?.data ?? data?.comments?.data ?? data?.response_data?.data ?? [];
+            const mapped = toCommentItems(asArray(list).map((c) => ({
+              externalId: c.id, author: c.username ?? c?.from?.username, text: c.text, likeCount: c.like_count, commentedAt: c.timestamp,
+            })));
+            if (mapped.length > 0) return mapped;
+          } catch { /* slug suivant */ }
+        }
+        return [];
+      }
+
+      case 'twitter': {
+        const tweetId = externalRef.match(/status\/(\d+)/)?.[1]
+          ?? (/^\d{8,}$/.test(externalRef.trim()) ? externalRef.trim() : null);
+        if (!tweetId) return [];
+        for (const slug of ['TWITTER_RECENT_SEARCH', 'TWITTER_SEARCH_RECENT_TWEETS']) {
+          try {
+            const data = await exec(uid, slug, {
+              query: `conversation_id:${tweetId}`,
+              max_results: 50,
+              tweet_fields: ['author_id', 'public_metrics', 'created_at'],
+            });
+            const list = data?.data ?? data?.response_data?.data ?? [];
+            const mapped = toCommentItems(asArray(list)
+              .filter((t) => String(t.id) !== String(tweetId))
+              .map((t) => ({ externalId: t.id, author: t.author_id, text: t.text, likeCount: t?.public_metrics?.like_count, commentedAt: t.created_at })));
+            if (mapped.length > 0) return mapped;
+          } catch { /* slug suivant */ }
+        }
+        return [];
+      }
+
+      // LinkedIn : l'API ne livre pas les commentaires d'un post personnel
+      default:
+        return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Lecture déterministe des métriques d'un post publié (likes, commentaires,
  * vues, partages) à partir de sa référence externe (URL ou identifiant
  * enregistré à la publication). Toute erreur rend la main à l'opérateur IA :
  * pour la LECTURE, le repli a du sens (autres outils, post retrouvable par
  * son titre…).
+ *
+ * withComments : récupère AUSSI le contenu réel des commentaires (1 appel de
+ * plus selon la plateforme). Désactivé par défaut → la synchro automatique des
+ * compteurs reste strictement inchangée.
  */
 export async function syncMetricsDirect(
   userId: string,
@@ -635,6 +778,25 @@ export async function syncMetricsDirect(
   externalRef: string,
   exec: ToolExecutor = executeComposioTool,
   mcp: McpToolCaller = callMcpToolDirect,
+  withComments = false,
+): Promise<DirectMetricsResult> {
+  const uid = composioUserIdFor(userId);
+  if (!uid) return { handled: false };
+
+  const result = await syncMetricsDirectCounts(userId, platform, externalRef, exec, mcp);
+  if (withComments && result.handled && result.metrics?.found) {
+    result.metrics.commentItems = await fetchCommentsDirect(uid, platform, externalRef, exec);
+  }
+  return result;
+}
+
+/** Lecture des compteurs seuls (impressions/likes/commentaires/partages). */
+async function syncMetricsDirectCounts(
+  userId: string,
+  platform: string,
+  externalRef: string,
+  exec: ToolExecutor,
+  mcp: McpToolCaller,
 ): Promise<DirectMetricsResult> {
   const uid = composioUserIdFor(userId);
   if (!uid) return { handled: false };

@@ -632,6 +632,18 @@ export async function syncPostMetrics(
   return request(`/posts/${id}/sync-metrics`, { method: 'POST' });
 }
 
+export interface EmbedCheck {
+  embeddable: boolean;
+  embedUrl: string | null;
+  /** 'youtube' | 'headers-ok' | 'x-frame-options' | 'csp' | 'no-url' | 'unreachable' */
+  reason: string;
+}
+
+/** Vérifie si le post publié peut être affiché dans une iframe (sonde côté serveur). */
+export async function checkPostEmbed(id: string): Promise<ApiResponse<EmbedCheck>> {
+  return request(`/posts/${id}/embed`);
+}
+
 // ── Base de connaissances ─────────────────────────────────────────────────────
 
 export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'news' | 'other';
@@ -1051,6 +1063,42 @@ export interface CampaignReportItem { id: string; report: string; createdAt: str
 /** Historique des analyses de campagne archivées (projet actif) */
 export async function getCampaignReports(): Promise<ApiResponse<CampaignReportItem[]>> {
   return request('/content/reports');
+}
+
+// ── Commentaires des posts (contenu réel, regroupé par type de post) ─────────
+
+export interface CommentEntry {
+  author: string | null;
+  text: string;
+  likeCount: number;
+  commentedAt: string | null;
+}
+
+export interface CommentStats {
+  total: number;
+  byPlatform: { platform: string; total: number; comments: CommentEntry[] }[];
+}
+
+export type CommentSentiment = 'positif' | 'mitigé' | 'négatif' | 'n/a';
+
+export interface CommentAnalysis {
+  byPlatform: { platform: string; total: number; sentiment: CommentSentiment; summary: string; themes: string[] }[];
+  overall: string;
+}
+
+/** Commentaires récupérés du projet actif, groupés par plateforme (sans IA) */
+export async function getComments(): Promise<ApiResponse<CommentStats>> {
+  return request('/content/comments');
+}
+
+/** Récupère via Composio le contenu des commentaires des posts publiés (borné) */
+export async function refreshComments(): Promise<ApiResponse<{ added: number; scanned: number; eligible: number; stats: CommentStats }>> {
+  return request('/content/comments/refresh', { method: 'POST' });
+}
+
+/** Lecture IA des commentaires : sentiment + thèmes par plateforme */
+export async function analyzeComments(): Promise<ApiResponse<CommentAnalysis>> {
+  return request('/content/comments/analyze', { method: 'POST' });
 }
 
 /** Synchronise tous les posts programmés vers le calendrier personnel */

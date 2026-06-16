@@ -50,6 +50,11 @@ export async function processDueMetricsSync(
         });
         // Instantané pour les courbes temporelles de la vue Performances
         storage.recordMetricSnapshot(storage.getPostById(post.id)!, now.toISOString());
+        // Contenu des commentaires si la synchro en a rapporté (cf. withComments —
+        // la boucle automatique ne le demande pas, donc rien à ce stade en temps normal)
+        if (metrics.commentItems && metrics.commentItems.length > 0) {
+          storage.upsertPostComments(storage.getPostById(post.id)!, metrics.commentItems, now.toISOString());
+        }
         synced += 1;
         console.log(`📈 Métriques synchronisées : "${post.title}" (${post.platform})`);
       }

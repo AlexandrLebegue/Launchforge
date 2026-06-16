@@ -7,7 +7,8 @@ import { Router, Request, Response } from 'express';
 import { generateImage, hostImage, isImageGenConfigured } from '../services/imageGen';
 import { saveMediaStream, deleteMediaFile } from '../services/mediaStore';
 import { storage } from '../services/storage';
-import { generateCampaignReport, computePerformanceSeries } from '../services/analytics';
+import { generateCampaignReport, computePerformanceSeries, computeCommentStats, analyzeComments } from '../services/analytics';
+import { isComposioConfigured, syncMetricsViaComposio } from '../services/composio';
 import { requireAuth } from '../middleware/auth';
 import { generateContent, isContentAssistantConfigured } from '../services/contentAssistant';
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
@@ -164,6 +165,58 @@ router.get('/reports', (req: Request, res: Response) => {
   const userId = req.user!.userId;
   const planId = storage.getActivePlanId(userId);
   res.json({ success: true, data: storage.getCampaignReportsByPlan(userId, planId) });
+});
+
+// ── GET /api/content/comments — commentaires récupérés, groupés par plateforme ─
+router.get('/comments', (req: Request, res: Response) => {
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  res.json({ success: true, data: computeCommentStats(ctx.ownerUserId, ctx.planId) });
+});
+
+// ── POST /api/content/comments/refresh — récupère le contenu des commentaires ─
+// des posts publiés (URL renseignée) du projet actif, via Composio (borné),
+// puis renvoie les commentaires groupés par plateforme. Best-effort par post.
+const COMMENTS_REFRESH_MAX = 10;
+router.post('/comments/refresh', async (req: Request, res: Response) => {
+  if (!isComposioConfigured() && !process.env.COMPOSIO_API_KEY) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  const targets = storage.getPostsByPlan(ctx.ownerUserId, ctx.planId)
+    .filter((p) => p.status === 'published' && p.externalUrl)
+    .slice(0, COMMENTS_REFRESH_MAX);
+
+  let added = 0;
+  let scanned = 0;
+  for (const post of targets) {
+    try {
+      const metrics = await syncMetricsViaComposio(post.userId, post.platform, post.externalUrl!, post.title, { withComments: true });
+      scanned += 1;
+      if (metrics.commentItems && metrics.commentItems.length > 0) {
+        added += storage.upsertPostComments(post, metrics.commentItems);
+      }
+    } catch { /* post suivant : la récupération est best-effort */ }
+  }
+
+  res.json({
+    success: true,
+    data: { added, scanned, eligible: targets.length, stats: computeCommentStats(ctx.ownerUserId, ctx.planId) },
+  });
+});
+
+// ── POST /api/content/comments/analyze — lecture IA (sentiment + thèmes) ──────
+router.post('/comments/analyze', async (req: Request, res: Response) => {
+  if (!isContentAssistantConfigured()) {
+    return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  try {
+    const ctx = storage.resolveActiveProject(req.user!.userId);
+    const analysis = await analyzeComments(ctx.ownerUserId, ctx.planId);
+    res.json({ success: true, data: analysis });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Analyse échouée';
+    res.status(msg === 'AI_NOT_CONFIGURED' ? 503 : 502).json({ success: false, error: msg });
+  }
 });
 
 // ── POST /api/content/image — génère un visuel (IA) et l'héberge ─────────────

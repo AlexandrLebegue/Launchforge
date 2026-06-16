@@ -357,6 +357,33 @@ export interface Post {
   updatedAt: string;
 }
 
+/** Un commentaire léger récupéré chez la plateforme (avant stockage) */
+export interface CommentItem {
+  /** Id du commentaire chez la plateforme — sert à dédupliquer entre synchros */
+  externalId?: string | null;
+  author?: string | null;
+  text: string;
+  likeCount?: number;
+  /** Date du commentaire (ISO) si la plateforme la fournit */
+  commentedAt?: string | null;
+}
+
+/** Commentaire d'un post publié, persisté (table post_comments) */
+export interface PostComment {
+  id: string;
+  postId: string;
+  userId: string;
+  planId: string | null;
+  platform: string;
+  externalId: string | null;
+  author: string | null;
+  text: string;
+  likeCount: number;
+  commentedAt: string | null;
+  /** Date de récupération (ISO) */
+  fetchedAt: string;
+}
+
 export type KnowledgeCategory = 'company' | 'product' | 'audience' | 'tone' | 'offers' | 'learnings' | 'news' | 'other';
 
 export interface KnowledgeEntry {

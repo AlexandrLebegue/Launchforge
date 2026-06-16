@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare, LayoutGrid, Table2, ArrowUpDown } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare, LayoutGrid, Table2, ArrowUpDown, Lock, ExternalLink, RefreshCw, BarChart3 } from 'lucide-react';
 import {
   getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   previewRecurrence, crosspostPost, publishPostNow, PublishOutcome,
   generateCalendar, getOverview,
   generatePostImage, uploadPostImage, uploadPostVideo, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
-  analyzePostPerf,
+  analyzePostPerf, checkPostEmbed, EmbedCheck,
   Post, PostStatus, Recurrence,
 } from '../api/client';
 import PostAssistant from '../components/PostAssistant';
@@ -225,6 +225,294 @@ function toLocalInput(iso: string | null): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vue « post publié » — lecture seule. Un post en ligne ne se modifie plus :
+// on affiche la vraie publication (iframe si la plateforme l'autorise, sinon
+// aperçu fidèle + lien), le suivi des performances et la seule aide IA pertinente
+// à ce stade : l'analyse de performance.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PublishedPostView({ post, readOnly = false, onClose, onSaved }: {
+  post: Post;
+  readOnly?: boolean;
+  onClose: () => void;
+  onSaved: (p: Post) => void;
+}) {
+  const [externalUrl, setExternalUrl] = useState(post.externalUrl ?? '');
+  const [savedUrl,    setSavedUrl]    = useState(post.externalUrl ?? '');
+  const [metrics, setMetrics] = useState({
+    impressions: post.impressions, likes: post.likes, comments: post.comments,
+    shares: post.shares, clicks: post.clicks,
+  });
+  const [manual, setManual] = useState(false);
+
+  // Détection « peut-on iframe le post ? »
+  const [embed,        setEmbed]        = useState<EmbedCheck | null>(null);
+  const [embedLoading, setEmbedLoading] = useState(false);
+  const [iframeBroken, setIframeBroken] = useState(false);
+
+  const [syncing,  setSyncing]  = useState(false);
+  const [syncNote, setSyncNote] = useState('');
+  const [error,    setError]    = useState('');
+  const [analysis,  setAnalysis]  = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const hasUrl = /^https?:\/\//i.test(savedUrl.trim());
+
+  const runEmbedCheck = useCallback(() => {
+    setEmbedLoading(true);
+    setIframeBroken(false);
+    checkPostEmbed(post.id).then((res) => {
+      setEmbedLoading(false);
+      setEmbed(res.success && res.data ? res.data : { embeddable: false, embedUrl: null, reason: 'unreachable' });
+    });
+  }, [post.id]);
+
+  useEffect(() => {
+    if (hasUrl) runEmbedCheck();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const engagement = metrics.impressions > 0
+    ? ((metrics.likes + metrics.comments + metrics.shares) / metrics.impressions) * 100
+    : null;
+
+  const mediaUrl = (post.imageUrl ?? '').trim();
+  const mediaIsVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(mediaUrl);
+
+  // Attache / met à jour l'URL publiée → relance la détection iframe.
+  const persistUrl = async (): Promise<boolean> => {
+    const url = externalUrl.trim();
+    if (url === savedUrl.trim()) return true;
+    const res = await updatePost(post.id, { externalUrl: url || null });
+    if (!res.success || !res.data) { setError(res.error || 'Enregistrement impossible.'); return false; }
+    setSavedUrl(url);
+    onSaved(res.data);
+    if (/^https?:\/\//i.test(url)) runEmbedCheck();
+    else setEmbed(null);
+    return true;
+  };
+
+  const handleSync = async () => {
+    if (!/^https?:\/\//i.test(externalUrl.trim())) {
+      setError('Renseignez l\'URL du post publié pour synchroniser ses métriques.');
+      return;
+    }
+    setSyncing(true); setError(''); setSyncNote('');
+    await persistUrl();
+    const res = await syncPostMetrics(post.id);
+    setSyncing(false);
+    if (res.success && res.data) {
+      const p = res.data.post;
+      setMetrics({ impressions: p.impressions, likes: p.likes, comments: p.comments, shares: p.shares, clicks: p.clicks });
+      setSyncNote(`Métriques synchronisées${res.data.note ? ` — ${res.data.note}` : ''}`);
+      onSaved(p);
+    } else {
+      setError(res.error === 'COMPOSIO_NOT_CONFIGURED'
+        ? 'Composio non configuré — connectez vos comptes pour synchroniser, ou saisissez les chiffres à la main.'
+        : res.error || 'La synchronisation a échoué.');
+    }
+  };
+
+  const handleSaveMetrics = async () => {
+    setError('');
+    const res = await updatePost(post.id, {
+      impressions: Number(metrics.impressions) || 0,
+      likes:       Number(metrics.likes) || 0,
+      comments:    Number(metrics.comments) || 0,
+      shares:      Number(metrics.shares) || 0,
+      clicks:      Number(metrics.clicks) || 0,
+    });
+    if (res.success && res.data) { onSaved(res.data); setManual(false); setSyncNote('Métriques enregistrées.'); }
+    else setError(res.error || 'Enregistrement impossible.');
+  };
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true); setError('');
+    const res = await analyzePostPerf(post.id);
+    setAnalyzing(false);
+    if (res.success && res.data) {
+      setAnalysis(res.data.analysis + (res.data.learnings.length
+        ? `\n\n---\n**${res.data.learnings.length} enseignement(s) ajouté(s) à la base de connaissances** — les prochaines générations en tiendront compte.`
+        : ''));
+    } else {
+      setError(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Analyse échouée.');
+    }
+  };
+
+  const showIframe = Boolean(embed?.embeddable && embed.embedUrl && !iframeBroken);
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box modal-box-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>{post.title || platformLabel(post.platform)}</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        {/* Bandeau : statut + raison du verrouillage, d'un coup d'œil */}
+        <div className="pub-banner">
+          <span className="pub-banner-badge"><CheckCircle2 size={15} /> Publié</span>
+          <span className="pub-banner-meta">
+            <PlatformIcon platform={post.platform} size={14} /> {platformLabel(post.platform)}
+            <span className="pub-banner-sep">·</span>
+            {fmtDate(post.publishedAt ?? post.updatedAt)}
+          </span>
+          <span className="pub-banner-lock"><Lock size={12} /> Lecture seule — en ligne, ce post ne se modifie plus.</span>
+          {hasUrl && (
+            <a className="pub-banner-link" href={savedUrl.trim()} target="_blank" rel="noopener noreferrer">
+              Voir sur {platformLabel(post.platform)} <ExternalLink size={13} />
+            </a>
+          )}
+        </div>
+
+        <div className="pe-form">
+          <div className="pe-grid">
+
+            {/* ════ GAUCHE : le post tel qu'il est en ligne ════ */}
+            <div className="pe-col">
+              <section className="pe-panel pub-embed-panel">
+                <h3 className="pe-panel-title"><Eye size={14} /> Le post en ligne</h3>
+                {!hasUrl ? (
+                  <div className="pub-fallback">
+                    <p className="pub-fallback-note">
+                      Ajoutez l'URL du post publié (panneau de droite) pour afficher la vraie publication ici.
+                      En attendant, voici l'aperçu fidèle de ce que vous avez publié.
+                    </p>
+                    <PlatformPreview platform={post.platform} title={post.title} content={post.content}
+                                     mediaUrl={mediaUrl} mediaIsVideo={mediaIsVideo} subreddit={post.subreddit ?? undefined} />
+                  </div>
+                ) : embedLoading ? (
+                  <div className="pub-embed-loading">⏳ Vérification de l'affichage intégré…</div>
+                ) : showIframe ? (
+                  <div className="pub-embed-frame">
+                    <iframe
+                      src={embed!.embedUrl!}
+                      title="Post publié"
+                      loading="lazy"
+                      sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      onError={() => setIframeBroken(true)}
+                    />
+                  </div>
+                ) : (
+                  <div className="pub-fallback">
+                    <p className="pub-fallback-note">
+                      {platformLabel(post.platform)} n'autorise pas l'affichage intégré — voici l'aperçu fidèle de votre publication.{' '}
+                      <a href={savedUrl.trim()} target="_blank" rel="noopener noreferrer">Ouvrir la vraie publication ↗</a>
+                    </p>
+                    <PlatformPreview platform={post.platform} title={post.title} content={post.content}
+                                     mediaUrl={mediaUrl} mediaIsVideo={mediaIsVideo} subreddit={post.subreddit ?? undefined} />
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* ════ DROITE : suivi des performances + analyse IA ════ */}
+            <div className="pe-col pe-col-right">
+
+              <section className="pe-panel">
+                <h3 className="pe-panel-title"><BarChart3 size={14} /> Performances</h3>
+                <div className="pub-metrics">
+                  {([
+                    [fmtNum(metrics.impressions), 'Impressions'],
+                    [fmtNum(metrics.likes), 'Likes'],
+                    [fmtNum(metrics.comments), 'Commentaires'],
+                    [fmtNum(metrics.shares), 'Partages'],
+                    [fmtNum(metrics.clicks), 'Clics'],
+                    [engagement !== null ? `${engagement.toFixed(1)} %` : '—', 'Engagement'],
+                  ] as const).map(([value, label]) => (
+                    <div key={label} className="pub-metric">
+                      <span className="pub-metric-value">{value}</span>
+                      <span className="pub-metric-label">{label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {!readOnly && (
+                  <>
+                    <label className="form-label-block">
+                      URL du post publié
+                      <div className="ai-assist-row">
+                        <input
+                          className="form-input"
+                          value={externalUrl}
+                          onChange={(e) => setExternalUrl(e.target.value)}
+                          onBlur={persistUrl}
+                          placeholder="ex. https://x.com/vous/status/12345…"
+                        />
+                        <button type="button" className="btn btn-ghost" onClick={handleSync} disabled={syncing}>
+                          {syncing ? '⏳…' : <><RefreshCw size={14} /> Synchroniser</>}
+                        </button>
+                      </div>
+                      <span className="form-hint-inline">
+                        La synchro lit les métriques réelles via vos comptes Composio. Sinon, saisie manuelle.
+                      </span>
+                    </label>
+                    {syncNote && <div className="approval-feedback" style={{ marginBottom: 0 }}>{syncNote}</div>}
+
+                    {manual ? (
+                      <>
+                        <div className="metrics-grid">
+                          {([
+                            ['impressions', 'Impressions'], ['likes', 'Likes'], ['comments', 'Commentaires'],
+                            ['shares', 'Partages'], ['clicks', 'Clics'],
+                          ] as const).map(([key, label]) => (
+                            <label key={key} className="form-label-block">
+                              {label}
+                              <input
+                                type="number" min={0} className="form-input"
+                                value={metrics[key]}
+                                onChange={(e) => setMetrics((m) => ({ ...m, [key]: Number(e.target.value) }))}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <div className="ai-assist-row">
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManual(false)}>Annuler</button>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveMetrics}>Enregistrer les chiffres</button>
+                        </div>
+                      </>
+                    ) : (
+                      <button type="button" className="pub-manual-toggle" onClick={() => setManual(true)}>
+                        Saisir les chiffres manuellement
+                      </button>
+                    )}
+                  </>
+                )}
+              </section>
+
+              {/* Seule aide IA conservée pour un post publié : l'analyse */}
+              <section className="pe-panel pe-ai">
+                <h3 className="pe-panel-title">
+                  <Sparkles size={14} /> Analyse de performance
+                  {!readOnly && (
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }}
+                            onClick={handleAnalyze} disabled={analyzing}>
+                      {analyzing ? '⏳ Analyse…' : analysis ? '↺ Re-analyser' : 'Analyser ce post'}
+                    </button>
+                  )}
+                </h3>
+                <p className="form-hint" style={{ margin: 0 }}>
+                  L'IA explique pourquoi ce post a marché (ou non) et nourrit votre base de connaissances pour les prochains.
+                </p>
+                {analysis && <div style={{ fontSize: '0.85rem' }}><Markdown text={analysis} /></div>}
+              </section>
+            </div>
+          </div>
+
+          {error && <div className="chat-error" style={{ marginTop: 10 }}>{error}</div>}
+          <div className="modal-footer pe-footer">
+            {readOnly && <span className="form-hint-inline pe-footer-error">👁️ Lecture seule — vous êtes Lecteur sur ce projet.</span>}
+            <button type="button" className="btn btn-primary" onClick={onClose}>Fermer</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 export function PostEditor({ post, initialScheduledAt, readOnly = false, onClose, onSaved, onCrossposted }: EditorProps) {
@@ -1230,6 +1518,11 @@ export default function ContentHubPage() {
     });
   };
 
+  // Mise à jour d'un post publié (synchro métriques, URL) sans fermer la vue
+  const handlePublishedUpdate = (saved: Post) => {
+    setAllPosts((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+  };
+
   const handleDelete = async (post: Post) => {
     if (!window.confirm(`Supprimer « ${post.title || platformLabel(post.platform)} » ?`)) return;
     const res = await deletePost(post.id);
@@ -1646,13 +1939,22 @@ export default function ContentHubPage() {
       ) : null}
 
       {editing !== null && (
-        <PostEditor
-          post={editing === 'new' ? null : editing}
-          readOnly={readOnly}
-          onClose={() => setEditing(null)}
-          onSaved={handleSaved}
-          onCrossposted={load}
-        />
+        editing !== 'new' && editing.status === 'published' ? (
+          <PublishedPostView
+            post={editing}
+            readOnly={readOnly}
+            onClose={() => setEditing(null)}
+            onSaved={handlePublishedUpdate}
+          />
+        ) : (
+          <PostEditor
+            post={editing === 'new' ? null : editing}
+            readOnly={readOnly}
+            onClose={() => setEditing(null)}
+            onSaved={handleSaved}
+            onCrossposted={load}
+          />
+        )
       )}
       {!showAssistant && !readOnly && (
         <button

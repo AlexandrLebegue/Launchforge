@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Trophy, TrendingUp, Sparkles, MessageSquareText, History, ChevronDown,
-  CheckCircle2, AlertTriangle, Target, ListChecks, FileText,
+  CheckCircle2, AlertTriangle, Target, ListChecks, FileText, MessageCircle, RefreshCw,
 } from 'lucide-react';
 import {
   ComposedChart, Line, Bar, BarChart, Area, AreaChart, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { getPerformance, getCampaignReport, getCampaignReports, getPosts, PerformanceSeries, Post, CampaignReportItem } from '../api/client';
+import {
+  getPerformance, getCampaignReport, getCampaignReports, getPosts, getComments, refreshComments, analyzeComments,
+  PerformanceSeries, Post, CampaignReportItem, CommentStats, CommentAnalysis,
+} from '../api/client';
 import { platformLabel, engagementRate } from './ContentHubPage';
 import Markdown from '../components/Markdown';
 
@@ -480,6 +483,9 @@ export default function PerformancePage() {
           {/* ── Par plateforme ── */}
           <PlatformBarChart data={byPlatform} />
 
+          {/* ── Commentaires (contenu réel, par type de post) ── */}
+          <CommentsCard />
+
           {/* ── Multi-plateformes : même contenu, plateformes comparées ── */}
           {crossGroups.length > 0 && (
             <div className="card">
@@ -633,6 +639,174 @@ function SectionedReport({ markdown, onDiscuss }: { markdown: string; onDiscuss:
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Commentaires : contenu réel récupéré, groupé par type de post ────────────
+
+const SENTIMENT_STYLE: Record<string, { label: string; color: string }> = {
+  positif:  { label: 'Positif', color: '#34d399' },
+  'mitigé': { label: 'Mitigé',  color: '#fbbf24' },
+  'négatif': { label: 'Négatif', color: '#f87171' },
+  'n/a':    { label: '—',       color: C.text },
+};
+
+function CommentsCard() {
+  const [stats, setStats]         = useState<CommentStats | null>(null);
+  const [analysis, setAnalysis]   = useState<CommentAnalysis | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [err, setErr]             = useState('');
+  const [open, setOpen]           = useState<string | null>(null);
+
+  useEffect(() => {
+    getComments().then((res) => {
+      if (res.success && res.data) setStats(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const refresh = async () => {
+    setRefreshing(true); setErr('');
+    const res = await refreshComments();
+    setRefreshing(false);
+    if (res.success && res.data) {
+      setStats(res.data.stats);
+      if (res.data.eligible === 0) setErr('Aucun post publié avec une URL renseignée à scanner — renseignez l\'URL d\'un post publié.');
+      else if (res.data.added === 0) setErr('Aucun nouveau commentaire trouvé (les plateformes connectées n\'en exposent peut-être pas).');
+    } else {
+      setErr(res.error === 'COMPOSIO_NOT_CONFIGURED'
+        ? 'Composio non configuré — la récupération des commentaires est indisponible.'
+        : res.error || 'Récupération échouée.');
+    }
+  };
+
+  const analyze = async () => {
+    setAnalyzing(true); setErr('');
+    const res = await analyzeComments();
+    setAnalyzing(false);
+    if (res.success && res.data) setAnalysis(res.data);
+    else setErr(res.error === 'AI_NOT_CONFIGURED' ? 'IA non configurée (OPENROUTER_API_KEY).' : res.error || 'Analyse échouée.');
+  };
+
+  if (loading) return null;
+
+  const total = stats?.total ?? 0;
+  const sentimentFor = (platform: string) => analysis?.byPlatform.find((p) => p.platform === platform);
+
+  return (
+    <div className="card">
+      <div className="config-card-head" style={{ marginBottom: 14 }}>
+        <span className="config-card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <MessageCircle size={16} color={C.impressions} /> Commentaires
+          {total > 0 && <span style={{ color: C.text, fontWeight: 400 }}>· {total}</span>}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={refresh} disabled={refreshing}>
+            <RefreshCw size={13} style={{ marginRight: 5, verticalAlign: '-2px' }} />
+            {refreshing ? 'Récupération…' : 'Récupérer'}
+          </button>
+          {total > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={analyze} disabled={analyzing}>
+              <Sparkles size={13} style={{ marginRight: 5, verticalAlign: '-2px' }} />
+              {analyzing ? 'Analyse…' : 'Analyser (IA)'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {err && <div className="chat-error" style={{ marginBottom: 10 }}>{err}</div>}
+
+      {total === 0 ? (
+        <p className="form-hint" style={{ margin: 0 }}>
+          Aucun commentaire récupéré pour l'instant. Cliquez « Récupérer » (ou synchronisez les métriques d'un
+          post publié) — les commentaires laissés sur vos posts apparaîtront ici, regroupés par réseau.
+        </p>
+      ) : (
+        <>
+          {analysis?.overall && (
+            <div style={{
+              fontSize: '0.85rem', lineHeight: 1.55, color: 'var(--color-text)',
+              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+              borderRadius: 10, padding: '12px 14px', marginBottom: 12,
+            }}>
+              <Sparkles size={13} color={C.impressions} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              {analysis.overall}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {stats!.byPlatform.map((p) => {
+              const isOpen = open === p.platform;
+              const s = sentimentFor(p.platform);
+              const sStyle = s && s.sentiment !== 'n/a' ? SENTIMENT_STYLE[s.sentiment] : null;
+              return (
+                <div key={p.platform} style={{ border: `1px solid ${C.grid}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(isOpen ? null : p.platform)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '11px 14px', cursor: 'pointer', border: 'none', textAlign: 'left',
+                      background: isOpen ? 'rgba(255,255,255,0.03)' : 'transparent', color: 'inherit',
+                    }}
+                  >
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: PLATFORM_COLORS[p.platform] ?? '#a39c93', flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, color: '#fff' }}>{platformLabel(p.platform)}</span>
+                    {sStyle && (
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+                        color: sStyle.color, border: `1px solid ${sStyle.color}55`, borderRadius: 5, padding: '1px 6px',
+                      }}>
+                        {sStyle.label}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: C.text }}>
+                      {p.total} commentaire{p.total > 1 ? 's' : ''}
+                    </span>
+                    <ChevronDown size={15} color={C.text} style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s', flexShrink: 0 }} />
+                  </button>
+
+                  {isOpen && (
+                    <div style={{ padding: '4px 14px 14px' }}>
+                      {s && (s.summary || s.themes.length > 0) && (
+                        <div style={{ marginBottom: 12 }}>
+                          {s.summary && <p className="form-hint" style={{ margin: '0 0 8px' }}>{s.summary}</p>}
+                          {s.themes.length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {s.themes.map((t, i) => (
+                                <span key={i} style={{
+                                  fontSize: '0.72rem', color: '#c0b8b0',
+                                  background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.grid}`,
+                                  borderRadius: 20, padding: '2px 10px',
+                                }}>{t}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {p.comments.map((c, i) => (
+                          <div key={i} style={{ borderLeft: `2px solid ${C.grid}`, paddingLeft: 12 }}>
+                            <div style={{ fontSize: '0.76rem', color: C.text, marginBottom: 2 }}>
+                              <strong style={{ color: '#c0b8b0' }}>{c.author || 'Anonyme'}</strong>
+                              {c.likeCount > 0 && <span> · {fmtNum(c.likeCount)} ❤</span>}
+                              {c.commentedAt && <span> · {fmtDay(c.commentedAt)}</span>}
+                            </div>
+                            <div style={{ fontSize: '0.85rem', lineHeight: 1.5, color: 'var(--color-text)', whiteSpace: 'pre-wrap' }}>{c.text}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }

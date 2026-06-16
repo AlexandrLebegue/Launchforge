@@ -13,6 +13,7 @@ import { chatComplete, ChatMessage, ToolDef, sanitizeJson, isAIConfigured } from
 import { McpSession, McpTool, isComposioConfigured } from './mcpClient';
 import { composioUserIdFor } from './composioConnect';
 import { publishDirect, syncMetricsDirect } from './composioDirect';
+import { CommentItem } from '../types';
 
 export { isComposioConfigured };
 
@@ -351,6 +352,27 @@ export interface SyncedMetrics {
   shares?: number;
   clicks?: number;
   note?: string;
+  /** Contenu réel des commentaires — rempli uniquement si withComments=true */
+  commentItems?: CommentItem[];
+}
+
+export interface SyncMetricsOptions {
+  /** Récupère aussi le CONTENU des commentaires (déclenché par l'utilisateur,
+   *  jamais par la synchro automatique des compteurs) */
+  withComments?: boolean;
+}
+
+/** Normalise le tableau de commentaires renvoyé par l'opérateur IA */
+function parseOperatorComments(value: unknown): CommentItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((c: any) => ({
+      author: c && c.author != null && String(c.author).trim() ? String(c.author).trim().slice(0, 200) : null,
+      text: c && c.text != null ? String(c.text).trim().slice(0, 4000) : '',
+      externalId: c && c.id != null ? String(c.id) : null,
+    }))
+    .filter((c) => c.text.length > 0)
+    .slice(0, 50);
 }
 
 export async function syncMetricsViaComposio(
@@ -358,14 +380,21 @@ export async function syncMetricsViaComposio(
   platform: string,
   externalUrl: string,
   title: string,
+  opts: SyncMetricsOptions = {},
 ): Promise<SyncedMetrics> {
+  const withComments = Boolean(opts.withComments);
   // Lecture DIRECTE (API Composio, déterministe) quand la référence externe
   // est exploitable — l'opérateur IA reste le repli (référence illisible,
   // outil en erreur, plateforme sans stratégie).
   if (process.env.COMPOSIO_API_KEY) {
-    const direct = await syncMetricsDirect(userId, platform, externalUrl);
+    const direct = await syncMetricsDirect(userId, platform, externalUrl, undefined, undefined, withComments);
     if (direct.handled && direct.metrics) return direct.metrics;
   }
+
+  const commentInstruction = withComments
+    ? `\nRécupère AUSSI le contenu réel des commentaires/réponses du post (auteur + texte) avec l'outil de lecture des commentaires/réponses, et renvoie-les dans "commentTexts" (50 max). Laisse "commentTexts" vide si aucun outil ne les expose.`
+    : '';
+  const commentField = withComments ? `, "commentTexts": [{"author": "string", "text": "string"}]` : '';
 
   const { reply, okCalls } = await runMcpTask(
     userId,
@@ -375,13 +404,14 @@ Mission : retrouver le post publié indiqué (via son URL/identifiant) et récup
 IMPORTANT :
 - N'accède JAMAIS à l'URL par une requête web directe (fetch/scraping) : les plateformes renvoient 403 aux accès non authentifiés. Utilise UNIQUEMENT les outils Composio (API authentifiée).
 - Si un outil attend un identifiant plutôt qu'une URL, extrais-le de l'URL (X/Twitter : le nombre final de /status/<id> ; LinkedIn : l'identifiant d'activité urn:li:activity:<id> ; etc.).
-- Si la recherche directe échoue, liste tes propres posts récents avec les outils disponibles et retrouve celui qui correspond au titre indiqué.
+- Si la recherche directe échoue, liste tes propres posts récents avec les outils disponibles et retrouve celui qui correspond au titre indiqué.${commentInstruction}
 ${METRICS_HINTS[platform] ? `${METRICS_HINTS[platform]}\n` : ''}Mapping attendu : impressions = vues/impressions ; likes = likes/réactions/favoris ; comments = commentaires/réponses ; shares = partages/retweets/reposts ; clicks = clics sur lien si disponible.
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour :
-{"found": boolean, "impressions": number, "likes": number, "comments": number, "shares": number, "clicks": number, "note": "explication courte"}
+{"found": boolean, "impressions": number, "likes": number, "comments": number, "shares": number, "clicks": number, "note": "explication courte"${commentField}}
 Mets 0 pour une métrique indisponible. found=false si le post est introuvable ou si aucun outil ne permet la lecture.`,
     `Récupère les métriques de ce post ${platform} :\nURL : ${externalUrl}\nTitre (indice) : ${title || '—'}`,
-    ['lookup', 'get', 'search', 'fetch', 'retrieve', 'analytics', 'metrics', 'reactions', 'stats'],
+    ['lookup', 'get', 'search', 'fetch', 'retrieve', 'analytics', 'metrics', 'reactions', 'stats',
+      ...(withComments ? ['comment', 'comments', 'replies', 'thread'] : [])],
   );
 
   try {
@@ -403,6 +433,8 @@ Mets 0 pour une métrique indisponible. found=false si le post est introuvable o
       shares: num(parsed.shares),
       clicks: num(parsed.clicks),
       note: typeof parsed.note === 'string' ? parsed.note.slice(0, 300) : undefined,
+      // Pas de commentaires retenus si aucun outil n'a réellement tourné (anti-hallucination)
+      ...(withComments && okCalls > 0 ? { commentItems: parseOperatorComments(parsed.commentTexts) } : {}),
     };
   } catch {
     return { found: false, note: `Réponse illisible du modèle : ${reply.slice(0, 200)}` };

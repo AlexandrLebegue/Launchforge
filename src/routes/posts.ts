@@ -12,6 +12,7 @@ import { logEvent } from '../services/adminLogger';
 import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { analyzePost } from '../services/analytics';
+import { checkEmbeddable } from '../services/embed';
 import { Post, PostStatus, Recurrence } from '../types';
 
 const router = Router();
@@ -366,7 +367,9 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
   }
 
   try {
-    const metrics = await syncMetricsViaComposio(post.userId, post.platform, post.externalUrl, post.title);
+    // Synchro manuelle = déclenchée par l'utilisateur → on récupère aussi le
+    // contenu des commentaires (alimente la carte « Commentaires » de Performances)
+    const metrics = await syncMetricsViaComposio(post.userId, post.platform, post.externalUrl, post.title, { withComments: true });
     if (!metrics.found) {
       return res.status(422).json({
         success: false,
@@ -381,7 +384,11 @@ router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
       clicks:      metrics.clicks,
     });
     storage.recordMetricSnapshot(storage.getPostById(post.id)!);
-    res.json({ success: true, data: { post: storage.getPostById(post.id), note: metrics.note } });
+    let commentsAdded = 0;
+    if (metrics.commentItems && metrics.commentItems.length > 0) {
+      commentsAdded = storage.upsertPostComments(storage.getPostById(post.id)!, metrics.commentItems);
+    }
+    res.json({ success: true, data: { post: storage.getPostById(post.id), note: metrics.note, commentsAdded } });
   } catch (err) {
     res.status(502).json({
       success: false,
@@ -408,6 +415,20 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
   } catch (err) {
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Analyse échouée' });
   }
+});
+
+// ── GET /api/posts/:id/embed ─────────────────────────────────────────────────
+// Indique si le post publié peut être affiché dans une iframe (sonde les
+// en-têtes X-Frame-Options / CSP de l'URL publiée). Le front affiche alors
+// l'aperçu intégré, ou bascule sur l'aperçu interne + lien si c'est bloqué.
+router.get('/:id/embed', async (req: Request, res: Response) => {
+  const post = loadOwnedPost(req, res);
+  if (!post) return;
+  if (post.status !== 'published' || !post.externalUrl) {
+    return res.json({ success: true, data: { embeddable: false, embedUrl: null, reason: 'no-url' } });
+  }
+  const result = await checkEmbeddable(post.externalUrl);
+  res.json({ success: true, data: result });
 });
 
 // ── POST /api/posts/sync-calendar ────────────────────────────────────────────

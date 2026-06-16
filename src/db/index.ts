@@ -406,6 +406,28 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_metric_history_post ON metric_history(postId, at);
   `);
 
+  // Commentaires récupérés sur les posts publiés (contenu réel, pas qu'un
+  // compteur) — alimente la carte « Commentaires » de la vue Performances.
+  // Le UNIQUE(postId, externalId) rend les re-synchros idempotentes.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS post_comments (
+      id          TEXT PRIMARY KEY,
+      postId      TEXT NOT NULL,
+      userId      TEXT NOT NULL,
+      planId      TEXT,
+      platform    TEXT NOT NULL,
+      externalId  TEXT,
+      author      TEXT,
+      text        TEXT NOT NULL,
+      likeCount   INTEGER NOT NULL DEFAULT 0,
+      commentedAt TEXT,
+      fetchedAt   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_post_comments_plan ON post_comments(userId, planId);
+    CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(postId);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_post_comments_dedup ON post_comments(postId, externalId);
+  `);
+
   // Présentations Marp générées par l'IA
   database.exec(`
     CREATE TABLE IF NOT EXISTS decks (
