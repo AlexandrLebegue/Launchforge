@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthPayload, ApiResponse } from '../types';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'launchforge-dev-secret-change-in-production';
+export const JWT_SECRET = process.env.JWT_SECRET || 'launchforge-dev-secret-change-in-production';
 const JWT_EXPIRES_IN = '7d';
 
 export function signToken(payload: AuthPayload): string {

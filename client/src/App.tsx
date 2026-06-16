@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import { LegalNoticePage, PrivacyPage } from './pages/LegalPages';
 import JoinPage from './pages/JoinPage';
 import DashboardPage from './pages/DashboardPage';
@@ -89,6 +90,7 @@ export default function App() {
       <Route path="/join" element={<JoinPage user={user} onAuthed={(u) => setUser(u)} />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage onLogin={(u) => setUser(u)} />} />
+      <Route path="/oauth/callback" element={<OAuthCallbackPage onLogin={(u) => setUser(u)} />} />
       <Route path="/legal" element={<LegalNoticePage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

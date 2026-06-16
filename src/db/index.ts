@@ -376,6 +376,16 @@ function runMigrations(database: Database.Database): void {
   if (!userCols.some((c) => c.name === 'lastWeeklyReportAt')) {
     database.exec(`ALTER TABLE users ADD COLUMN lastWeeklyReportAt TEXT`);
   }
+  // Authentification OAuth (Google & co). `authProvider` = 'local' (email +
+  // mot de passe) ou un fournisseur ('google'…). `providerId` = identifiant
+  // stable du compte chez le fournisseur (claim `sub` pour Google). Les comptes
+  // OAuth ont un `password` vide : verifyPassword n'est jamais appelé pour eux.
+  if (!userCols.some((c) => c.name === 'authProvider')) {
+    database.exec(`ALTER TABLE users ADD COLUMN authProvider TEXT NOT NULL DEFAULT 'local'`);
+  }
+  if (!userCols.some((c) => c.name === 'providerId')) {
+    database.exec(`ALTER TABLE users ADD COLUMN providerId TEXT`);
+  }
 
   // Historique des métriques : un instantané par synchro — alimente les
   // courbes temporelles de la vue Performances

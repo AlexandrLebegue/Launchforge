@@ -749,6 +749,19 @@ form .btn { margin-top: 8px; }
   background: var(--color-border);
 }
 
+/* Bouton « Continuer avec Google » — codes couleur officiels (fond blanc) */
+.btn-google {
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid #dadce0;
+  font-weight: 600;
+}
+.btn-google:hover {
+  background: #f7f8f8;
+  color: #1f1f1f;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
 /* ============================================================
    DASHBOARD
    ============================================================ */

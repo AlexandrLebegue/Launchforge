@@ -43,6 +43,34 @@ export class Storage {
       .get(id) as any;
   }
 
+  // ── Authentification OAuth (Google & co) ─────────────────────────────────
+
+  /** Crée un compte issu d'un fournisseur OAuth (password vide, jamais utilisé) */
+  saveOAuthUser(user: User, provider: string, providerId: string): void {
+    getDb()
+      .prepare(
+        `INSERT INTO users (id, email, name, password, createdAt, authProvider, providerId)
+         VALUES (?, ?, ?, '', ?, ?, ?)`
+      )
+      .run(user.id, user.email, user.name, user.createdAt, provider, providerId);
+  }
+
+  /** Retrouve un compte par (fournisseur, identifiant chez le fournisseur) */
+  getUserByProvider(provider: string, providerId: string): User | undefined {
+    return getDb()
+      .prepare(
+        `SELECT id, email, name, createdAt FROM users WHERE authProvider = ? AND providerId = ?`
+      )
+      .get(provider, providerId) as any;
+  }
+
+  /** Rattache un fournisseur OAuth à un compte existant (login par même email) */
+  linkProvider(userId: string, provider: string, providerId: string): void {
+    getDb()
+      .prepare(`UPDATE users SET authProvider = ?, providerId = ? WHERE id = ?`)
+      .run(provider, providerId, userId);
+  }
+
   // ── Réinitialisation de mot de passe ─────────────────────────────────────
 
   /** Pose (ou efface avec null) le jeton de réinitialisation, stocké haché */

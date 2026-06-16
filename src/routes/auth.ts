@@ -6,6 +6,14 @@ import { signToken, requireAuth } from '../middleware/auth';
 import { authRateLimit } from '../middleware/rateLimit';
 import { storage } from '../services/storage';
 import { logEvent } from '../services/adminLogger';
+import {
+  isGoogleOAuthConfigured,
+  buildGoogleAuthUrl,
+  signState,
+  verifyState,
+  exchangeCodeForProfile,
+  frontCallbackUrl,
+} from '../services/oauthGoogle';
 import { ApiResponse, User, AuthPayload } from '../types';
 
 const router = Router();
@@ -98,6 +106,73 @@ router.post('/login', loginLimiter, (req: Request, res: Response) => {
       error: err instanceof Error ? err.message : 'An unexpected error occurred',
     };
     res.status(500).json(response);
+  }
+});
+
+// ── OAuth « Sign in with Google » ───────────────────────────────────────────
+// Flux Authorization Code, stateless (state = JWT court). Voir
+// src/services/oauthGoogle.ts pour les détails du flux et de la confiance.
+
+// Le front n'affiche le bouton Google que si le serveur est configuré.
+router.get('/oauth-status', (_req: Request, res: Response) => {
+  res.json({ success: true, data: { google: isGoogleOAuthConfigured() } });
+});
+
+// Démarrage : redirige le navigateur vers l'écran de consentement Google.
+router.get('/google', (_req: Request, res: Response) => {
+  if (!isGoogleOAuthConfigured()) {
+    return res.redirect(frontCallbackUrl({ error: 'google_not_configured' }));
+  }
+  res.redirect(buildGoogleAuthUrl(signState()));
+});
+
+// Retour de Google : échange le code, crée/retrouve le compte, signe un JWT et
+// renvoie le navigateur vers le front avec le token (ou une erreur).
+router.get('/google/callback', async (req: Request, res: Response) => {
+  const { code, state, error: googleError } = req.query as Record<string, string | undefined>;
+
+  if (googleError) return res.redirect(frontCallbackUrl({ error: 'access_denied' }));
+  if (!code || !verifyState(state)) {
+    return res.redirect(frontCallbackUrl({ error: 'invalid_state' }));
+  }
+
+  try {
+    const profile = await exchangeCodeForProfile(code);
+    // Email non vérifié chez Google : on refuse (anti-usurpation de compte).
+    if (!profile.emailVerified) {
+      return res.redirect(frontCallbackUrl({ error: 'email_unverified' }));
+    }
+
+    // 1. Compte déjà rattaché à ce Google
+    let user = storage.getUserByProvider('google', profile.sub);
+
+    // 2. Sinon, compte local existant avec le même email (vérifié) → rattachement
+    if (!user) {
+      const byEmail = storage.getUserByEmail(profile.email);
+      if (byEmail) {
+        storage.linkProvider(byEmail.id, 'google', profile.sub);
+        user = storage.getUserById(byEmail.id);
+        logEvent(byEmail.id, 'user.oauth_link', byEmail.id, { provider: 'google' });
+      }
+    }
+
+    // 3. Sinon, création d'un nouveau compte (même init que /register)
+    if (!user) {
+      const id = uuidv4();
+      const now = new Date().toISOString();
+      const newUser: User = { id, email: profile.email, name: profile.name, createdAt: now };
+      storage.saveOAuthUser(newUser, 'google', profile.sub);
+      storage.setComposioUserId(id, `lf-${id}`);
+      logEvent(id, 'user.register', id, { email: profile.email, provider: 'google' });
+      user = newUser;
+    }
+
+    const token = signToken({ userId: user!.id, email: user!.email });
+    logEvent(user!.id, 'user.login', user!.id, { email: user!.email, provider: 'google' });
+    res.redirect(frontCallbackUrl({ token }));
+  } catch (err) {
+    console.error('OAuth Google callback:', err instanceof Error ? err.message : err);
+    res.redirect(frontCallbackUrl({ error: 'oauth_failed' }));
   }
 });
 

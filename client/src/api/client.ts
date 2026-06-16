@@ -165,6 +165,14 @@ export async function getMe(): Promise<ApiResponse<User>> {
   return request('/auth/me');
 }
 
+/** Fournisseurs OAuth activés côté serveur (bouton affiché en conséquence) */
+export async function getOAuthStatus(): Promise<ApiResponse<{ google: boolean }>> {
+  return request('/auth/oauth-status');
+}
+
+/** URL de démarrage du flux Google — navigation pleine page (pas un fetch) */
+export const GOOGLE_LOGIN_URL = `${API_BASE}/auth/google`;
+
 /** RGPD : télécharge toutes ses données (JSON) */
 export async function exportMyData(): Promise<Blob | null> {
   const token = getToken();

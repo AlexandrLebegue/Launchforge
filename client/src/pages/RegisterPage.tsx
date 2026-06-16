@@ -3,6 +3,7 @@ import { Flame } from 'lucide-react';
 import { useLang, LangSwitch } from '../i18n';
 import { Link, useNavigate } from 'react-router-dom';
 import { register, setToken, User } from '../api/client';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 
 interface Props {
   onRegister: (user: User) => void;
@@ -50,6 +51,8 @@ export default function RegisterPage({ onRegister }: Props) {
         <p>{t.sub}</p>
 
         {error && <div className="error">{error}</div>}
+
+        <GoogleSignInButton />
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
