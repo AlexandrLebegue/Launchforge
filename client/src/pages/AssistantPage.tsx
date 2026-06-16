@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, FormEvent, ChangeEvent, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Flame, User, Square, Send, Paperclip, X, FileText, History, Trash2, Plus } from 'lucide-react';
+import { Flame, User, Square, Send, Paperclip, X, FileText, History, Trash2 } from 'lucide-react';
 import {
   streamAssistantChat, getOverview, listConversations, getConversation, deleteConversation,
   PostChatMessage, AssistantAttachment, ConversationSummary,
@@ -141,6 +141,22 @@ export default function AssistantPage() {
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, streamText, streamActions.length]);
+
+  // Zone de saisie auto-extensible : grandit avec le texte (retours à la ligne
+  // visibles), jusqu'à un plafond, puis défile. Se réinitialise une fois envoyé.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    // Plancher à 34px (= hauteur des boutons ronds) pour une barre nette au repos.
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 39), 160)}px`;
+  }, [input]);
+
+  // Focus initial sur la saisie SANS faire défiler la fenêtre — l'attribut
+  // autoFocus natif amène l'élément à la vue et provoque un petit scroll de page.
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const send = async (text: string, attachments: AssistantAttachment[] = []) => {
     if ((!text.trim() && attachments.length === 0) || sending) return;
@@ -287,72 +303,32 @@ export default function AssistantPage() {
   const fresh = messages.length <= 1;
 
   return (
-    <div className="assistant-layout">
-      {/* Panneau d'historique */}
-      {historyOpen && <div className="assistant-history-backdrop" onClick={() => setHistoryOpen(false)} />}
-      <aside className={`assistant-history ${historyOpen ? 'open' : ''}`} data-tour="asst-history">
-        <div className="assistant-history-head">
-          <span>Historique</span>
-          <button className="btn btn-ghost btn-sm" onClick={startNewConversation} disabled={sending} title="Nouvelle conversation">
-            <Plus size={15} /> Nouvelle
+    <div className="assistant-page animate-fadeIn">
+      {/* En-tête */}
+      <div className="assistant-page-header">
+        <div>
+          <h1>Assistant</h1>
+          <p>
+            Pilote tout LaunchForge en discutant{projectName ? <> — projet : <strong>{projectName}</strong></> : ''}.
+            Posts, emails, agenda, validations, recherche web.
+          </p>
+        </div>
+        <div className="assistant-page-header-actions">
+          <button
+            className={`btn btn-ghost assistant-history-toggle ${historyOpen ? 'active' : ''}`}
+            onClick={() => setHistoryOpen((v) => !v)}
+            title="Afficher ou masquer l'historique des conversations"
+          >
+            <History size={16} /> Historique
+          </button>
+          <button className="btn btn-ghost" data-tour="asst-reset" onClick={startNewConversation} disabled={sending} title="Nouvelle conversation">
+            ↺ Nouvelle conversation
           </button>
         </div>
-        <div className="assistant-history-list">
-          {conversations.length === 0 ? (
-            <p className="assistant-history-empty">Aucune conversation enregistrée pour l'instant.</p>
-          ) : (
-            conversations.map((c) => (
-              <div
-                key={c.id}
-                className={`assistant-history-item ${c.id === conversationId ? 'active' : ''}`}
-                onClick={() => openConversation(c.id)}
-                role="button"
-                tabIndex={0}
-              >
-                <div className="assistant-history-item-main">
-                  <span className="assistant-history-title">{c.title}</span>
-                  {c.preview && <span className="assistant-history-preview">{c.preview}</span>}
-                </div>
-                <span className="assistant-history-date">{formatDate(c.updatedAt)}</span>
-                <button
-                  type="button"
-                  className="assistant-history-del"
-                  onClick={(e) => { e.stopPropagation(); removeConversation(c.id); }}
-                  title="Supprimer cette conversation"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-        <p className="assistant-history-note">🗑️ Les conversations sont supprimées automatiquement après 1 mois d'inactivité.</p>
-      </aside>
+      </div>
 
-      <div className="assistant-page animate-fadeIn">
-        {/* En-tête */}
-        <div className="assistant-page-header">
-          <div>
-            <h1>Assistant</h1>
-            <p>
-              Pilote tout LaunchForge en discutant{projectName ? <> — projet : <strong>{projectName}</strong></> : ''}.
-              Posts, emails, agenda, validations, recherche web.
-            </p>
-          </div>
-          <div className="assistant-page-header-actions">
-            <button
-              className="btn btn-ghost assistant-history-toggle"
-              onClick={() => setHistoryOpen((v) => !v)}
-              title="Historique des conversations"
-            >
-              <History size={16} /> Historique
-            </button>
-            <button className="btn btn-ghost" data-tour="asst-reset" onClick={startNewConversation} disabled={sending} title="Nouvelle conversation">
-              ↺ Nouvelle conversation
-            </button>
-          </div>
-        </div>
-
+      {/* Corps : fil de conversation + barre latérale d'historique (masquable) */}
+      <div className="assistant-body">
         {/* Fil de conversation */}
         <div className="assistant-page-messages">
           {messages.map((msg, i) => (
@@ -402,66 +378,114 @@ export default function AssistantPage() {
           <div ref={chatEnd} />
         </div>
 
-        {error && <div className="chat-error" style={{ margin: '0 0 8px' }}>{error}</div>}
-
-        {/* Fichiers joints en attente d'envoi */}
-        {files.length > 0 && (
-          <div className="assistant-attachments">
-            {files.map((f, i) => (
-              <span key={i} className="assistant-attachment-chip" title={f.name}>
-                <FileText size={13} />
-                <span className="assistant-attachment-name">{f.name}</span>
-                <button type="button" onClick={() => removeFile(i)} title="Retirer"><X size={13} /></button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Saisie */}
-        <form className="assistant-page-input" data-tour="asst-input" onSubmit={handleSend}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPT}
-            multiple
-            hidden
-            onChange={handleFiles}
-          />
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Demande-moi n'importe quoi sur ton projet… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
-            rows={2}
-            disabled={sending}
-            autoFocus
-          />
-          <button
-            type="button"
-            className="assistant-input-btn assistant-attach"
-            onClick={() => fileRef.current?.click()}
-            disabled={sending || files.length >= MAX_FILES}
-            title="Joindre un fichier (PDF, Word, Excel, image)"
-          >
-            <Paperclip size={18} />
-          </button>
-          {sending ? (
-            <button type="button" className="assistant-input-btn assistant-stop" onClick={stop} title="Interrompre la réponse">
-              <Square size={16} fill="currentColor" />
-            </button>
-          ) : (
+        {/* Barre latérale d'historique — masquable */}
+        {historyOpen && <div className="assistant-history-backdrop" onClick={() => setHistoryOpen(false)} />}
+        <aside className={`assistant-history ${historyOpen ? 'open' : ''}`} data-tour="asst-history">
+          <div className="assistant-history-head">
+            <span>Historique</span>
             <button
-              type="submit"
-              className="assistant-input-btn assistant-send"
-              disabled={!input.trim() && files.length === 0}
-              title="Envoyer"
+              type="button"
+              className="assistant-history-close"
+              onClick={() => setHistoryOpen(false)}
+              title="Masquer l'historique"
             >
-              <Send size={18} />
+              <X size={15} />
             </button>
-          )}
-        </form>
+          </div>
+          <div className="assistant-history-list">
+            {conversations.length === 0 ? (
+              <p className="assistant-history-empty">Aucune conversation enregistrée pour l'instant.</p>
+            ) : (
+              conversations.map((c) => (
+                <div
+                  key={c.id}
+                  className={`assistant-history-item ${c.id === conversationId ? 'active' : ''}`}
+                  onClick={() => openConversation(c.id)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="assistant-history-item-main">
+                    <span className="assistant-history-title">{c.title}</span>
+                    {c.preview && <span className="assistant-history-preview">{c.preview}</span>}
+                  </div>
+                  <span className="assistant-history-date">{formatDate(c.updatedAt)}</span>
+                  <button
+                    type="button"
+                    className="assistant-history-del"
+                    onClick={(e) => { e.stopPropagation(); removeConversation(c.id); }}
+                    title="Supprimer cette conversation"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+          <p className="assistant-history-note">🗑️ Les conversations sont supprimées automatiquement après 1 mois d'inactivité.</p>
+        </aside>
       </div>
+
+      {error && <div className="chat-error" style={{ margin: '0 0 8px' }}>{error}</div>}
+
+      {/* Fichiers joints en attente d'envoi */}
+      {files.length > 0 && (
+        <div className="assistant-attachments">
+          {files.map((f, i) => (
+            <span key={i} className="assistant-attachment-chip" title={f.name}>
+              <FileText size={13} />
+              <span className="assistant-attachment-name">{f.name}</span>
+              <button type="button" onClick={() => removeFile(i)} title="Retirer"><X size={13} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Saisie — barre intégrée : joindre + texte + envoyer dans un même bloc arrondi */}
+      <form className="assistant-page-input" data-tour="asst-input" onSubmit={handleSend}>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={ACCEPT}
+          multiple
+          hidden
+          onChange={handleFiles}
+        />
+        <button
+          type="button"
+          className="assistant-input-btn assistant-attach"
+          onClick={() => fileRef.current?.click()}
+          disabled={sending || files.length >= MAX_FILES}
+          title="Joindre un fichier (PDF, Word, Excel, image)"
+          aria-label="Joindre un fichier"
+        >
+          <Paperclip size={18} />
+        </button>
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Demande-moi n'importe quoi sur ton projet… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
+          rows={1}
+          disabled={sending}
+          style={{ height: '39px' }}
+        />
+        {sending ? (
+          <button type="button" className="assistant-input-btn assistant-stop" onClick={stop} title="Interrompre la réponse" aria-label="Interrompre la réponse">
+            <Square size={16} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="assistant-input-btn assistant-send"
+            disabled={!input.trim() && files.length === 0}
+            title="Envoyer"
+            aria-label="Envoyer"
+          >
+            <Send size={18} />
+          </button>
+        )}
+      </form>
     </div>
   );
 }

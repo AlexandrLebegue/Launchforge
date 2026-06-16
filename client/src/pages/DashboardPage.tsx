@@ -76,6 +76,11 @@ export default function DashboardPage() {
                 <span>{input.pricing}</span>
               </>
             )}
+            {/* Modifier le projet → base de connaissances : simple texte orange, à la suite du résumé */}
+            <span className="plan-meta-dot" />
+            <Link to="/knowledge" className="dashboard-edit-link" title="Modifier les informations du projet (entreprise, offres, ton, audience…)">
+              Modifier
+            </Link>
           </div>
         </div>
         <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', paddingTop: 4 }}>
@@ -136,31 +141,22 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Prochain post */}
-      <div className="card animate-fadeInUp stagger-2" style={{ marginBottom: 20 }}>
-        <div className="card-header">Prochaine publication</div>
-        <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-          {posts.next
-            ? <>« {posts.next.title || posts.next.platform} » sur <strong style={{ color: 'var(--color-text)' }}>{posts.next.platform}</strong> le {new Date(posts.next.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
-            : <>Aucun post programmé — <Link to="/content">générez un calendrier éditorial</Link> dans le Hub de contenu.</>}
-        </p>
-      </div>
+      {/* Prochaine publication + Objectifs côte à côte ; la description passe
+          sous la prochaine publication (colonne de gauche). */}
+      <div className="dashboard-overview-grid">
+        <div className="dashboard-overview-col">
+          {/* Prochain post */}
+          <div className="card animate-fadeInUp stagger-2">
+            <div className="card-header">Prochaine publication</div>
+            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+              {posts.next
+                ? <>« {posts.next.title || posts.next.platform} » sur <strong style={{ color: 'var(--color-text)' }}>{posts.next.platform}</strong> le {new Date(posts.next.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
+                : <>Aucun post programmé — <Link to="/content">générez un calendrier éditorial</Link> dans le Hub de contenu.</>}
+            </p>
+          </div>
 
-      {/* ── Vue d'ensemble du projet ── */}
-      {input && (
-        <>
-          {/* Objectifs */}
-          {input.goals?.length > 0 && (
-            <div className="plan-section card animate-fadeInUp stagger-3">
-              <div className="card-header">Objectifs</div>
-              <ul className="weekly-actions-list">
-                {input.goals.map((g, i) => <li key={i}>{g}</li>)}
-              </ul>
-            </div>
-          )}
-
-          {/* Description */}
-          {input.description && (
+          {/* Description — sous la prochaine publication */}
+          {input?.description && (
             <div className="card animate-fadeInUp stagger-4">
               <div className="card-header">Description</div>
               <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', lineHeight: 1.7 }}>
@@ -168,26 +164,36 @@ export default function DashboardPage() {
               </p>
             </div>
           )}
+        </div>
 
-          {/* Phases de lancement */}
-          {(plan?.launch_sequencing || []).length > 0 && (
-            <div className="card animate-fadeInUp stagger-5">
-              <div className="card-header">Phases de lancement</div>
-              {plan!.launch_sequencing.map((ls, i) => (
-                <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < plan!.launch_sequencing.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <div className="weekly-week-num" style={{ width: 28, height: 28, fontSize: '0.72rem' }}>{i + 1}</div>
-                    <strong style={{ fontSize: '0.9rem' }}>{ls.phase}</strong>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{ls.timeline}</span>
-                  </div>
-                  <ul className="weekly-actions-list">
-                    {(ls.activities || []).slice(0, 3).map((a, j) => <li key={j}>{a}</li>)}
-                  </ul>
-                </div>
-              ))}
+        {/* Objectifs — à droite de la prochaine publication */}
+        {input && input.goals?.length > 0 && (
+          <div className="plan-section card animate-fadeInUp stagger-3">
+            <div className="card-header">Objectifs</div>
+            <ul className="weekly-actions-list">
+              {input.goals.map((g, i) => <li key={i}>{g}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* ── Phases de lancement (pleine largeur, sous la vue d'ensemble) ── */}
+      {input && (plan?.launch_sequencing || []).length > 0 && (
+        <div className="card animate-fadeInUp stagger-5">
+          <div className="card-header">Phases de lancement</div>
+          {plan!.launch_sequencing.map((ls, i) => (
+            <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < plan!.launch_sequencing.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <div className="weekly-week-num" style={{ width: 28, height: 28, fontSize: '0.72rem' }}>{i + 1}</div>
+                <strong style={{ fontSize: '0.9rem' }}>{ls.phase}</strong>
+                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>{ls.timeline}</span>
+              </div>
+              <ul className="weekly-actions-list">
+                {(ls.activities || []).slice(0, 3).map((a, j) => <li key={j}>{a}</li>)}
+              </ul>
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </div>
   );

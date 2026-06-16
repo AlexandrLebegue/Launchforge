@@ -795,6 +795,14 @@ form .btn { margin-top: 8px; }
   margin-top: 2px;
 }
 
+/* Lien « Modifier » : simple texte orange, à la suite du résumé du projet */
+.dashboard-edit-link {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.dashboard-edit-link:hover { text-decoration: underline; }
+
 /* Stats bar */
 .dashboard-stats {
   display: grid;
@@ -1020,6 +1028,24 @@ form .btn { margin-top: 8px; }
 @media (max-width: 480px) {
   .dashboard-stats { grid-template-columns: 1fr; }
 }
+
+/* Vue d'ensemble : prochaine publication (+ description dessous) à gauche,
+   objectifs à droite. auto-fit → une seule colonne sur mobile ou sans objectifs. */
+.dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+  align-items: start;          /* l'objectif garde sa hauteur naturelle */
+  margin-bottom: 20px;
+}
+.dashboard-overview-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;                /* évite le débordement des textes longs */
+}
+/* dans la grille, l'espacement vient de la grille/colonne, pas des marges de carte */
+.dashboard-overview-grid .card { margin-bottom: 0; }
 
 /* ============================================================
    TAGS, CHIPS, BADGES
@@ -4839,9 +4865,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .assistant-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 48px);
-  max-width: 860px;
+  /* Tient pile dans la zone de contenu : 100vh moins le padding vertical de
+     .layout-main (36px en haut + 48px en bas) — évite tout scroll de la page. */
+  height: calc(100vh - 84px);
+  max-width: 1180px;
   margin: 0 auto;
+}
+/* Corps : la conversation et la barre latérale d'historique côte à côte —
+   tous deux étirés sur la même hauteur (même taille de carte). */
+.assistant-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
 }
 .assistant-page-header {
   display: flex;
@@ -4855,6 +4891,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .assistant-page-header p  { color: var(--color-text-muted); font-size: 0.875rem; }
 .assistant-page-messages {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   padding: 16px;
   border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
@@ -4864,33 +4901,50 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   flex-direction: column;
   gap: 10px;
 }
+/* Barre de saisie intégrée (façon ChatGPT) : joindre + texte + envoyer dans
+   un même bloc arrondi. Les boutons vivent à l'intérieur, le textarea est nu. */
 .assistant-page-input {
   display: flex;
-  gap: 10px;
-  align-items: flex-end;
+  gap: 6px;
+  align-items: center;
   margin-top: 12px;
+  padding: 4px 8px;
+  border-radius: 26px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  background: var(--color-surface, rgba(255, 255, 255, 0.04));
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.assistant-page-input:focus-within {
+  border-color: rgba(255, 107, 53, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.12);
 }
 .assistant-page-input textarea {
   flex: 1;
   resize: none;
-  padding: 12px 14px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-  background: var(--color-surface, rgba(255, 255, 255, 0.04));
+  /* Padding vertical asymétrique (un peu plus en haut) : compense le décalage
+     optique des polices (texte sans jambage logé en haut de sa ligne) pour que
+     le texte soit visuellement centré avec les boutons ronds. Barre compacte. */
+  padding: 7px 4px 3px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: none;
+  background: transparent;
+  color: inherit;
   font: inherit;
   line-height: 1.45;
 }
-/* Boutons de la barre de saisie : exactement la même hauteur que le textarea
-   (align-self: stretch) ; largeur carrée, juste l'icône. */
+.assistant-page-input textarea:focus { outline: none; }
+/* Boutons de la barre de saisie : ronds, juste l'icône, centrés verticalement
+   avec la ligne de texte (align-items: center sur le conteneur). */
 .assistant-input-btn {
-  align-self: stretch;
   flex-shrink: 0;
-  width: 48px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 50%;
   border: 1px solid transparent;
   cursor: pointer;
   transition: filter 0.15s, background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
@@ -4904,21 +4958,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .assistant-send:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
 .assistant-send:active:not(:disabled) { transform: translateY(0); }
 .assistant-attach {
-  background: var(--color-surface-3, rgba(255,255,255,0.04));
-  border-color: var(--color-border, rgba(255,255,255,0.1));
+  background: transparent;
+  border-color: transparent;
   color: var(--color-text-muted);
 }
 .assistant-attach:hover:not(:disabled) {
   color: var(--color-primary);
-  border-color: rgba(255, 107, 53, 0.4);
-  background: var(--color-surface-2, rgba(255,255,255,0.06));
+  background: var(--color-surface-2, rgba(255,255,255,0.08));
 }
 .assistant-stop {
-  background: var(--color-surface-3, rgba(255,255,255,0.04));
-  border-color: var(--color-border, rgba(255,255,255,0.1));
+  background: var(--color-surface-3, rgba(255,255,255,0.06));
+  border-color: var(--color-border, rgba(255,255,255,0.12));
   color: #f87171;
 }
-.assistant-stop:hover { border-color: rgba(248, 113, 113, 0.5); background: var(--color-surface-2, rgba(255,255,255,0.06)); }
+.assistant-stop:hover { border-color: rgba(248, 113, 113, 0.5); background: var(--color-surface-2, rgba(255,255,255,0.1)); }
 /* Fichiers joints en attente */
 .assistant-attachments {
   display: flex;
@@ -4980,34 +5033,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .assistant-suggestion-icon { font-size: 1.1rem; }
 
-/* ── Historique des conversations ── */
-.assistant-layout {
-  display: flex;
-  gap: 16px;
-  height: calc(100vh - 48px);
-  max-width: 1180px;
-  margin: 0 auto;
-  position: relative;
-}
-/* Dans le layout, la colonne de chat occupe l'espace restant (la hauteur est
-   portée par le conteneur flex, plus par .assistant-page lui-même) */
-.assistant-layout .assistant-page {
-  flex: 1;
-  min-width: 0;
-  height: auto;
-  max-width: none;
-  margin: 0;
-}
+/* ── Historique des conversations (barre latérale masquable) ── */
 .assistant-history {
   flex: 0 0 264px;
   width: 264px;
-  display: flex;
+  display: none;            /* masquée par défaut — affichée via .open */
   flex-direction: column;
   border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
   border-radius: 4px;
   background: var(--color-surface, rgba(255, 255, 255, 0.02));
   overflow: hidden;
 }
+.assistant-history.open { display: flex; }
 .assistant-history-head {
   display: flex;
   align-items: center;
@@ -5018,7 +5055,21 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   font-weight: 600;
   font-size: 0.9rem;
 }
-.assistant-history-head .btn-sm { display: inline-flex; align-items: center; gap: 4px; }
+.assistant-history-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+.assistant-history-close:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.06));
+}
 .assistant-history-list {
   flex: 1;
   overflow-y: auto;
@@ -5088,14 +5139,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
 }
 .assistant-history-backdrop { display: none; }
-/* Le bouton « Historique » (mobile) est caché tant que le panneau est docké */
-.assistant-history-toggle { display: none; }
+/* Bouton bascule « Historique » — affiche/masque la barre latérale */
+.assistant-history-toggle { display: inline-flex; align-items: center; gap: 4px; }
+.assistant-history-toggle.active {
+  color: var(--color-primary);
+  border-color: rgba(255, 107, 53, 0.4);
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.06));
+}
 .assistant-page-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 768px) {
-  .assistant-layout { height: calc(100vh - 80px); }
-  /* Le panneau devient un tiroir qui glisse par-dessus le chat */
-  .assistant-history {
+  /* Padding de .layout-main en mobile : 72px (haut) + 32px (bas) = 104px */
+  .assistant-page { height: calc(100vh - 104px); }
+  /* Sur mobile, la barre latérale devient un tiroir par-dessus le chat */
+  .assistant-history.open {
     position: fixed;
     top: 0;
     left: 0;
@@ -5104,11 +5161,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     width: 80vw;
     max-width: 320px;
     border-radius: 0;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
-  .assistant-history.open { transform: translateX(0); }
   .assistant-history-backdrop {
     display: block;
     position: fixed;
@@ -5116,7 +5170,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     z-index: 55;
     background: rgba(0, 0, 0, 0.5);
   }
-  .assistant-history-toggle { display: inline-flex; align-items: center; gap: 4px; }
   .assistant-history-del { display: inline-flex; }
 }
 
