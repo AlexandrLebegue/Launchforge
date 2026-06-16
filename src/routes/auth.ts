@@ -52,14 +52,16 @@ router.post('/register', registerLimiter, (req: Request, res: Response) => {
     const hashed = hashPassword(password);
     const now = new Date().toISOString();
 
-    const user: User = { id, email, name: name || '', createdAt: now };
-    storage.saveUser(user, hashed);
+    storage.saveUser({ id, email, name: name || '', createdAt: now }, hashed);
     // Chaque nouveau compte a sa propre entité Composio (connexions isolées) ;
     // les comptes créés avant le multi-utilisateur restent sur l'identité legacy.
     storage.setComposioUserId(id, `lf-${id}`);
     logEvent(id, 'user.register', id, { email });
 
     const token = signToken({ userId: id, email });
+    // Relecture : porte tutorialPending=true (déclenche le tutoriel d'accueil
+    // côté client, après la création du 1er projet).
+    const user = storage.getUserById(id)!;
     const response: ApiResponse<{ user: User; token: string }> = { success: true, data: { user, token } };
     res.status(201).json(response);
   } catch (err) {
@@ -95,7 +97,9 @@ router.post('/login', loginLimiter, (req: Request, res: Response) => {
     }
 
     const token = signToken({ userId: user.id, email: user.email });
-    const userData: User = { id: user.id, email: user.email, name: user.name, createdAt: user.createdAt };
+    // getUserById : porte tutorialPending (false pour un compte déjà passé par
+    // le tutoriel) sans jamais exposer le hash du mot de passe.
+    const userData = storage.getUserById(user.id)!;
     logEvent(user.id, 'user.login', user.id, { email: user.email });
 
     const response: ApiResponse<{ user: User; token: string }> = { success: true, data: { user: userData, token } };
@@ -302,6 +306,14 @@ router.delete('/account', deleteLimiter, requireAuth, async (req: Request, res: 
   console.log(`🗑️  RGPD : compte ${me.email} supprimé (${mediaFiles.length} média(s), ${composioRemoved} compte(s) Composio)`);
   logEvent(me.id, 'user.delete', me.id, { email: me.email });
   res.json({ success: true, data: { deleted: true } });
+});
+
+// ── POST /api/auth/tutorial-seen ─────────────────────────────────────────────
+// Le client appelle ce point dès qu'il lance le tutoriel d'accueil : on consomme
+// le drapeau pour qu'il ne se repropose jamais (autres sessions/appareils inclus).
+router.post('/tutorial-seen', requireAuth, (req: Request, res: Response) => {
+  storage.clearTutorialPending(req.user!.userId);
+  res.json({ success: true, data: { tutorialPending: false } });
 });
 
 router.get('/me', requireAuth, (req: Request, res: Response) => {

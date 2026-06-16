@@ -49,6 +49,9 @@ export default function GuidedTour({ steps, onClose }: Props) {
   // ou après abandon → carte centrée.
   useLayoutEffect(() => {
     const sel = steps[i]?.target;
+    // Annonce la cible : une page à onglets (ex. Configuration) peut alors révéler
+    // la section qui l'héberge avant qu'on tente de l'éclairer.
+    if (sel) window.dispatchEvent(new CustomEvent('tour:target', { detail: sel }));
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let tries = 0;

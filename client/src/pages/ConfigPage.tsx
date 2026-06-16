@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
   MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot, Globe,
+  Sparkles, BookOpen, Presentation, Send, ShieldCheck,
 } from 'lucide-react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
@@ -46,9 +47,26 @@ const TOOLKIT_ICONS: Record<string, React.ReactNode> = {
   slack: <Hash size={18} />, github: <GitBranch size={18} />,
 };
 
+/**
+ * Onglets de la Configuration : une thématique par onglet pour aérer la page.
+ * `tourTargets` liste les marqueurs `data-tour` hébergés par l'onglet, afin que la
+ * visite guidée bascule sur le bon onglet avant d'éclairer sa cible (voir l'écoute
+ * de l'évènement « tour:target » plus bas).
+ */
+type ConfigTabId = 'ai' | 'knowledge' | 'slides' | 'accounts' | 'telegram' | 'data';
+const CONFIG_TABS: { id: ConfigTabId; label: string; icon: React.ReactNode; tourTargets?: string[] }[] = [
+  { id: 'ai',        label: 'Intelligence artificielle', icon: <Sparkles size={16} />,     tourTargets: ['cfg-publish', 'cfg-metrics'] },
+  { id: 'knowledge', label: 'Base de connaissances',     icon: <BookOpen size={16} />,     tourTargets: ['cfg-knowledge'] },
+  { id: 'slides',    label: 'Présentations',             icon: <Presentation size={16} /> },
+  { id: 'accounts',  label: 'Comptes connectés',         icon: <Plug size={16} />,         tourTargets: ['cfg-accounts'] },
+  { id: 'telegram',  label: 'Bot Telegram',              icon: <Send size={16} /> },
+  { id: 'data',      label: 'Vos données',               icon: <ShieldCheck size={16} /> },
+];
+
 export default function ConfigPage() {
   const [status,  setStatus]  = useState<ConfigStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ConfigTabId>('ai');
   const [tgCode,  setTgCode]  = useState<string | null>(null);
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
@@ -124,6 +142,18 @@ export default function ConfigPage() {
     load();
     getKnowledgeSources().then((res) => { if (res.success && res.data) setKbSources(res.data); });
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
+  }, []);
+
+  /** Visite guidée : avant d'éclairer une cible, bascule sur l'onglet qui l'héberge */
+  useEffect(() => {
+    const onTourTarget = (e: Event) => {
+      const sel = (e as CustomEvent<string>).detail;
+      if (typeof sel !== 'string') return;
+      const tab = CONFIG_TABS.find((t) => t.tourTargets?.some((m) => sel.includes(m)));
+      if (tab) setActiveTab(tab.id);
+    };
+    window.addEventListener('tour:target', onTourTarget);
+    return () => window.removeEventListener('tour:target', onTourTarget);
   }, []);
 
   /** Après ouverture du lien OAuth : rafraîchit le statut jusqu'à voir le compte connecté */
@@ -312,9 +342,27 @@ export default function ConfigPage() {
         </div>
       </div>
 
+      {/* Onglets : une thématique à la fois pour une page plus lisible */}
+      <div className="settings-tabs" role="tablist" aria-label="Thématiques de configuration">
+        {CONFIG_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t.id}
+            className={`settings-tab${activeTab === t.id ? ' active' : ''}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.icon}
+            <span className="settings-tab-label">{t.label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="settings">
 
         {/* ═══════════ Intelligence artificielle ═══════════ */}
+        {activeTab === 'ai' && (
         <section className="settings-group">
           <div className="settings-group-head">
             <div className="settings-group-head-main">
@@ -403,7 +451,10 @@ export default function ConfigPage() {
           </div>
         </section>
 
+        )}
+
         {/* ═══════════ Base de connaissances ═══════════ */}
+        {activeTab === 'knowledge' && (
         <section className="settings-group">
           <div className="settings-group-head">
             <div className="settings-group-head-main">
@@ -490,7 +541,10 @@ export default function ConfigPage() {
           </div>
         </section>
 
+        )}
+
         {/* ═══════════ Présentations ═══════════ */}
+        {activeTab === 'slides' && (
         <section className="settings-group">
           <div className="settings-group-head">
             <div className="settings-group-head-main">
@@ -540,7 +594,10 @@ export default function ConfigPage() {
           </div>
         </section>
 
+        )}
+
         {/* ═══════════ Comptes connectés (Composio) ═══════════ */}
+        {activeTab === 'accounts' && (
         <section className="settings-group">
           <div className="settings-group-head">
             <div className="settings-group-head-main">
@@ -690,7 +747,10 @@ export default function ConfigPage() {
           </div>
         </section>
 
+        )}
+
         {/* ═══════════ Bot Telegram ═══════════ */}
+        {activeTab === 'telegram' && (
         <section className="settings-group">
           <div className="settings-group-head">
             <div className="settings-group-head-main">
@@ -755,7 +815,10 @@ export default function ConfigPage() {
           </div>
         </section>
 
+        )}
+
         {/* ═══════════ Vos données (RGPD) ═══════════ */}
+        {activeTab === 'data' && (
         <section className="settings-group">
           <div className="settings-group-head">
             <div className="settings-group-head-main">
@@ -806,6 +869,7 @@ export default function ConfigPage() {
             </div>
           </div>
         </section>
+        )}
 
       </div>
     </div>

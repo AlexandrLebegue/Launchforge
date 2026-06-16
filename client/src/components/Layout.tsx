@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Flame, LayoutDashboard, Megaphone, CalendarDays, MessageSquare,
   TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut, HelpCircle,
   Compass, PenLine, Users, Shield,
 } from 'lucide-react';
-import { User, setToken, getOverview, activatePlan, ProjectSummary } from '../api/client';
+import { User, setToken, getOverview, activatePlan, markTutorialSeen, ProjectSummary } from '../api/client';
 import { isAdminEmail } from '../utils/admin';
 import LogoEmbers from './LogoEmbers';
 import GuidedTour, { TourStep } from './GuidedTour';
@@ -14,6 +14,9 @@ import TutorialMenu, { TutorialMeta } from './TutorialMenu';
 interface Props {
   user: User;
   onLogout: () => void;
+  /** Appelé quand le tutoriel d'accueil est consommé — l'état App reflète alors
+   *  tutorialPending=false (évite tout re-déclenchement au remontage de Layout). */
+  onTutorialSeen: () => void;
 }
 
 const navItems = [
@@ -27,8 +30,6 @@ const navItems = [
   { to: '/teams',       icon: <Users size={17} />,           label: 'Équipes',         tour: 'teams'       },
   { to: '/config',      icon: <Settings size={17} />,        label: 'Configuration',   tour: 'config'      },
 ];
-
-const TOUR_KEY = 'launchforge_tour_done';
 
 /** Un tutoriel = un parcours guidé ciblant un module. `route` est ouverte avant
  *  de lancer le parcours ; `sidebar` force l'ouverture de la barre latérale
@@ -69,9 +70,10 @@ const TUTORIALS: Tutorial[] = [
       {
         title: 'À vous de jouer !',
         body: (
-          <>La première étape : <strong>créer votre projet</strong> (un chat vous interviewe et génère
-            votre plan). Besoin d'aide sur un module précis ? Rouvrez <strong>« Tutoriels »</strong> en
-            bas de la barre latérale.</>
+          <>Votre premier projet est créé 🎉 Direction le <strong>Hub de contenu</strong> pour
+            retrouver les posts générés par l'IA, puis connectez vos comptes dans
+            <strong> Configuration</strong> pour publier. Besoin d'aide sur un module précis ?
+            Rouvrez <strong>« Tutoriels »</strong> en bas de la barre latérale.</>
         ),
       },
     ],
@@ -213,7 +215,7 @@ const TUTORIALS: Tutorial[] = [
 /** Métadonnées seules (pour le menu) */
 const TUTORIAL_META: TutorialMeta[] = TUTORIALS.map(({ id, title, description, icon }) => ({ id, title, description, icon }));
 
-export default function Layout({ user, onLogout }: Props) {
+export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
   const location  = useLocation();
   const navigate  = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -237,16 +239,39 @@ export default function Layout({ user, onLogout }: Props) {
 
   const closeTour = useCallback(() => {
     setActiveSteps(null);
-    localStorage.setItem(TOUR_KEY, '1');
     if (window.innerWidth <= 900) setSidebarOpen(false);
   }, []);
 
-  // Première visite (par navigateur) : lance la découverte du site
+  // Tutoriel d'accueil : montré UNE fois, juste après la création du 1er projet.
+  // `tutorialPending` est posé à la création du compte (serveur) puis consommé
+  // ici — il est donc lié au COMPTE, survit aux changements d'appareil/navigateur
+  // et ne se redéclenche pas aux connexions suivantes (Google incluse). On attend
+  // que l'utilisateur ait créé SON propre projet (projet personnel, sans équipe) :
+  // un compte neuf (0 projet) ne le voit pas, et rejoindre une équipe — dont on ne
+  // fait qu'accéder aux projets — ne suffit pas à le déclencher. La consommation
+  // est persistée côté serveur (markTutorialSeen) ET reflétée dans l'état App
+  // (onTutorialSeen) ; le ref couvre la session/le montage courant.
+  // ≥ 1 projet personnel (créé par l'utilisateur, sans équipe). Booléen stable :
+  // bascule une seule fois (false→true) et sert de dépendance — éviter de dépendre
+  // du tableau `projects` (nouvelle référence à chaque rafraîchissement, ce qui
+  // annulerait le minuteur avant son déclenchement).
+  const hasOwnProject = projects.some((p) => !p.teamId);
+  const autoTourStarted = useRef(false);
   useEffect(() => {
-    if (localStorage.getItem(TOUR_KEY)) return;
-    const t = setTimeout(() => startTutorial('site'), 700);
+    if (autoTourStarted.current) return;
+    if (!user.tutorialPending) return;
+    if (!hasOwnProject) return;
+    autoTourStarted.current = true;
+    // Consommation (serveur + état App) DANS le minuteur : au lancement réel du
+    // tutoriel. La faire avant changerait `user.tutorialPending` (une dépendance)
+    // et le nettoyage de l'effet annulerait le minuteur avant les 700 ms.
+    const t = setTimeout(() => {
+      startTutorial('site');
+      markTutorialSeen().catch(() => { /* best-effort : ref + état App gardent la session propre */ });
+      onTutorialSeen();
+    }, 700);
     return () => clearTimeout(t);
-  }, [startTutorial]);
+  }, [user.tutorialPending, hasOwnProject, startTutorial, onTutorialSeen]);
 
   // UNE requête légère pour tout le shell (projets + badge validations),
   // partagée avec le tableau de bord via le cache du client API.

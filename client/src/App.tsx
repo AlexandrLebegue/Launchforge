@@ -51,6 +51,14 @@ export default function App() {
     setUser(null);
   };
 
+  // Le tutoriel d'accueil vient d'être consommé : on le reflète dans l'état App
+  // (le serveur est déjà mis à jour via markTutorialSeen) pour qu'il ne se
+  // redéclenche pas si Layout se remonte dans la même session. useCallback :
+  // référence stable, sinon l'effet de Layout se réexécuterait à chaque rendu.
+  const handleTutorialSeen = useCallback(() => {
+    setUser((u) => (u ? { ...u, tutorialPending: false } : u));
+  }, []);
+
   if (loading) {
     return <div className="loading">Chargement…</div>;
   }
@@ -59,7 +67,7 @@ export default function App() {
     <Routes>
       <Route
         path="/"
-        element={user ? <Layout user={user} onLogout={handleLogout} /> : <LandingPage />}
+        element={user ? <Layout user={user} onLogout={handleLogout} onTutorialSeen={handleTutorialSeen} /> : <LandingPage />}
       >
         {user && (
           <>
