@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Déploiement automatique sur le VPS Hetzner à chaque push sur main.
+#
+# Le build se fait SUR le serveur (git pull + docker compose up --build) :
+# le runner GitHub ne fait que déclencher via SSH. Pas de registre d'images.
+#
+# Secret requis (Settings → Secrets and variables → Actions) :
+#   DEPLOY_SSH_KEY : clé privée SSH dédiée au CI (~/.ssh/launchforge_ci)
+#                    dont la clé publique est dans authorized_keys du serveur.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Deploy to Hetzner
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # permet aussi un déclenchement manuel depuis l'onglet Actions
+
+# Un seul déploiement à la fois ; on ne coupe pas un build en cours.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déployer via SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: 167.233.134.122
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ci
+          chmod 600 ~/.ssh/id_ci
+          ssh-keyscan -t ed25519 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/id_ci -o StrictHostKeyChecking=yes "root@${HOST}" '
+            set -euo pipefail
+            cd /root/launchforge
+            git pull --ff-only
+            docker compose -f docker-compose.prod.yml up -d --build
+            docker image prune -f
+          '
