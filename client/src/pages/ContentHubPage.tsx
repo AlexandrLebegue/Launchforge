@@ -285,7 +285,22 @@ function PublishedPostView({ post, readOnly = false, onClose, onSaved }: {
   const [analysis,  setAnalysis]  = useState('');
   const [analyzing, setAnalyzing] = useState(false);
 
+  // Contenu local : un post importé peut arriver SANS texte (LinkedIn refuse le
+  // corps via son API → 403). On laisse alors l'utilisateur le coller à la main.
+  const [title, setTitle] = useState(post.title);
+  const [body,  setBody]  = useState(post.content);
+  const [savedBody, setSavedBody] = useState(post.content);
+  const [savingBody, setSavingBody] = useState(false);
+
   const hasUrl = /^https?:\/\//i.test(savedUrl.trim());
+
+  const handleSaveBody = async () => {
+    setSavingBody(true); setError('');
+    const res = await updatePost(post.id, { title, content: body });
+    setSavingBody(false);
+    if (res.success && res.data) { setSavedBody(body); onSaved(res.data); }
+    else setError(res.error || 'Enregistrement impossible.');
+  };
 
   const runEmbedCheck = useCallback(() => {
     setEmbedLoading(true);
@@ -401,13 +416,30 @@ function PublishedPostView({ post, readOnly = false, onClose, onSaved }: {
             <div className="pe-col">
               <section className="pe-panel pub-embed-panel">
                 <h3 className="pe-panel-title"><Eye size={14} /> Le post en ligne</h3>
+                {!readOnly && !savedBody.trim() && (
+                  <div className="pub-paste-body" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    <p className="pub-fallback-note" style={{ margin: 0 }}>
+                      {post.platform === 'linkedin'
+                        ? 'LinkedIn ne donne pas le texte du post via son API (seules les réactions sont lisibles) — collez le contenu ici pour l\'archiver et permettre l\'analyse.'
+                        : 'Le texte n\'a pas pu être récupéré automatiquement — collez-le ici si vous le souhaitez.'}
+                    </p>
+                    <input className="form-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titre (optionnel)" />
+                    <textarea className="form-input post-content-area" rows={6} value={body}
+                              onChange={(e) => setBody(e.target.value)} placeholder="Collez le texte du post…" />
+                    <div className="ai-assist-row">
+                      <button type="button" className="btn btn-primary btn-sm" onClick={handleSaveBody} disabled={savingBody || !body.trim()}>
+                        {savingBody ? '⏳…' : 'Enregistrer le contenu'}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {!hasUrl ? (
                   <div className="pub-fallback">
                     <p className="pub-fallback-note">
                       Ajoutez l'URL du post publié (panneau de droite) pour afficher la vraie publication ici.
                       En attendant, voici l'aperçu fidèle de ce que vous avez publié.
                     </p>
-                    <PlatformPreview platform={post.platform} title={post.title} content={post.content}
+                    <PlatformPreview platform={post.platform} title={title} content={body}
                                      mediaUrl={mediaUrl} mediaIsVideo={mediaIsVideo} subreddit={post.subreddit ?? undefined} />
                   </div>
                 ) : embedLoading ? (
@@ -429,7 +461,7 @@ function PublishedPostView({ post, readOnly = false, onClose, onSaved }: {
                       {platformLabel(post.platform)} n'autorise pas l'affichage intégré — voici l'aperçu fidèle de votre publication.{' '}
                       <a href={savedUrl.trim()} target="_blank" rel="noopener noreferrer">Ouvrir la vraie publication ↗</a>
                     </p>
-                    <PlatformPreview platform={post.platform} title={post.title} content={post.content}
+                    <PlatformPreview platform={post.platform} title={title} content={body}
                                      mediaUrl={mediaUrl} mediaIsVideo={mediaIsVideo} subreddit={post.subreddit ?? undefined} />
                   </div>
                 )}
@@ -1664,6 +1696,13 @@ export default function ContentHubPage() {
     // Note toujours affichée si présente (ex. « LinkedIn n'expose pas les vues »),
     // y compris sur une analyse réussie — cohérent avec la synchro manuelle.
     if (info.note) bits.push(info.note);
+    // Contenu non récupéré (LinkedIn refuse le corps via son API) → on invite à
+    // le coller en ouvrant le post.
+    if (!post.content) {
+      bits.push(post.platform === 'linkedin'
+        ? 'LinkedIn ne fournit pas le texte du post — ouvrez-le pour le coller'
+        : 'texte non récupéré — ouvrez le post pour le compléter');
+    }
     setFeedback(bits.join(' — '));
   };
 
