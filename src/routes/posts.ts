@@ -50,6 +50,34 @@ function normalizeSubreddit(value: unknown): string | null {
   return cleaned ? cleaned.slice(0, 50) : null;
 }
 
+/** Plateformes dont les métriques sont lisibles via Composio (pipeline
+ *  d'analyse déclenchée à l'import). Les autres sont importées sans métriques. */
+const SYNCABLE_PLATFORMS = new Set(['twitter', 'linkedin', 'instagram', 'facebook', 'youtube', 'reddit', 'tiktok']);
+
+/** Déduction de la plateforme à partir du domaine de l'URL d'un post. */
+const PLATFORM_HOSTS: { re: RegExp; platform: string }[] = [
+  { re: /(?:^|\.)(?:x|twitter)\.com$/i,                       platform: 'twitter' },
+  { re: /(?:^|\.)linkedin\.com$/i,                            platform: 'linkedin' },
+  { re: /(?:^|\.)instagram\.com$/i,                           platform: 'instagram' },
+  { re: /(?:^|\.)(?:facebook|fb)\.com$|(?:^|\.)fb\.watch$/i,  platform: 'facebook' },
+  { re: /(?:^|\.)youtube\.com$|(?:^|\.)youtu\.be$/i,          platform: 'youtube' },
+  { re: /(?:^|\.)reddit\.com$|(?:^|\.)redd\.it$/i,            platform: 'reddit' },
+  { re: /(?:^|\.)tiktok\.com$/i,                              platform: 'tiktok' },
+  { re: /(?:^|\.)producthunt\.com$/i,                         platform: 'producthunt' },
+  { re: /(?:^|\.)ycombinator\.com$/i,                         platform: 'hackernews' },
+  { re: /(?:^|\.)indiehackers\.com$/i,                        platform: 'indiehackers' },
+];
+
+/** Plateforme déduite de l'URL, ou null si le domaine n'est pas reconnu. */
+function detectPlatformFromUrl(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, '');
+    return PLATFORM_HOSTS.find((e) => e.re.test(host))?.platform ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── GET /api/posts ───────────────────────────────────────────────────────────
 // Le Hub de contenu est propre au projet actif
 router.get('/', (req: Request, res: Response) => {
@@ -106,6 +134,96 @@ router.post('/', (req: Request, res: Response) => {
   }
 
   res.status(201).json({ success: true, data: storage.getPostById(post.id) ?? post });
+});
+
+// ── POST /api/posts/import ───────────────────────────────────────────────────
+// Importe un post DÉJÀ PUBLIÉ depuis son URL : crée le post en statut « publié »
+// (plateforme déduite du domaine, modifiable par l'appelant), puis lance dans la
+// foulée la pipeline d'analyse Composio pour récupérer vues/likes/commentaires.
+// L'analyse est best-effort : le post reste importé même si elle échoue (compte
+// non connecté, plateforme sans API de lecture) — l'utilisateur pourra relancer
+// la synchro depuis le Hub. Synchrone pour renvoyer un post déjà enrichi.
+router.post('/import', async (req: Request, res: Response) => {
+  const { url, platform: platformHint } = req.body as { url?: unknown; platform?: unknown };
+  const cleanUrl = typeof url === 'string' ? url.trim() : '';
+  if (!/^https?:\/\/\S+$/i.test(cleanUrl)) {
+    return res.status(400).json({ success: false, error: 'Fournissez l\'URL (http/https) du post publié à importer.' });
+  }
+
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : import non autorisé' });
+  }
+
+  const platform = typeof platformHint === 'string' && platformHint.trim()
+    ? platformHint.trim()
+    : (detectPlatformFromUrl(cleanUrl) ?? 'blog');
+
+  const now = new Date().toISOString();
+  const post: Post = {
+    id:          uuid(),
+    userId:      ctx.ownerUserId,
+    planId:      ctx.planId,
+    platform,
+    title:       '',
+    content:     '',
+    status:      'published',
+    scheduledAt: null,
+    publishedAt: now,
+    externalUrl: cleanUrl,
+    imageUrl:    null,
+    subreddit:   platform === 'reddit' ? normalizeSubreddit(cleanUrl.match(/reddit\.com\/r\/([A-Za-z0-9_]+)/i)?.[1]) : null,
+    recurrence:  'none',
+    recurrenceBrief: null,
+    seriesId:    null,
+    recurrenceUseNews:      0,
+    recurrenceUseKnowledge: 1,
+    recurrenceUpdateKb:     0,
+    crossPostId: null,
+    autoPublish: 0,
+    publishError: null,
+    calendarSynced: 0,
+    impressions: 0, likes: 0, comments: 0, shares: 0, clicks: 0,
+    createdAt:   now,
+    updatedAt:   now,
+  };
+  storage.savePost(post);
+  logEvent(post.userId, 'post.imported', post.id, { platform, url: cleanUrl });
+
+  let synced = false;
+  let note: string | undefined;
+  let commentsAdded = 0;
+  if (!SYNCABLE_PLATFORMS.has(platform)) {
+    note = 'Métriques non récupérables automatiquement pour cette plateforme — saisissez-les à la main si besoin.';
+  } else if (!isComposioConfigured() || !isAIConfigured()) {
+    note = 'Composio ou l\'IA ne sont pas configurés — post importé sans métriques (synchronisez-le plus tard depuis le Hub).';
+  } else {
+    try {
+      const metrics = await syncMetricsViaComposio(post.userId, platform, cleanUrl, '', { withComments: true });
+      note = metrics.note;
+      if (metrics.found) {
+        storage.updatePost(post.id, {
+          impressions: metrics.impressions,
+          likes:       metrics.likes,
+          comments:    metrics.comments,
+          shares:      metrics.shares,
+          clicks:      metrics.clicks,
+        });
+        storage.recordMetricSnapshot(storage.getPostById(post.id)!);
+        if (metrics.commentItems && metrics.commentItems.length > 0) {
+          commentsAdded = storage.upsertPostComments(storage.getPostById(post.id)!, metrics.commentItems);
+        }
+        synced = true;
+      }
+    } catch (err) {
+      note = err instanceof Error ? err.message : 'Récupération des métriques échouée';
+    }
+  }
+
+  res.status(201).json({
+    success: true,
+    data: { post: storage.getPostById(post.id) ?? post, synced, note, commentsAdded },
+  });
 });
 
 // ── PATCH /api/posts/:id ─────────────────────────────────────────────────────

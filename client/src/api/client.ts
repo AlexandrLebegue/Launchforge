@@ -598,6 +598,16 @@ export async function createPost(data: Partial<Post> & { platform: string }): Pr
   return request('/posts', { method: 'POST', body: JSON.stringify(data) });
 }
 
+/** Importe un post déjà publié depuis son URL : créé en statut « publié »
+ *  (plateforme déduite du domaine, surchargeable), puis analyse Composio
+ *  immédiate (vues/likes/commentaires). `synced` = métriques récupérées. */
+export async function importPost(
+  url: string,
+  platform?: string,
+): Promise<ApiResponse<{ post: Post; synced: boolean; note?: string; commentsAdded: number }>> {
+  return request('/posts/import', { method: 'POST', body: JSON.stringify({ url, platform }) });
+}
+
 export async function updatePost(id: string, data: Partial<Post>): Promise<ApiResponse<Post>> {
   return request(`/posts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 }

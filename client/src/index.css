@@ -3667,6 +3667,42 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   align-items: center;
 }
 
+/* Carte « Importer un post » : carré en pointillé, premier élément de la grille */
+.post-card-import {
+  border: 1.5px dashed var(--color-border);
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 7px;
+  min-height: 160px;
+  font: inherit;
+  color: var(--color-text-muted);
+}
+.post-card-import:hover {
+  border-color: rgba(255, 107, 53, 0.55);
+  background: var(--gradient-primary-soft);
+  box-shadow: none;
+}
+.post-card-import-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 107, 53, 0.12);
+  color: #ff8557;
+}
+.post-card-import-title { font-weight: 700; font-size: 0.92rem; color: var(--color-text); }
+.post-card-import-hint {
+  font-size: 0.73rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  max-width: 230px;
+}
+.post-card-import-btn { margin-top: 4px; pointer-events: none; }
+
 /* Éditeur de post */
 .post-editor { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
 .post-editor-row {

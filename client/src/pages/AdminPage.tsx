@@ -35,6 +35,7 @@ const ACTION_META: Record<string, { label: string; color: string }> = {
   'plan.deleted':     { label: 'Projet supprimé',  color: '#f87171' },
   'post.published':   { label: 'Post publié',      color: '#34d399' },
   'post.scheduled':   { label: 'Post programmé',   color: '#fbbf24' },
+  'post.imported':    { label: 'Post importé',     color: '#22d3ee' },
   'agent.run':        { label: 'Agent exécuté',    color: '#fbbf24' },
   'knowledge.created':{ label: 'Fiche créée',      color: '#ff9d4d' },
   'team.created':     { label: 'Équipe créée',     color: '#ff6b35' },

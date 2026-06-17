@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare, LayoutGrid, Table2, ArrowUpDown, Lock, ExternalLink, RefreshCw, BarChart3 } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare, LayoutGrid, Table2, ArrowUpDown, Lock, ExternalLink, RefreshCw, BarChart3, Download } from 'lucide-react';
 import {
-  getPosts, createPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
+  getPosts, createPost, importPost, updatePost, deletePost, publishPost, generateContent, syncPostMetrics,
   previewRecurrence, crosspostPost, publishPostNow, PublishOutcome,
   generateCalendar, getOverview,
   generatePostImage, uploadPostImage, uploadPostVideo, getDecks, createDeck, deleteDeck, deckHtmlUrl, deckMarkdownUrl, renderDeckMedia, DeckSummary,
@@ -31,6 +31,32 @@ export const PLATFORMS: { value: string; label: string }[] = [
 ];
 
 export const platformLabel = (p: string) => PLATFORMS.find((x) => x.value === p)?.label ?? p;
+
+/** Plateformes dont les métriques sont récupérables automatiquement à l'import (Composio). */
+const SYNCABLE_PLATFORMS = new Set(['twitter', 'linkedin', 'instagram', 'facebook', 'youtube', 'reddit', 'tiktok']);
+
+const PLATFORM_HOSTS: { re: RegExp; platform: string }[] = [
+  { re: /(?:^|\.)(?:x|twitter)\.com$/i,                      platform: 'twitter' },
+  { re: /(?:^|\.)linkedin\.com$/i,                           platform: 'linkedin' },
+  { re: /(?:^|\.)instagram\.com$/i,                          platform: 'instagram' },
+  { re: /(?:^|\.)(?:facebook|fb)\.com$|(?:^|\.)fb\.watch$/i, platform: 'facebook' },
+  { re: /(?:^|\.)youtube\.com$|(?:^|\.)youtu\.be$/i,         platform: 'youtube' },
+  { re: /(?:^|\.)reddit\.com$|(?:^|\.)redd\.it$/i,           platform: 'reddit' },
+  { re: /(?:^|\.)tiktok\.com$/i,                             platform: 'tiktok' },
+  { re: /(?:^|\.)producthunt\.com$/i,                        platform: 'producthunt' },
+  { re: /(?:^|\.)ycombinator\.com$/i,                        platform: 'hackernews' },
+  { re: /(?:^|\.)indiehackers\.com$/i,                       platform: 'indiehackers' },
+];
+
+/** Déduit la plateforme depuis le domaine d'une URL (aperçu côté client). */
+export function detectPlatformFromUrl(url: string): string | null {
+  try {
+    const host = new URL(url.trim()).hostname.replace(/^www\./i, '');
+    return PLATFORM_HOSTS.find((e) => e.re.test(host))?.platform ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const STATUS_META: Record<PostStatus, { label: string; cls: string }> = {
   idea:      { label: 'Idée',       cls: 'post-status-idea' },
@@ -1420,6 +1446,101 @@ function CalendarModal({ onClose, onGenerated }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Modal — import d'un post déjà publié (par son URL)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ImportPostModal({ onClose, onImported }: {
+  onClose: () => void;
+  onImported: (post: Post, info: { synced: boolean; note?: string; commentsAdded: number }) => void;
+}) {
+  const [url,      setUrl]      = useState('');
+  const [platform, setPlatform] = useState('');   // '' = détection automatique
+  const [busy,     setBusy]     = useState(false);
+  const [error,    setError]    = useState('');
+
+  const detected = useMemo(() => detectPlatformFromUrl(url), [url]);
+  const urlValid = /^https?:\/\/\S+/i.test(url.trim());
+  // Reflète la déduction du backend : domaine inconnu → « blog » (non syncable)
+  const effective = platform || detected || (urlValid ? 'blog' : '');
+  const noMetrics = Boolean(effective) && !SYNCABLE_PLATFORMS.has(effective);
+
+  const submit = async (e?: FormEvent) => {
+    e?.preventDefault();
+    const clean = url.trim();
+    if (!/^https?:\/\/\S+/i.test(clean)) {
+      setError('Collez l\'URL complète (https://…) du post publié.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const res = await importPost(clean, platform || undefined);
+    setBusy(false);
+    if (res.success && res.data) {
+      onImported(res.data.post, { synced: res.data.synced, note: res.data.note, commentsAdded: res.data.commentsAdded });
+    } else {
+      setError(res.error || 'Import échoué — vérifiez l\'URL et réessayez.');
+    }
+  };
+
+  return createPortal(
+    <div className="modal-overlay" onClick={busy ? undefined : onClose}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Importer un post publié</h2>
+          <button className="modal-close" onClick={onClose} disabled={busy}>✕</button>
+        </div>
+
+        <form className="post-editor" onSubmit={submit}>
+          <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
+            Collez le lien d'un post déjà en ligne : il rejoint le Hub en statut
+            <strong> Publié</strong>, et l'analyse récupère aussitôt ses vues, likes
+            et commentaires via vos comptes connectés.
+          </p>
+
+          <label className="form-label-block">
+            URL du post
+            <input
+              className="form-input"
+              type="url"
+              autoFocus
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.linkedin.com/feed/update/…"
+              disabled={busy}
+            />
+          </label>
+
+          <label className="form-label-block">
+            Plateforme
+            <select className="form-input" value={platform} onChange={(e) => setPlatform(e.target.value)} disabled={busy}>
+              <option value="">{detected ? `Détectée : ${platformLabel(detected)}` : 'Détection automatique'}</option>
+              {PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </label>
+
+          {noMetrics && (
+            <p className="form-hint-inline">
+              Cette plateforme n'a pas de récupération automatique des métriques — le
+              post sera importé sans chiffres (saisie manuelle possible ensuite).
+            </p>
+          )}
+
+          {error && <div className="chat-error">{error}</div>}
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !url.trim()}>
+              {busy ? '⏳ Import + analyse en cours…' : <><Download size={15} /> Importer &amp; analyser</>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Page principale
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1432,6 +1553,7 @@ export default function ContentHubPage() {
   const [tab,      setTab]      = useState<Tab>('posts');
   const [editing,  setEditing]  = useState<Post | null | 'new'>(null);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [feedback,     setFeedback]     = useState('');
   const [publishingNowId, setPublishingNowId] = useState<string | null>(null);
@@ -1521,6 +1643,28 @@ export default function ContentHubPage() {
   // Mise à jour d'un post publié (synchro métriques, URL) sans fermer la vue
   const handlePublishedUpdate = (saved: Post) => {
     setAllPosts((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+  };
+
+  // Post importé depuis une URL : ajouté en tête (publié), métriques déjà
+  // récupérées si l'analyse a abouti. On neutralise tout filtre/recherche qui le
+  // masquerait, sinon il resterait invisible malgré le message de succès.
+  const handleImported = (post: Post, info: { synced: boolean; note?: string; commentsAdded: number }) => {
+    setShowImport(false);
+    setAllPosts((prev) => (prev.some((p) => p.id === post.id)
+      ? prev.map((p) => (p.id === post.id ? post : p))
+      : [post, ...prev]));
+    if (statusFilter !== 'all' && statusFilter !== 'published') setStatusFilter('all');
+    if (platformFilter !== 'all' && platformFilter !== post.platform) setPlatformFilter('all');
+    if (search.trim()) setSearch('');
+    const bits = [`Post importé (${platformLabel(post.platform)})`];
+    if (info.synced) {
+      bits.push(`analyse OK : ${fmtNum(post.impressions)} vues · ${fmtNum(post.likes)} likes`
+        + (info.commentsAdded > 0 ? ` · ${info.commentsAdded} commentaire${info.commentsAdded > 1 ? 's' : ''} récupéré${info.commentsAdded > 1 ? 's' : ''}` : ''));
+    }
+    // Note toujours affichée si présente (ex. « LinkedIn n'expose pas les vues »),
+    // y compris sur une analyse réussie — cohérent avec la synchro manuelle.
+    if (info.note) bits.push(info.note);
+    setFeedback(bits.join(' — '));
   };
 
   const handleDelete = async (post: Post) => {
@@ -1632,6 +1776,9 @@ export default function ContentHubPage() {
             </button>
             <button className="btn btn-ghost" data-tour="hub-calendar" onClick={() => setShowCalendar(true)} title="L'IA rédige et programme plusieurs semaines de posts d'après votre plan et vos connaissances">
               Générer mon calendrier
+            </button>
+            <button className="btn btn-ghost" data-tour="hub-import" onClick={() => setShowImport(true)} title="Importer un post déjà publié par son URL — likes et commentaires récupérés automatiquement">
+              <Download size={15} /> Importer un post
             </button>
             <button className="btn btn-primary" data-tour="hub-new" onClick={() => setEditing('new')}>＋ Nouveau post</button>
           </div>
@@ -1752,11 +1899,16 @@ export default function ContentHubPage() {
             <div className="plan-empty">
               <span className="plan-empty-icon"><Megaphone size={40} /></span>
               <h2>{posts.length === 0 ? 'Aucun post pour l\'instant' : 'Aucun post ne correspond aux filtres'}</h2>
-              <p>Créez votre premier post — l'assistant IA le rédige à partir de votre base de connaissances.</p>
+              <p>Créez votre premier post — l'assistant IA le rédige à partir de votre base de connaissances — ou importez un post déjà publié pour en suivre les performances.</p>
               {!readOnly && (
-                <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
-                  ＋ Créer un post
-                </button>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button className="btn btn-primary btn-lg" style={{ display: 'inline-flex' }} onClick={() => setEditing('new')}>
+                    ＋ Créer un post
+                  </button>
+                  <button className="btn btn-ghost btn-lg" style={{ display: 'inline-flex' }} onClick={() => setShowImport(true)}>
+                    <Download size={16} /> Importer un post
+                  </button>
+                </div>
               )}
             </div>
           ) : viewMode === 'table' ? (
@@ -1881,6 +2033,17 @@ export default function ContentHubPage() {
             </div>
           ) : (
             <div className="post-grid">
+              {!readOnly && (
+                <button type="button" className="post-card post-card-import" onClick={() => setShowImport(true)}
+                        title="Importer un post déjà publié par son URL">
+                  <span className="post-card-import-icon"><Download size={22} /></span>
+                  <span className="post-card-import-title">Importer un post</span>
+                  <span className="post-card-import-hint">
+                    Collez le lien d'un post publié — likes & commentaires récupérés automatiquement
+                  </span>
+                  <span className="btn btn-ghost btn-sm post-card-import-btn">Importer</span>
+                </button>
+              )}
               {filtered.map((p) => {
                 const rate = engagementRate(p);
                 return (
@@ -1968,6 +2131,12 @@ export default function ContentHubPage() {
         onClose={() => setShowAssistant(false)}
         onPostsSaved={() => { load(); setFeedback('L\'assistant a enregistré un post — il est dans la liste ci-dessous.'); }}
       />
+      {showImport && (
+        <ImportPostModal
+          onClose={() => setShowImport(false)}
+          onImported={handleImported}
+        />
+      )}
       {showCalendar && (
         <CalendarModal
           onClose={() => setShowCalendar(false)}

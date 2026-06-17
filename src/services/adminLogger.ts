@@ -10,6 +10,7 @@ export type AdminAction =
   | 'plan.deleted'
   | 'post.published'
   | 'post.scheduled'
+  | 'post.imported'
   | 'agent.run'
   | 'knowledge.created'
   | 'team.created'
