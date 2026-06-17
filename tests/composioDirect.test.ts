@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
-import { publishDirect, sendEmailDirect, syncMetricsDirect, linkedinEntityUrns, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
+import { publishDirect, sendEmailDirect, syncMetricsDirect, fetchPostContentDirect, linkedinEntityUrns, instagramMediaId, facebookPostId, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
 import app from '../src/app';
 
 let userId: string;
@@ -448,6 +448,104 @@ describe('linkedinEntityUrns — extraction déterministe de l\'URN (sans IA)', 
   });
   it('aucune référence exploitable → tableau vide (repli opérateur)', () => {
     expect(linkedinEntityUrns('https://www.linkedin.com/in/jane-doe/')).toEqual([]);
+  });
+});
+
+describe('instagramMediaId / facebookPostId — extraction d\'id déterministe', () => {
+  it('Instagram : shortcode /p/ et /reel/ décodés en media id ; id numérique conservé', () => {
+    expect(instagramMediaId('https://www.instagram.com/p/C8Qd_2yITaB/')).toBe('3391342450908935809');
+    expect(instagramMediaId('https://www.instagram.com/reel/DMabcdEFghi/?hl=fr')).toBe('3682376347937015906');
+    expect(instagramMediaId('17895695668004196')).toBe('17895695668004196');
+    expect(instagramMediaId('https://www.instagram.com/jane/')).toBeNull();
+  });
+  it('Facebook : pageId_postId conservé, story_fbid+id assemblé, pfbid → null', () => {
+    expect(facebookPostId('https://www.facebook.com/page/posts/100000000000000_222')).toBe('100000000000000_222');
+    expect(facebookPostId('https://www.facebook.com/permalink.php?story_fbid=123456789&id=987654321')).toBe('987654321_123456789');
+    expect(facebookPostId('https://www.facebook.com/page/posts/pfbid0abcXYZ')).toBeNull();
+  });
+});
+
+describe('syncMetricsDirect — Instagram & Facebook via URL (extraction déterministe)', () => {
+  it('Instagram : permalien /p/<shortcode>/ → media id décodé passé à GET_POST_INSIGHTS', async () => {
+    const { calls, exec } = recorder({
+      INSTAGRAM_GET_POST_INSIGHTS: { data: [
+        { name: 'reach', values: [{ value: 300 }] },
+        { name: 'likes', values: [{ value: 20 }] },
+        { name: 'comments', values: [{ value: 4 }] },
+      ] },
+    });
+    const out = await syncMetricsDirect(userId, 'instagram', 'https://www.instagram.com/p/C8Qd_2yITaB/', exec);
+    expect(out.metrics).toMatchObject({ found: true, impressions: 300, likes: 20, comments: 4 });
+    expect(calls[0].args).toMatchObject({ ig_post_id: '3391342450908935809' });
+  });
+
+  it('Facebook : permalink.php?story_fbid=…&id=… → pageId_postId passé à GET_POST', async () => {
+    const { calls, exec } = recorder({
+      FACEBOOK_GET_POST: { id: '987654321_123456789', likes: { summary: { total_count: 8 } }, comments: { summary: { total_count: 3 } }, shares: { count: 1 } },
+    });
+    const out = await syncMetricsDirect(userId, 'facebook', 'https://www.facebook.com/permalink.php?story_fbid=123456789&id=987654321', exec);
+    expect(out.metrics).toMatchObject({ found: true, likes: 8, comments: 3, shares: 1 });
+    expect(calls[0].args).toMatchObject({ post_id: '987654321_123456789' });
+  });
+});
+
+describe('fetchPostContentDirect — récupération déterministe du contenu', () => {
+  it('YouTube : titre + description depuis le snippet', async () => {
+    const { exec } = recorder({ YOUTUBE_VIDEO_DETAILS: { response_data: { items: [{ snippet: { title: 'Mon titre', description: 'Ma description' } }] } } });
+    expect(await fetchPostContentDirect(userId, 'youtube', 'https://youtu.be/dQw4w9WgXcQ', exec))
+      .toEqual({ title: 'Mon titre', content: 'Ma description' });
+  });
+
+  it('Reddit : titre + selftext du post_listing', async () => {
+    const { exec } = recorder({ REDDIT_RETRIEVE_POST_COMMENTS: [{ data: { children: [{ data: { title: 'Titre Reddit', selftext: 'Corps du post' } }] } }, { data: { children: [] } }] });
+    expect(await fetchPostContentDirect(userId, 'reddit', 'https://www.reddit.com/r/x/comments/ab12cd/t/', exec))
+      .toEqual({ title: 'Titre Reddit', content: 'Corps du post' });
+  });
+
+  it('Instagram : caption depuis le shortcode décodé', async () => {
+    const { calls, exec } = recorder({ INSTAGRAM_GET_IG_MEDIA: { data: { caption: 'Ma légende' } } });
+    expect(await fetchPostContentDirect(userId, 'instagram', 'https://www.instagram.com/p/C8Qd_2yITaB/', exec))
+      .toEqual({ content: 'Ma légende' });
+    expect(calls[0].args).toMatchObject({ ig_media_id: '3391342450908935809' });
+  });
+
+  it('Twitter : texte du tweet', async () => {
+    const { exec } = recorder({ TWITTER_POST_LOOKUP_BY_POST_ID: { data: { text: 'Mon tweet' } } });
+    expect(await fetchPostContentDirect(userId, 'twitter', 'https://x.com/u/status/123456789', exec))
+      .toEqual({ content: 'Mon tweet' });
+  });
+
+  it('LinkedIn : commentary via MCP (post_id = URN share)', async () => {
+    const prev = process.env.COMPOSIO_MCP_URL;
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/partner/composio/test/mcp?user_id=test';
+    try {
+      const { exec } = recorder({});
+      const seen: Record<string, unknown>[] = [];
+      const mcp: McpToolCaller = async (_uid, _tool, args) => { seen.push(args); return '{"data":{"commentary":"Texte LinkedIn"}}'; };
+      const out = await fetchPostContentDirect(userId, 'linkedin', 'https://www.linkedin.com/posts/x_y-share-7472393077114994688-DMDR/', exec, mcp);
+      expect(out).toEqual({ content: 'Texte LinkedIn' });
+      expect(seen[0]).toMatchObject({ post_id: 'urn:li:share:7472393077114994688' });
+    } finally {
+      if (prev === undefined) delete process.env.COMPOSIO_MCP_URL; else process.env.COMPOSIO_MCP_URL = prev;
+    }
+  });
+
+  it('LinkedIn : 403 sur le corps → null (best-effort)', async () => {
+    const prev = process.env.COMPOSIO_MCP_URL;
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/partner/composio/test/mcp?user_id=test';
+    try {
+      const { exec } = recorder({});
+      const mcp: McpToolCaller = async () => { throw new Error('Forbidden. You don\'t have permission to access this post.'); };
+      expect(await fetchPostContentDirect(userId, 'linkedin', 'urn:li:share:7472393077114994688', exec, mcp)).toBeNull();
+    } finally {
+      if (prev === undefined) delete process.env.COMPOSIO_MCP_URL; else process.env.COMPOSIO_MCP_URL = prev;
+    }
+  });
+
+  it('référence/plateforme sans contenu lisible → null', async () => {
+    const { exec } = recorder({});
+    expect(await fetchPostContentDirect(userId, 'blog', 'https://example.com/post', exec)).toBeNull();
+    expect(await fetchPostContentDirect(userId, 'youtube', 'pas-une-video', exec)).toBeNull();
   });
 });
 

@@ -649,6 +649,46 @@ export function linkedinEntityUrns(ref: string): string[] {
   return [];
 }
 
+/**
+ * Media id Instagram déterministe depuis une référence :
+ *  - id numérique déjà présent (post publié par l'app) → tel quel ;
+ *  - permalien /p|reel|tv/<shortcode>/ → décodage base64 du shortcode (alphabet
+ *    Instagram), 100 % déterministe, aucun appel réseau.
+ */
+const IG_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+export function instagramMediaId(ref: string): string | null {
+  const numeric = ref.match(/\b(\d{10,})\b/)?.[1];
+  if (numeric) return numeric;
+  const sc = ref.match(/\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/)?.[1];
+  if (!sc) return null;
+  let id = 0n;
+  for (const ch of sc) {
+    const v = IG_ALPHABET.indexOf(ch);
+    if (v < 0) return null;
+    id = id * 64n + BigInt(v);
+  }
+  return id.toString();
+}
+
+/**
+ * Identifiant de post Facebook (pageId_postId) déterministe depuis une URL :
+ *  - forme complète pageId_postId déjà présente → telle quelle ;
+ *  - permalink.php?story_fbid=<id>&id=<page> → page_id (les deux numériques).
+ * Renvoie null pour les liens « pfbid… » opaques (non résolubles sans appel) →
+ * repli sur l'opérateur.
+ */
+export function facebookPostId(ref: string): string | null {
+  const full = ref.match(/(\d{6,}_\d+)/)?.[1];
+  if (full) return full;
+  try {
+    const u = new URL(ref);
+    const story = u.searchParams.get('story_fbid');
+    const page = u.searchParams.get('id');
+    if (story && page && /^\d+$/.test(story) && /^\d+$/.test(page)) return `${page}_${story}`;
+  } catch { /* pas une URL */ }
+  return null;
+}
+
 /** Normalise et borne une liste brute de commentaires extraite d'une API */
 function toCommentItems(raw: { externalId?: unknown; author?: unknown; text?: unknown; likeCount?: unknown; commentedAt?: unknown }[]): CommentItem[] {
   return raw
@@ -705,7 +745,7 @@ async function fetchCommentsDirect(
       }
 
       case 'facebook': {
-        const postId = externalRef.match(/(\d{6,}_\d+)/)?.[1];
+        const postId = facebookPostId(externalRef);
         if (!postId) return [];
         const data = await exec(uid, 'FACEBOOK_GET_POST', {
           post_id: postId,
@@ -740,7 +780,7 @@ async function fetchCommentsDirect(
       }
 
       case 'instagram': {
-        const mediaId = externalRef.match(/\b(\d{10,})\b/)?.[1];
+        const mediaId = instagramMediaId(externalRef);
         if (!mediaId) return [];
         for (const slug of ['INSTAGRAM_GET_COMMENTS', 'INSTAGRAM_GET_MEDIA_COMMENTS', 'INSTAGRAM_LIST_COMMENTS']) {
           try {
@@ -782,6 +822,110 @@ async function fetchCommentsDirect(
     }
   } catch {
     return [];
+  }
+}
+
+/** Contenu d'un post récupéré chez la plateforme (titre + corps) */
+export interface PostContent {
+  title?: string;
+  content?: string;
+}
+
+/**
+ * Récupération DÉTERMINISTE du contenu (titre + texte) d'un post publié à
+ * partir de son URL — sans aucun appel modèle. Best-effort : null si la
+ * plateforme ne l'expose pas ou refuse l'accès (LinkedIn renvoie souvent 403
+ * sur le corps d'un post personnel, contrairement au compteur de réactions).
+ * Sert à l'import pour pré-remplir le post avec son vrai contenu.
+ */
+export async function fetchPostContentDirect(
+  userId: string,
+  platform: string,
+  externalRef: string,
+  exec: ToolExecutor = executeComposioTool,
+  mcp: McpToolCaller = callMcpToolDirect,
+): Promise<PostContent | null> {
+  const uid = composioUserIdFor(userId);
+  if (!uid) return null;
+  const str = (v: unknown) => (v == null ? '' : String(v)).trim();
+  try {
+    switch (platform) {
+      case 'twitter': {
+        const id = externalRef.match(/status\/(\d+)/)?.[1]
+          ?? (/^\d{8,}$/.test(externalRef.trim()) ? externalRef.trim() : null);
+        if (!id) return null;
+        const data = await exec(uid, 'TWITTER_POST_LOOKUP_BY_POST_ID', { id, tweet_fields: ['text', 'created_at'] });
+        const text = str(data?.data?.text ?? data?.text);
+        return text ? { content: text } : null;
+      }
+
+      case 'youtube': {
+        const id = externalRef.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/)([\w-]{6,})/)?.[1]
+          ?? (/^[\w-]{11}$/.test(externalRef.trim()) ? externalRef.trim() : null);
+        if (!id) return null;
+        const data = await exec(uid, 'YOUTUBE_VIDEO_DETAILS', { id, part: 'snippet' });
+        const sn = data?.response_data?.items?.[0]?.snippet ?? data?.items?.[0]?.snippet
+          ?? data?.data?.items?.[0]?.snippet ?? data?.snippet;
+        if (!sn) return null;
+        const title = str(sn.title);
+        const content = str(sn.description);
+        return (title || content) ? { title: title || undefined, content: content || undefined } : null;
+      }
+
+      case 'reddit': {
+        const article = externalRef.match(/comments\/([a-z0-9]{4,})/i)?.[1];
+        if (!article) return null;
+        const data = await exec(uid, 'REDDIT_RETRIEVE_POST_COMMENTS', { article });
+        const listings = asArray(data).length ? asArray(data)
+          : asArray(data?.data).length ? asArray(data?.data)
+          : asArray(data?.response_data);
+        const post = listings?.[0]?.data?.children?.[0]?.data
+          ?? data?.post_listing?.data?.children?.[0]?.data;
+        if (!post) return null;
+        const title = str(post.title);
+        const content = str(post.selftext);
+        return (title || content) ? { title: title || undefined, content: content || undefined } : null;
+      }
+
+      case 'instagram': {
+        const id = instagramMediaId(externalRef);
+        if (!id) return null;
+        const data = await exec(uid, 'INSTAGRAM_GET_IG_MEDIA', { ig_media_id: id, fields: 'caption,media_type,permalink' });
+        const caption = str((data?.data ?? data)?.caption);
+        return caption ? { content: caption } : null;
+      }
+
+      case 'facebook': {
+        const postId = facebookPostId(externalRef);
+        if (!postId) return null;
+        const data = await exec(uid, 'FACEBOOK_GET_POST', { post_id: postId, fields: 'message,created_time' });
+        const msg = str((data?.data ?? data)?.message);
+        return msg ? { content: msg } : null;
+      }
+
+      case 'linkedin': {
+        // LinkedIn refuse fréquemment la lecture du corps (403) — best-effort.
+        if (!isComposioConfigured()) return null;
+        for (const post_id of linkedinEntityUrns(externalRef)) {
+          try {
+            const out = await mcp(uid, 'LINKEDIN_GET_POST_CONTENT', { post_id });
+            const parsed = JSON.parse(out);
+            const dd = parsed?.data ?? parsed;
+            const text = str(
+              dd?.commentary ?? dd?.text
+              ?? dd?.specificContent?.['com.linkedin.ugc.ShareContent']?.shareCommentary?.text,
+            );
+            if (text) return { content: text };
+          } catch { /* 403 / type d'URN suivant */ }
+        }
+        return null;
+      }
+
+      default:
+        return null;
+    }
+  } catch {
+    return null;
   }
 }
 
@@ -897,7 +1041,7 @@ async function syncMetricsDirectCounts(
       }
 
       case 'instagram': {
-        const igId = externalRef.match(/\b(\d{10,})\b/)?.[1];
+        const igId = instagramMediaId(externalRef);
         if (!igId) return { handled: false };
         // On demande EXPLICITEMENT les métriques supportées : les presets de
         // l'outil incluent « impressions », que Meta a retirée pour les médias
@@ -926,8 +1070,8 @@ async function syncMetricsDirectCounts(
       }
 
       case 'facebook': {
-        // L'id complet d'un post de Page est pageId_postId
-        const postId = externalRef.match(/(\d{6,}_\d+)/)?.[1];
+        // L'id complet d'un post de Page est pageId_postId (déduit de l'URL)
+        const postId = facebookPostId(externalRef);
         if (!postId) return { handled: false };
         const data = await exec(uid, 'FACEBOOK_GET_POST', {
           post_id: postId,

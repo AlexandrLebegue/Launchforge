@@ -12,6 +12,7 @@ import { logEvent } from '../services/adminLogger';
 import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
 import { analyzePost } from '../services/analytics';
+import { fetchPostContentDirect } from '../services/composioDirect';
 import { checkEmbeddable } from '../services/embed';
 import { Post, PostStatus, Recurrence } from '../types';
 
@@ -189,6 +190,21 @@ router.post('/import', async (req: Request, res: Response) => {
   };
   storage.savePost(post);
   logEvent(post.userId, 'post.imported', post.id, { platform, url: cleanUrl });
+
+  // Contenu réel du post (titre + texte) — récupération DÉTERMINISTE, sans IA.
+  // Best-effort : LinkedIn refuse souvent le corps (403), les plateformes sans
+  // API de lecture renvoient null — le post reste importé dans tous les cas.
+  if (process.env.COMPOSIO_API_KEY || isComposioConfigured()) {
+    try {
+      const c = await fetchPostContentDirect(post.userId, platform, cleanUrl);
+      if (c && (c.title || c.content)) {
+        storage.updatePost(post.id, {
+          ...(c.title ? { title: c.title.slice(0, 300) } : {}),
+          ...(c.content ? { content: c.content.slice(0, 20000) } : {}),
+        });
+      }
+    } catch { /* best-effort */ }
+  }
 
   let synced = false;
   let note: string | undefined;
