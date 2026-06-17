@@ -625,6 +625,30 @@ const toNum = (v: unknown): number => {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
 };
 
+/**
+ * URN(s) d'entité LinkedIn extraits d'une référence — URL permalien ou URN brut.
+ * Le TYPE (share/activity/ugcPost) est lu DANS la référence (déterministe, sans
+ * IA), car LINKEDIN_LIST_REACTIONS exige le bon type : pour un id donné, seul
+ * « urn:li:share:<id> » répond pour un lien « ...-share-<id>-... », les autres
+ * types renvoyant « Entity not found » (vérifié en réel).
+ *  - post publié par l'app          : .../feed/update/urn:li:share:<id>  → URN brut présent
+ *  - lien « copier le lien » d'un post : .../posts/<slug>-<type>-<id>-<code>/ → type dans le slug
+ *  - dernier recours (id long sans type) : on tente share puis activity, dans cet ordre.
+ */
+export function linkedinEntityUrns(ref: string): string[] {
+  // Casse canonique exigée par LinkedIn (« ugcPost » en camelCase) — un type
+  // simplement mis en minuscules (« ugcpost ») produirait un URN invalide.
+  const LI_TYPE: Record<string, string> = { share: 'share', activity: 'activity', ugcpost: 'ugcPost' };
+  const canon = (t: string) => LI_TYPE[t.toLowerCase()] ?? t.toLowerCase();
+  const direct = ref.match(/urn:li:(share|ugcPost|activity):(\d+)/i);
+  if (direct) return [`urn:li:${canon(direct[1])}:${direct[2]}`];
+  const slug = ref.match(/[-_/](share|activity|ugcPost)[-_/](\d{6,})(?:[-/?#]|$)/i);
+  if (slug) return [`urn:li:${canon(slug[1])}:${slug[2]}`];
+  const bare = ref.match(/\b(\d{15,})\b/)?.[1];
+  if (bare) return [`urn:li:share:${bare}`, `urn:li:activity:${bare}`];
+  return [];
+}
+
 /** Normalise et borne une liste brute de commentaires extraite d'une API */
 function toCommentItems(raw: { externalId?: unknown; author?: unknown; text?: unknown; likeCount?: unknown; commentedAt?: unknown }[]): CommentItem[] {
   return raw
@@ -927,29 +951,39 @@ async function syncMetricsDirectCounts(
 
       case 'linkedin': {
         // L'API LinkedIn d'un compte personnel n'expose que les réactions —
-        // lisibles via l'outil du serveur MCP (absent du catalogue REST)
-        const urn = externalRef.match(/urn:li:(?:share|ugcPost|activity):\d+/)?.[0];
-        if (!urn || !isComposioConfigured()) return { handled: false };
-        const out = await mcp(uid, 'LINKEDIN_LIST_REACTIONS', { entity: urn, count: 100 });
-        let parsed: any = null;
-        try { parsed = JSON.parse(out); } catch { return { handled: false }; }
-        const dd = parsed?.data ?? parsed;
-        const total = dd?.paging?.total ?? (Array.isArray(dd?.elements) ? dd.elements.length : null);
-        if (total === null || total === undefined) {
-          return { handled: true, metrics: { found: false, note: 'Réactions illisibles dans la réponse LinkedIn' } };
+        // lisibles via l'outil du serveur MCP (absent du catalogue REST). On
+        // résout l'URN d'entité depuis l'URL (déterministe) et on tente chaque
+        // candidat jusqu'à une réponse lisible — sans aucun appel modèle.
+        if (!isComposioConfigured()) return { handled: false };
+        const urns = linkedinEntityUrns(externalRef);
+        if (urns.length === 0) return { handled: false };
+        for (const urn of urns) {
+          let out: string;
+          try {
+            out = await mcp(uid, 'LINKEDIN_LIST_REACTIONS', { entity: urn, count: 100 });
+          } catch {
+            continue; // URN d'un autre type → « Entity not found » : candidat suivant
+          }
+          let parsed: any = null;
+          try { parsed = JSON.parse(out); } catch { continue; }
+          if (parsed?.successful === false || parsed?.successfull === false) continue;
+          const dd = parsed?.data ?? parsed;
+          const total = dd?.paging?.total ?? (Array.isArray(dd?.elements) ? dd.elements.length : null);
+          if (total === null || total === undefined) continue;
+          return {
+            handled: true,
+            metrics: {
+              found: true,
+              impressions: 0,
+              likes: toNum(total),
+              comments: 0,
+              shares: 0,
+              clicks: 0,
+              note: 'LinkedIn n\'expose ni impressions ni commentaires pour un post personnel (seules les réactions sont lisibles)',
+            },
+          };
         }
-        return {
-          handled: true,
-          metrics: {
-            found: true,
-            impressions: 0,
-            likes: toNum(total),
-            comments: 0,
-            shares: 0,
-            clicks: 0,
-            note: 'LinkedIn n\'expose ni impressions ni commentaires pour un post personnel (seules les réactions sont lisibles)',
-          },
-        };
+        return { handled: false }; // aucun URN candidat lisible → repli opérateur
       }
 
       default:

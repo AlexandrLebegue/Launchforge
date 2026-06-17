@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
-import { publishDirect, sendEmailDirect, syncMetricsDirect, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
+import { publishDirect, sendEmailDirect, syncMetricsDirect, linkedinEntityUrns, ToolExecutor, McpToolCaller, FileUploader } from '../src/services/composioDirect';
 import app from '../src/app';
 
 let userId: string;
@@ -383,10 +383,71 @@ describe('syncMetricsDirect — lecture déterministe des métriques', () => {
     }
   });
 
+  it('LinkedIn : URL « copier le lien » (/posts/…-share-<id>-<code>/) résolue en urn:li:share', async () => {
+    const prev = process.env.COMPOSIO_MCP_URL;
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/partner/composio/test/mcp?user_id=test';
+    try {
+      const { exec } = recorder({});
+      const mcpCalls: { tool: string; args: Record<string, unknown> }[] = [];
+      const mcp: McpToolCaller = async (_uid, tool, args) => {
+        mcpCalls.push({ tool, args });
+        return '{"data": {"paging": {"total": 4}, "elements": []}}';
+      };
+      const url = 'https://www.linkedin.com/posts/jane_topic-share-7472393077114994688-DMDR/?utm_source=share';
+      const out = await syncMetricsDirect(userId, 'linkedin', url, exec, mcp);
+      expect(out.metrics).toMatchObject({ found: true, likes: 4 });
+      // Type lu dans le slug (« share »), jamais deviné par une IA
+      expect(mcpCalls[0].args).toMatchObject({ entity: 'urn:li:share:7472393077114994688' });
+    } finally {
+      if (prev === undefined) delete process.env.COMPOSIO_MCP_URL; else process.env.COMPOSIO_MCP_URL = prev;
+    }
+  });
+
+  it('LinkedIn : id long sans type → tente share puis activity (fallback déterministe)', async () => {
+    const prev = process.env.COMPOSIO_MCP_URL;
+    process.env.COMPOSIO_MCP_URL = 'https://mcp.composio.dev/partner/composio/test/mcp?user_id=test';
+    try {
+      const { exec } = recorder({});
+      const tried: string[] = [];
+      const mcp: McpToolCaller = async (_uid, _tool, args) => {
+        tried.push(String(args.entity));
+        if (String(args.entity).includes(':share:')) throw new Error('Entity not found');
+        return '{"data": {"paging": {"total": 7}, "elements": []}}';
+      };
+      const out = await syncMetricsDirect(userId, 'linkedin', 'urn-less ref 7472393077114994688 here', exec, mcp);
+      expect(out.metrics).toMatchObject({ found: true, likes: 7 });
+      expect(tried).toEqual(['urn:li:share:7472393077114994688', 'urn:li:activity:7472393077114994688']);
+    } finally {
+      if (prev === undefined) delete process.env.COMPOSIO_MCP_URL; else process.env.COMPOSIO_MCP_URL = prev;
+    }
+  });
+
   it('référence inexploitable ou plateforme inconnue : main à l\'opérateur IA', async () => {
     const { exec } = recorder({});
     expect((await syncMetricsDirect(userId, 'twitter', 'pas-une-reference', exec)).handled).toBe(false);
     expect((await syncMetricsDirect(userId, 'facebook', 'https://facebook.com/x', exec)).handled).toBe(false);
+  });
+});
+
+describe('linkedinEntityUrns — extraction déterministe de l\'URN (sans IA)', () => {
+  it('lien « copier » /posts/…-share-<id>-<code>/ → urn:li:share', () => {
+    expect(linkedinEntityUrns('https://www.linkedin.com/posts/x_y-share-7472393077114994688-DMDR/?utm_source=share'))
+      .toEqual(['urn:li:share:7472393077114994688']);
+  });
+  it('slug activity → urn:li:activity', () => {
+    expect(linkedinEntityUrns('https://www.linkedin.com/posts/jane-doe_topic-activity-7100000000000000000-abCd/'))
+      .toEqual(['urn:li:activity:7100000000000000000']);
+  });
+  it('URN brut dans une URL /feed/update conserve la casse canonique (ugcPost)', () => {
+    expect(linkedinEntityUrns('https://www.linkedin.com/feed/update/urn:li:ugcPost:7000000000000000000'))
+      .toEqual(['urn:li:ugcPost:7000000000000000000']);
+  });
+  it('id long sans type → candidats share puis activity', () => {
+    expect(linkedinEntityUrns('quelque chose 7472393077114994688 ici'))
+      .toEqual(['urn:li:share:7472393077114994688', 'urn:li:activity:7472393077114994688']);
+  });
+  it('aucune référence exploitable → tableau vide (repli opérateur)', () => {
+    expect(linkedinEntityUrns('https://www.linkedin.com/in/jane-doe/')).toEqual([]);
   });
 });
 
