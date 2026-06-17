@@ -1035,7 +1035,7 @@ form .btn { margin-top: 8px; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
-  align-items: start;          /* l'objectif garde sa hauteur naturelle */
+  align-items: stretch;        /* la carte Objectifs s'étire jusqu'au bas de la colonne de gauche */
   margin-bottom: 20px;
 }
 .dashboard-overview-col {
