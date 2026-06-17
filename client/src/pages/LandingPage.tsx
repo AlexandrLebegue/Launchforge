@@ -25,12 +25,52 @@ const LOOP_ICONS = [
   <BarChart3 size={20} />, <TrendingUp size={20} />,
 ];
 
+// Positions (en % du carré) des 6 modules autour du cœur — 6 angles à 60° l'un de
+// l'autre, en partant du haut. Les connecteurs SVG partent du centre (50,50).
+const HUB_POS = [
+  { x: 50, y: 11 },   // haut
+  { x: 83, y: 30.5 }, // haut-droite
+  { x: 83, y: 69.5 }, // bas-droite
+  { x: 50, y: 89 },   // bas
+  { x: 17, y: 69.5 }, // bas-gauche
+  { x: 17, y: 30.5 }, // haut-gauche
+];
+
+function FeatureHub({ hub }: { hub: { core: { title: string; sub: string }; aria: string; nodes: string[] } }) {
+  return (
+    <div className="feature-hub gs-reveal" role="img" aria-label={hub.aria}>
+      <svg className="feature-hub-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {HUB_POS.map((p, i) => (
+          <g key={i}>
+            <line className="hub-link-base" x1="50" y1="50" x2={p.x} y2={p.y} />
+            <line className="hub-link-flow" x1="50" y1="50" x2={p.x} y2={p.y} style={{ animationDelay: `${i * 0.4}s` }} />
+          </g>
+        ))}
+      </svg>
+      <div className="hub-core">
+        <span className="hub-core-glow" aria-hidden="true" />
+        <span className="hub-core-icon"><Flame size={26} /></span>
+        <span className="hub-core-title">{hub.core.title}</span>
+        <span className="hub-core-sub">{hub.core.sub}</span>
+      </div>
+      <div className="hub-nodes">
+        {hub.nodes.map((label, i) => (
+          <div key={label} className="hub-node" style={{ left: `${HUB_POS[i].x}%`, top: `${HUB_POS[i].y}%` }}>
+            <span className="hub-node-icon">{FEATURE_ICONS[i]}</span>
+            <span className="hub-node-label">{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const COPY: Record<Lang, {
   nav: { loop: string; product: string; how: string; faq: string; login: string; start: string };
   hero: { before: string; em: string; after: string; sub: string; cta: string; cta2: string; truths: string[] };
   mock: { bar: string; calTitle: string; feedTitle: string; feed: { strong: string; rest: string; badge?: string }[] };
   loop: { title: string; sub: string; aria: string; returnLabel: string; steps: { title: string; desc: string }[] };
-  features: { title: string; items: { title: string; desc: string }[] };
+  features: { title: string; hub: { core: { title: string; sub: string }; aria: string; nodes: string[] }; items: { title: string; desc: string }[] };
   product: { title: string; sub: string; shots: { title: string; desc: string; points: string[]; alt: string }[] };
   how: { title: string; steps: { title: string; desc: string }[] };
   faq: { title: string; items: { q: string; a: string }[] };
@@ -72,6 +112,11 @@ const COPY: Record<Lang, {
     },
     features: {
       title: 'Tout l\'atelier, sous un même toit',
+      hub: {
+        core: { title: 'Forge IA', sub: 'Un seul cerveau, tout l\'atelier' },
+        aria: 'Schéma : une IA centrale relie l\'onboarding, la publication, les séries, les métriques, les leads et le pilotage par chat.',
+        nodes: ['Onboarding', 'Publication', 'Séries', 'Métriques', 'Leads', 'Chat & Telegram'],
+      },
       items: [
         { title: 'Onboarding par IA', desc: 'Un chat vous interviewe, recherche votre entreprise sur le web, lit vos documents — et en tire un plan de lancement tactique, semaine par semaine.' },
         { title: 'Publication multi-plateformes', desc: 'Un post, plusieurs plateformes : le texte est adapté aux codes de chacune par l\'IA, publié automatiquement à l\'heure dite via vos comptes connectés.' },
@@ -166,6 +211,11 @@ const COPY: Record<Lang, {
     },
     features: {
       title: 'The whole workshop, under one roof',
+      hub: {
+        core: { title: 'AI Forge', sub: 'One brain, the whole workshop' },
+        aria: 'Diagram: a central AI connects onboarding, publishing, series, metrics, leads and chat-first control.',
+        nodes: ['Onboarding', 'Publishing', 'Series', 'Metrics', 'Leads', 'Chat & Telegram'],
+      },
       items: [
         { title: 'AI onboarding', desc: 'A chat interviews you, researches your company on the web, reads your documents — and produces a tactical, week-by-week launch plan.' },
         { title: 'Multi-platform publishing', desc: 'One post, several platforms: the AI adapts the copy to each network\'s codes and publishes automatically through your connected accounts.' },
@@ -354,10 +404,15 @@ export default function LandingPage() {
 
       // ── Révélations génériques au scroll ──
       gsap.utils.toArray<HTMLElement>('.gs-section').forEach((el) => {
-        gsap.from(el.querySelectorAll('.gs-reveal'), {
-          scrollTrigger: { trigger: el, start: 'top 78%' },
-          y: 34, opacity: 0, duration: 0.65, ease: 'power3.out', stagger: 0.1,
-        });
+        gsap.fromTo(el.querySelectorAll('.gs-reveal'),
+          { y: 34, opacity: 0 },
+          {
+            y: 0, opacity: 1, duration: 0.65, ease: 'power3.out', stagger: 0.1,
+            // `once` : la révélation ne doit jamais être rejouée ni réinitialisée par
+            // un refresh de ScrollTrigger (déclenché par le chargement différé des
+            // captures plus bas), sinon les cartes restent bloquées invisibles.
+            scrollTrigger: { trigger: el, start: 'top 78%', once: true },
+          });
       });
 
       // ── Barre de progression : la braise monte avec la lecture ──
@@ -463,7 +518,8 @@ export default function LandingPage() {
         <div className="landing-section-inner">
           <h2 className="landing-section-title gs-reveal">{c.features.title}</h2>
           <div className="ember-line gs-reveal" />
-          <div className="landing-features" style={{ marginTop: 44 }}>
+          <FeatureHub hub={c.features.hub} />
+          <div className="landing-features" style={{ marginTop: 28 }}>
             {c.features.items.map((f, i) => (
               <div key={f.title} className="landing-feature-card gs-reveal">
                 <span className="landing-feature-icon">{FEATURE_ICONS[i]}</span>
