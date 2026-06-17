@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, FormEvent, ChangeEvent, KeyboardEvent, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, User, Paperclip } from 'lucide-react';
+import { Flame, User, Paperclip, Send } from 'lucide-react';
 import Markdown from '../components/Markdown';
 import {
   startOnboarding,
@@ -115,7 +115,8 @@ export default function CreatePlanPage() {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    // Plancher à 34px (= hauteur des boutons ronds) pour une barre nette au repos.
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 34), 160)}px`;
   }, [input]);
 
   useEffect(() => {
@@ -342,7 +343,7 @@ export default function CreatePlanPage() {
             )}
 
             {!completed && (
-              <form className="chat-input-bar" onSubmit={handleSend}>
+              <form className="assistant-page-input chat-composer" onSubmit={handleSend}>
                 <input
                   ref={fileRef}
                   type="file"
@@ -351,9 +352,18 @@ export default function CreatePlanPage() {
                   style={{ display: 'none' }}
                   onChange={handleFiles}
                 />
+                <button
+                  type="button"
+                  className="assistant-input-btn assistant-attach"
+                  title="Joindre un document (pdf, txt, md, csv, json, html)"
+                  aria-label="Joindre un document"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={sending}
+                >
+                  <Paperclip size={18} />
+                </button>
                 <textarea
                   ref={inputRef}
-                  className="chat-input-field"
                   rows={1}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -367,22 +377,16 @@ export default function CreatePlanPage() {
                   placeholder="Votre réponse… (nom d'entreprise, site web, ou décrivez votre idée). Maj+Entrée pour un retour à la ligne."
                   disabled={sending}
                   autoFocus
+                  style={{ height: '34px' }}
                 />
                 <button
-                  type="button"
-                  className="btn chat-attach-btn"
-                  title="Joindre un document (pdf, txt, md, csv, json, html)"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={sending}
-                >
-                  <Paperclip size={18} />
-                </button>
-                <button
                   type="submit"
-                  className="btn btn-primary chat-send-btn"
+                  className="assistant-input-btn assistant-send"
                   disabled={sending || (!input.trim() && pendingDocs.length === 0)}
+                  title="Envoyer"
+                  aria-label="Envoyer"
                 >
-                  Envoyer →
+                  <Send size={18} />
                 </button>
               </form>
             )}
