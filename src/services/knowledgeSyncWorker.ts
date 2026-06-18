@@ -20,6 +20,7 @@
 import { storage } from './storage';
 import { syncSourcesNow, SyncDeps } from './knowledgeSync';
 import { isAIConfigured } from './aiClient';
+import { isBrasier } from './entitlements';
 import { KnowledgeSource } from '../types';
 
 const TICK_MS = 30 * 60_000;
@@ -36,7 +37,10 @@ export async function processDueKnowledgeSync(
   now: Date = new Date(),
   deps: SyncDeps = {},
 ): Promise<number> {
-  const due = storage.getKnowledgeSyncDueSources(now.toISOString(), MAX_PER_TICK);
+  // Mise à jour auto de la base = fonctionnalité Brasier (chaque analyse = appel
+  // IA) : on exclut les comptes Braise (sources non horodatées → reprises s'ils
+  // repassent Brasier).
+  const due = storage.getKnowledgeSyncDueSources(now.toISOString(), MAX_PER_TICK).filter((s) => isBrasier(s.userId));
   if (due.length === 0) return 0;
 
   // Horodate AVANT l'analyse : une source en échec attend la prochaine fenêtre

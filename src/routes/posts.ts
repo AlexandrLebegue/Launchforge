@@ -14,7 +14,7 @@ import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../service
 import { analyzePost } from '../services/analytics';
 import { fetchPostContentDirect } from '../services/composioDirect';
 import { checkEmbeddable } from '../services/embed';
-import { assertWithinUsage, recordUsage } from '../services/entitlements';
+import { assertWithinUsage, recordUsage, assertFeature, Feature } from '../services/entitlements';
 import { handleQuota } from '../middleware/quota';
 import { Post, PostStatus, Recurrence } from '../types';
 
@@ -23,6 +23,12 @@ router.use(requireAuth);
 
 const STATUSES: PostStatus[] = ['idea', 'draft', 'scheduled', 'published'];
 const RECURRENCES: Recurrence[] = ['none', 'daily', 'weekly', 'biweekly', 'monthly'];
+
+/** Verrou de fonctionnalité Brasier ; renvoie true si bloqué (402 déjà envoyé) */
+function gate(req: Request, res: Response, feature: Feature): boolean {
+  try { assertFeature(req.user!.userId, feature); return false; }
+  catch (e) { handleQuota(res, e); return true; }
+}
 
 /** Charge un post accessible (projet perso ou d'équipe) et bloque les Lecteurs. */
 function loadOwnedPost(req: Request, res: Response): Post | null {
@@ -100,6 +106,10 @@ router.post('/', (req: Request, res: Response) => {
   if (ctx.role === 'viewer') {
     return res.status(403).json({ success: false, error: 'Rôle Lecteur : création non autorisée' });
   }
+
+  // Récurrence et auto-publication = offre Brasier
+  if (typeof body.recurrence === 'string' && body.recurrence !== 'none' && gate(req, res, 'recurring')) return;
+  if (body.autoPublish && gate(req, res, 'publish')) return;
 
   const now = new Date().toISOString();
   const post: Post = {
@@ -250,6 +260,11 @@ router.patch('/:id', (req: Request, res: Response) => {
   if (!post) return;
 
   const body = req.body as Partial<Post>;
+
+  // Activer la récurrence ou l'auto-publication = offre Brasier
+  if (typeof body.recurrence === 'string' && body.recurrence !== 'none' && gate(req, res, 'recurring')) return;
+  if (body.autoPublish && gate(req, res, 'publish')) return;
+
   const patch: Partial<Post> = {};
 
   if (typeof body.platform === 'string' && body.platform) patch.platform = body.platform;
@@ -325,6 +340,8 @@ router.patch('/:id', (req: Request, res: Response) => {
 router.post('/:id/publish', (req: Request, res: Response) => {
   const post = loadOwnedPost(req, res);
   if (!post) return;
+  // Un post récurrent régénère l'occurrence suivante (IA) = fonctionnalité Brasier
+  if (post.recurrence !== 'none' && gate(req, res, 'recurring')) return;
 
   if (post.status === 'published') {
     return res.status(400).json({ success: false, error: 'Post already published' });
@@ -381,6 +398,7 @@ router.post('/:id/crosspost', async (req: Request, res: Response) => {
 router.post('/:id/recurrence/preview', async (req: Request, res: Response) => {
   const post = loadOwnedPost(req, res);
   if (!post) return;
+  if (gate(req, res, 'recurring')) return;
 
   const body = req.body as Partial<Post>;
   const candidate: Post = {
@@ -421,6 +439,7 @@ router.post('/:id/recurrence/preview', async (req: Request, res: Response) => {
 router.post('/:id/publish-now', async (req: Request, res: Response) => {
   const post = loadOwnedPost(req, res);
   if (!post) return;
+  if (gate(req, res, 'publish')) return;
   if (post.status === 'published') {
     return res.status(400).json({ success: false, error: 'Ce post est déjà publié.' });
   }
@@ -496,6 +515,7 @@ router.post('/:id/publish-now', async (req: Request, res: Response) => {
 router.post('/:id/sync-metrics', async (req: Request, res: Response) => {
   const post = loadOwnedPost(req, res);
   if (!post) return;
+  if (gate(req, res, 'analytics')) return;
 
   if (!isComposioConfigured() || !isAIConfigured()) {
     return res.status(503).json({
@@ -554,6 +574,7 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Seuls les posts publiés peuvent être analysés' });
   }
   try {
+    assertFeature(req.user!.userId, 'analytics');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const result = await analyzePost(post.userId, post);
     recordUsage(req.user!.userId, 'ai_generation');

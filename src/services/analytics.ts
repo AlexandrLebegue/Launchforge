@@ -16,6 +16,7 @@
 import { v4 as uuid } from 'uuid';
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import { storage } from './storage';
+import { isBrasier } from './entitlements';
 import { Post, KnowledgeEntry, KnowledgeCategory } from '../types';
 
 export { isAIConfigured };
@@ -551,6 +552,8 @@ export async function dispatchWeeklyReports(
 
   let sent = 0;
   for (const { userId } of storage.getUsersDueWeeklyReport(now.toISOString())) {
+    // Rapport hebdo (IA) = fonctionnalité Brasier : on saute les comptes Braise
+    if (!isBrasier(userId)) { storage.markWeeklyReportSent(userId, now.toISOString()); continue; }
     try {
       const { report, stats } = await generateCampaignReport(userId);
       if (stats.publishedCount === 0) {

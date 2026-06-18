@@ -23,7 +23,7 @@ import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
 import { generateDeckMarkdown, themeForUser } from './decks';
 import { analyzePost, generateCampaignReport } from './analytics';
-import { assertWithinUsage, recordUsage, QuotaError } from './entitlements';
+import { assertWithinUsage, recordUsage, assertFeature, QuotaError, FeatureError, Feature } from './entitlements';
 import { renderDeckGif, renderDeckMp4 } from './deckMedia';
 import { saveMediaFile } from './mediaStore';
 import { uploadPublicImage } from './imageGen';
@@ -408,12 +408,30 @@ const AI_GEN_TOOLS = new Set([
 ]);
 const AI_IMAGE_TOOLS = new Set(['generate_image']);
 
+// Outils réservés à Brasier (mêmes verrous que les routes HTTP) — un compte
+// Braise ayant lié Telegram pendant l'essai ne doit pas les contourner ensuite.
+const FEATURE_TOOLS: Record<string, Feature> = {
+  publish_post: 'publish',
+  simulate_recurrence: 'recurring',
+  configure_recurrence: 'recurring',
+  analyze_post: 'analytics',
+  campaign_report: 'analytics',
+  sync_post_metrics: 'analytics',
+  send_email_to_contact: 'leads',
+};
+
 /**
- * Garde de quota autour du dispatcher : un compte Braise au-delà de sa limite
- * reçoit un message clair au lieu de générer (sinon Telegram contournerait
- * l'offre freemium). L'usage n'est compté qu'après une exécution réussie.
+ * Garde de quota + fonctionnalités autour du dispatcher : un compte Braise au-delà
+ * de sa limite (ou sans la fonctionnalité) reçoit un message clair au lieu d'agir
+ * (sinon Telegram contournerait l'offre freemium). L'usage IA n'est compté
+ * qu'après une exécution réussie.
  */
 export async function executeTool(userId: string, chatId: string, name: string, args: any): Promise<string> {
+  const feat = FEATURE_TOOLS[name];
+  if (feat) {
+    try { assertFeature(userId, feat); }
+    catch (e) { if (e instanceof FeatureError) return `⚠️ ${e.message}`; throw e; }
+  }
   const kind: 'ai_image' | 'ai_generation' | null =
     AI_IMAGE_TOOLS.has(name) ? 'ai_image' : (AI_GEN_TOOLS.has(name) ? 'ai_generation' : null);
   if (kind) {

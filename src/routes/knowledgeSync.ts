@@ -16,6 +16,8 @@ import {
   applySuggestionsToKnowledge, syncSourcesNow,
   parseGitHubRepo, FetchedSource,
 } from '../services/knowledgeSync';
+import { assertWithinUsage, recordUsage } from '../services/entitlements';
+import { handleQuota } from '../middleware/quota';
 import { KnowledgeSourceType } from '../types';
 
 const router = Router();
@@ -114,6 +116,8 @@ router.post('/sync/analyze', async (req: Request, res: Response) => {
   if (!isAIConfigured()) {
     return res.status(503).json({ success: false, error: 'IA non configurée (OPENROUTER_API_KEY manquante)' });
   }
+  try { assertWithinUsage(req.user!.userId, 'ai_generation'); }
+  catch (e) { if (handleQuota(res, e)) return; throw e; }
 
   const fetched: FetchedSource[] = [];
   const errors: { url: string; error: string }[] = [];
@@ -145,6 +149,7 @@ router.post('/sync/analyze', async (req: Request, res: Response) => {
 
   try {
     const suggestions = await analyzeSourcesForKnowledge(ctx.ownerUserId, ctx.planId, fetched);
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({
       success: true,
       data: {
@@ -185,10 +190,13 @@ router.post('/sync/run', async (req: Request, res: Response) => {
   if (sources.length === 0) {
     return res.status(400).json({ success: false, error: 'Aucune source enregistrée — ajoutez-en dans Configuration.' });
   }
+  try { assertWithinUsage(req.user!.userId, 'ai_generation'); }
+  catch (e) { if (handleQuota(res, e)) return; throw e; }
 
   try {
     const now = new Date().toISOString();
     const { applied, syncedSourceIds, errors } = await syncSourcesNow(ctx.ownerUserId, ctx.planId, sources, crawl);
+    recordUsage(req.user!.userId, 'ai_generation');
     for (const id of syncedSourceIds) storage.markKnowledgeSourceSynced(id, now);
     res.json({ success: true, data: { applied, errors, syncedAt: syncedSourceIds.length ? now : null } });
   } catch (e) {

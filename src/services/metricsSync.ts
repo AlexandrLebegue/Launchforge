@@ -16,6 +16,7 @@
 import { storage } from './storage';
 import { syncMetricsViaComposio, isComposioConfigured, SyncedMetrics } from './composio';
 import { isAIConfigured } from './aiClient';
+import { isBrasier } from './entitlements';
 
 const TICK_MS = 10 * 60_000;
 const MAX_PER_TICK = 5;
@@ -33,7 +34,8 @@ export async function processDueMetricsSync(
   now: Date = new Date(),
   sync: SyncFn = syncMetricsViaComposio,
 ): Promise<number> {
-  const due = storage.getMetricsSyncDuePosts(now.toISOString(), MAX_PER_TICK);
+  // La synchro des métriques est une fonctionnalité Brasier : comptes Braise exclus
+  const due = storage.getMetricsSyncDuePosts(now.toISOString(), MAX_PER_TICK).filter((p) => isBrasier(p.userId));
   let synced = 0;
 
   for (const post of due) {

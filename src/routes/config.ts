@@ -12,9 +12,17 @@ import { isComposioConfigured } from '../services/mcpClient';
 import { composioUserIdFor, createConnectLink, disconnectToolkit, NeedsOwnAppError } from '../services/composioConnect';
 import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/telegramBot';
 import { availableThemes, generateCustomTheme, CUSTOM_THEMES, BUILTIN_THEMES } from '../services/decks';
+import { assertFeature, assertWithinUsage, recordUsage, Feature } from '../services/entitlements';
+import { handleQuota } from '../middleware/quota';
 
 const router = Router();
 router.use(requireAuth);
+
+/** Vérifie une fonctionnalité réservée à Brasier ; renvoie true si bloquée (402 envoyé) */
+function gate(req: Request, res: Response, feature: Feature): boolean {
+  try { assertFeature(req.user!.userId, feature); return false; }
+  catch (e) { handleQuota(res, e); return true; }
+}
 
 /** Toolkits mis en avant dans la configuration, avec la capacité qu'ils ouvrent */
 const FEATURED_TOOLKITS = [
@@ -136,6 +144,7 @@ router.post('/connect', async (req: Request, res: Response) => {
   if (!isComposioConfigured() || !process.env.COMPOSIO_API_KEY) {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
+  if (gate(req, res, 'publish')) return; // connexion de comptes = offre Brasier
   // Sur un projet d'équipe, seuls les comptes du propriétaire sont utilisés
   if (storage.resolveActiveProject(req.user!.userId).ownerUserId !== req.user!.userId) {
     return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
@@ -196,6 +205,7 @@ router.patch('/telegram-bot', async (req: Request, res: Response) => {
   if (!token || typeof token !== 'string' || !/^\d+:[\w-]{30,}$/.test(token.trim())) {
     return res.status(400).json({ success: false, error: 'Token invalide — format attendu : 123456789:ABC… (fourni par @BotFather)' });
   }
+  if (gate(req, res, 'telegram')) return;
   try {
     const botName = await setUserBot(req.user!.userId, token.trim());
     res.json({ success: true, data: { ownBot: true, botUsername: botName } });
@@ -236,10 +246,13 @@ router.post('/marp-theme/customize', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'instructions is required' });
   }
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const css = await generateCustomTheme(req.user!.userId, instructions.trim().slice(0, 600));
+    recordUsage(req.user!.userId, 'ai_generation');
     storage.setMarpTheme(req.user!.userId, 'custom', css);
     res.json({ success: true, data: { theme: 'custom' } });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération du thème échouée' });
   }
 });
@@ -248,6 +261,7 @@ router.post('/marp-theme/customize', async (req: Request, res: Response) => {
 // Intervalle de synchro automatique des métriques (0 = désactivée). Chaque
 // synchro coûte un appel modèle : on borne entre 15 min et 7 jours.
 router.patch('/metrics-sync', (req: Request, res: Response) => {
+  if (gate(req, res, 'analytics')) return;
   const raw = Number((req.body as { intervalMinutes?: unknown }).intervalMinutes);
   if (!Number.isFinite(raw) || raw < 0) {
     return res.status(400).json({ success: false, error: 'intervalMinutes must be a positive number (0 = disabled)' });

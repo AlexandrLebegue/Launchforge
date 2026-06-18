@@ -11,11 +11,14 @@ Stripe, et la politique de remboursement. Il accompagne le code :
 
 | | **Braise** (gratuite) | **Brasier** (payante) |
 |---|---|---|
-| Prix | 0 € pour toujours | **15 €/mois en annuel** (180 €/an) · **20 €/mois** en mensuel |
+| Prix | 0 € pour toujours | **12,90 €/mois en annuel** (154,80 €/an) · **15,90 €/mois** en mensuel |
 | Projets | 1 | illimités |
-| Générations de contenu IA | 15 / mois | illimitées |
-| Images IA | 5 / mois | illimitées |
-| Fonctionnalités | **toutes** (publication, calendrier, analytics, leads, assistant, Telegram) | toutes, **sans aucune limite** |
+| Générations de contenu IA | 5 / mois | 300 / mois (usage équitable) |
+| Images IA | 2 / mois | 50 / mois (usage équitable) |
+| Publication, analytics, leads, séries, Telegram | ❌ (réservés à Brasier) | ✅ |
+| Plan IA, rédaction manuelle, calendrier, export RGPD | ✅ | ✅ |
+
+**Pourquoi des plafonds Brasier plutôt qu'« illimité » ?** Coûts réels : ~0,015 €/génération texte (OpenRouter), 0,04 €/image (seedream-4.5), + Composio **30 €/mois fixe** (amorti sur tous les payants). À 12,90 €, l'infra fixe (≈36 €/mois) est couverte dès ~3 abonnés ; les plafonds 300/50 laissent une marge ~85 % en usage normal et restent positifs même au plafond (anti-abus/scripting), sans jamais gêner un vrai utilisateur.
 | Support | communauté | prioritaire |
 
 **Principe de bridage** : seules les **quantités** qui ont un coût variable réel
@@ -76,8 +79,8 @@ c'est l'alternative — au prix de ~3,5 points de marge en plus. Le code actuel 
 ### a) Produit et prix
 Dashboard Stripe → **Produits** → créer un produit **« Brasier »** avec **deux prix
 récurrents** :
-- **Mensuel** : 20 € / mois → note l'ID `price_...`
-- **Annuel** : 180 € / an → note l'ID `price_...`
+- **Mensuel** : 15,90 € / mois → note l'ID `price_...`
+- **Annuel** : 154,80 € / an (affiché 12,90 €/mois) → note l'ID `price_...`
 
 ### b) Clé API
 Dashboard → **Développeurs → Clés API** → copie la **clé secrète** (`sk_live_...`
@@ -108,8 +111,8 @@ Stripe calcule et collecte la TVA selon le pays du client.
 Dans `.env` (local) **et** `/root/launchforge/.env` (prod) :
 ```bash
 STRIPE_SECRET_KEY=sk_live_...
-STRIPE_PRICE_MONTHLY=price_...      # 20 €/mois
-STRIPE_PRICE_ANNUAL=price_...       # 180 €/an
+STRIPE_PRICE_MONTHLY=price_...      # 15,90 €/mois
+STRIPE_PRICE_ANNUAL=price_...       # 154,80 €/an (12,90 €/mois)
 STRIPE_WEBHOOK_SECRET=whsec_...
 BILLING_ENFORCE_LIMITS=true         # 'false' = ne bride personne (lancement souple)
 # APP_URL doit être correct : sert aux URLs de retour Checkout/portail.

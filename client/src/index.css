@@ -484,6 +484,10 @@ input, textarea, select {
 .layout-main {
   margin-left: var(--sidebar-width);
   flex: 1;
+  /* min-width:0 — sans ça, un enfant non rétractable (ex. la barre d'onglets
+     scrollable de la Configuration) force ce flex-item au-delà du viewport et
+     fait déborder toute la page en mobile. */
+  min-width: 0;
   padding: 36px 36px 48px;
   min-height: 100vh;
 }
@@ -4876,6 +4880,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .config-ownapp-field input:focus { outline: none; border-color: var(--color-primary); }
 .config-ownapp-actions { display: flex; gap: 8px; }
+
+/* ── Configuration en mobile : les rangées de comptes/contrôles s'empilent ──
+   Sur une colonne étroite, badge d'état + boutons écrasaient le nom du compte ;
+   on les fait passer sous le libellé pour garder chaque rangée lisible. */
+@media (max-width: 540px) {
+  .config-toolkit { flex-wrap: wrap; row-gap: 10px; }
+  .config-toolkit-main { flex: 1 1 100%; min-width: 60%; }
+  .config-toolkit > .config-badge,
+  .config-toolkit > .btn,
+  .config-toolkit > a { margin-left: 42px; }   /* aligné sous le texte (icône + gap) */
+  /* Titre de section + badge + bouton « Gérer » reviennent à la ligne si besoin */
+  .settings-group-head { flex-wrap: wrap; }
+  .config-ownapp-actions { flex-wrap: wrap; }
+}
 
 /* ── Projets dans la sidebar ── */
 .layout-project {

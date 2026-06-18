@@ -14,20 +14,12 @@ import { generateContent, isContentAssistantConfigured } from '../services/conte
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
 import { syncPostsToCalendarInBackground } from '../services/calendarSync';
 import { runPostChatTurn, PostChatMessage } from '../services/postAssistant';
-import { assertWithinUsage, recordUsage, QuotaError } from '../services/entitlements';
+import { assertWithinUsage, recordUsage, assertFeature } from '../services/entitlements';
+// handleQuota partagé : gère QuotaError ET FeatureError (→ HTTP 402)
+import { handleQuota } from '../middleware/quota';
 
 const router = Router();
 router.use(requireAuth);
-
-/** Traduit une QuotaError en réponse HTTP 402 (paiement requis). Renvoie true
- *  si l'erreur a été gérée. */
-function handleQuota(res: Response, err: unknown): boolean {
-  if (err instanceof QuotaError) {
-    res.status(402).json({ success: false, error: err.message, code: err.code, resource: err.resource, used: err.used, limit: err.limit });
-    return true;
-  }
-  return false;
-}
 
 router.post('/generate', async (req: Request, res: Response) => {
   if (!isContentAssistantConfigured()) {
@@ -172,6 +164,8 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
 
 // ── GET /api/content/performance — séries pour les graphiques (sans IA) ─────
 router.get('/performance', (req: Request, res: Response) => {
+  try { assertFeature(req.user!.userId, 'analytics'); }
+  catch (e) { if (handleQuota(res, e)) return; throw e; }
   const userId = req.user!.userId;
   const ctx = storage.resolveActiveProject(userId);
   res.json({ success: true, data: computePerformanceSeries(ctx.ownerUserId, ctx.planId) });
@@ -183,6 +177,7 @@ router.get('/report', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
   }
   try {
+    assertFeature(req.user!.userId, 'analytics');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const { report, stats } = await generateCampaignReport(req.user!.userId);
     recordUsage(req.user!.userId, 'ai_generation');
@@ -214,6 +209,8 @@ router.post('/comments/refresh', async (req: Request, res: Response) => {
   if (!isComposioConfigured() && !process.env.COMPOSIO_API_KEY) {
     return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
   }
+  try { assertFeature(req.user!.userId, 'analytics'); }
+  catch (e) { if (handleQuota(res, e)) return; throw e; }
   const ctx = storage.resolveActiveProject(req.user!.userId);
   const targets = storage.getPostsByPlan(ctx.ownerUserId, ctx.planId)
     .filter((p) => p.status === 'published' && p.externalUrl)
@@ -243,6 +240,7 @@ router.post('/comments/analyze', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
   }
   try {
+    assertFeature(req.user!.userId, 'analytics');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const ctx = storage.resolveActiveProject(req.user!.userId);
     const analysis = await analyzeComments(ctx.ownerUserId, ctx.planId);

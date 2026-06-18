@@ -23,9 +23,9 @@ import { PlanTier, SubscriptionRecord, UsageKind } from '../types';
 // ── Tarifs & paramètres (source de vérité, repris par le front) ───────────────
 export const PRICING = {
   currency: 'EUR',
-  monthly: 20,        // €/mois en mensuel
-  annualMonthly: 15,  // €/mois facturé annuellement
-  annualTotal: 180,   // €/an
+  monthly: 15.9,        // €/mois en mensuel
+  annualMonthly: 12.9,  // €/mois facturé annuellement
+  annualTotal: 154.8,   // €/an
 } as const;
 
 export const TRIAL_DAYS = 15;
@@ -41,17 +41,46 @@ export interface TierLimits {
 const UNLIMITED = Number.POSITIVE_INFINITY;
 
 export const LIMITS: Record<PlanTier, TierLimits> = {
+  // Braise : « goûter le moteur » — peu de génération, fonctionnalités verrouillées
   braise: {
     projects: 1,
-    aiGenerationsPerMonth: 15,
-    aiImagesPerMonth: 5,
+    aiGenerationsPerMonth: 5,
+    aiImagesPerMonth: 2,
   },
+  // Brasier : usage IA en « illimité équitable » — plafonds très au-dessus d'un
+  // usage intensif réel, calés sur les coûts (≈0,015 €/génération, 0,04 €/image)
+  // pour rester margé même au plafond et bloquer l'abus/scripting.
   brasier: {
     projects: UNLIMITED,
-    aiGenerationsPerMonth: UNLIMITED,
-    aiImagesPerMonth: UNLIMITED,
+    aiGenerationsPerMonth: 300,
+    aiImagesPerMonth: 50,
   },
 };
+
+// ── Fonctionnalités par offre (verrous au-delà des quotas) ────────────────────
+export type Feature = 'publish' | 'analytics' | 'leads' | 'recurring' | 'telegram';
+
+const FEATURES: Record<PlanTier, Record<Feature, boolean>> = {
+  braise:  { publish: false, analytics: false, leads: false, recurring: false, telegram: false },
+  brasier: { publish: true,  analytics: true,  leads: true,  recurring: true,  telegram: true  },
+};
+
+const FEATURE_LABEL: Record<Feature, string> = {
+  publish:   'La publication et la connexion de comptes sociaux',
+  analytics: 'Les analyses et la synchronisation des métriques',
+  leads:     'La détection de leads',
+  recurring: 'Les séries récurrentes',
+  telegram:  'Le pilotage depuis Telegram',
+};
+
+/** Erreur de fonctionnalité verrouillée — traduite en HTTP 402 par le routeur */
+export class FeatureError extends Error {
+  code = 'FEATURE_LOCKED';
+  constructor(public feature: Feature, message: string) {
+    super(message);
+    this.name = 'FeatureError';
+  }
+}
 
 /** Erreur de quota — le routeur la traduit en HTTP 402 (paiement requis) */
 export class QuotaError extends Error {
@@ -173,6 +202,30 @@ export function assertCanCreateProject(userId: string): void {
   }
 }
 
+/** Vrai si l'utilisateur a (effectivement) accès à Brasier — utilisé par les
+ *  workers de fond pour ne PAS traiter les comptes Braise (un essai ayant connecté
+ *  des comptes garde ses connexions après bascule : sans ce filtre, les workers
+ *  publieraient / synchroniseraient / généreraient encore, hors quota). Respecte
+ *  l'interrupteur d'enforcement. */
+export function isBrasier(userId: string): boolean {
+  return effectiveTierForLimits(userId) === 'brasier';
+}
+
+/** Vrai si l'offre effective de l'utilisateur inclut cette fonctionnalité */
+export function hasFeature(userId: string, feature: Feature): boolean {
+  return FEATURES[effectiveTierForLimits(userId)][feature];
+}
+
+/** Vérifie l'accès à une fonctionnalité, sinon lève FeatureError (→ HTTP 402) */
+export function assertFeature(userId: string, feature: Feature): void {
+  if (!hasFeature(userId, feature)) {
+    throw new FeatureError(
+      feature,
+      `${FEATURE_LABEL[feature]} est réservé à l'offre Brasier. Passez à Brasier pour en profiter.`,
+    );
+  }
+}
+
 /** Remboursement possible : abonnement ACTIF, payé, et dans la fenêtre de garantie.
  *  Le statut doit être strictement 'active' — un abonnement déjà 'canceled'
  *  (donc potentiellement déjà remboursé) ou 'past_due' n'est PAS remboursable
@@ -211,6 +264,7 @@ export function getEntitlementsView(userId: string) {
     tier,
     status: sub.status,
     founder,
+    features: FEATURES[tier],
     trial: { active: isTrialing, endsAt: sub.trialEndsAt, daysLeft: trialDaysLeft },
     subscription: {
       interval: sub.interval,

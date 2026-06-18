@@ -17,7 +17,7 @@ import { isComposioConfigured } from '../services/composio';
 import {
   analyzeMessages, scanInbox, scanPostEngagement, draftEmailForContact, sendEmailViaComposio,
 } from '../services/leadAnalysis';
-import { assertWithinUsage, recordUsage } from '../services/entitlements';
+import { assertWithinUsage, recordUsage, assertFeature } from '../services/entitlements';
 import { handleQuota } from '../middleware/quota';
 import { Contact, ContactType } from '../types';
 
@@ -127,6 +127,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
   }
 
   try {
+    assertFeature(req.user!.userId, 'leads');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const candidates = await analyzeMessages(
       storage.resolveActiveProject(req.user!.userId).ownerUserId,
@@ -149,6 +150,7 @@ router.post('/scan-inbox', async (req: Request, res: Response) => {
   }
 
   try {
+    assertFeature(req.user!.userId, 'leads');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const candidates = await scanInbox(storage.resolveActiveProject(req.user!.userId).ownerUserId);
     recordUsage(req.user!.userId, 'ai_generation');
@@ -179,6 +181,7 @@ router.post('/scan-post', async (req: Request, res: Response) => {
   }
 
   try {
+    assertFeature(req.user!.userId, 'leads');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const candidates = await scanPostEngagement(
       post.userId,
@@ -209,6 +212,7 @@ router.post('/:id/draft-email', async (req: Request, res: Response) => {
   }
 
   try {
+    assertFeature(req.user!.userId, 'leads');
     assertWithinUsage(req.user!.userId, 'ai_generation');
     const draft = await draftEmailForContact(contact.userId, contact, goal);
     recordUsage(req.user!.userId, 'ai_generation');

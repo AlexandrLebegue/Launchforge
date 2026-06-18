@@ -170,25 +170,26 @@ const COPY: Record<Lang, {
       plans: [
         {
           name: 'Braise', price: '0 €', per: 'pour toujours', featured: false,
-          tagline: 'Pour démarrer et tester la forge.',
+          tagline: 'Pour découvrir le moteur.',
           cta: 'Commencer gratuitement',
           features: [
             '1 projet',
-            '15 générations de contenu IA / mois',
-            '5 images IA / mois',
-            'Toutes les fonctionnalités : publication multi-plateformes, calendrier, analytics, détection de leads, assistant & Telegram',
+            '5 générations de contenu IA / mois',
+            '2 images IA / mois',
+            'Plan de lancement IA, rédaction manuelle & calendrier',
             'Export & suppression RGPD en libre-service',
           ],
         },
         {
-          name: 'Brasier', price: '15 €', per: '/ mois', featured: true,
-          tagline: 'Facturé annuellement · ou 20 €/mois en mensuel.',
+          name: 'Brasier', price: '12,90 €', per: '/ mois', featured: true,
+          tagline: 'Facturé annuellement · ou 15,90 €/mois en mensuel.',
           cta: 'Passer à Brasier',
           features: [
-            'Projets illimités',
-            'Générations de contenu IA illimitées',
-            'Images IA illimitées',
-            'Toutes les fonctionnalités, sans aucune limite',
+            'Publication multi-plateformes & auto-publication',
+            'Analytics complets + post-mortem IA',
+            'Détection de leads & CRM',
+            'Séries récurrentes & pilotage Telegram',
+            '300 générations + 50 images IA / mois (usage équitable)',
             'Support prioritaire',
           ],
         },
@@ -197,7 +198,7 @@ const COPY: Record<Lang, {
     faq: {
       title: 'Questions directes, réponses directes',
       items: [
-        { q: 'Combien ça coûte ?', a: 'Deux offres. Braise est gratuite pour toujours : 1 projet, 15 contenus IA et 5 images IA par mois, et toutes les fonctionnalités. Brasier débride tout pour 15 €/mois en annuel (ou 20 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet à Brasier, sans carte bancaire — puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
+        { q: 'Combien ça coûte ?', a: 'Deux offres. Braise est gratuite pour toujours : 1 projet, 5 contenus IA et 2 images IA par mois, le plan de lancement et la rédaction manuelle. Brasier débloque la publication multi-plateformes, les analytics, la détection de leads, les séries récurrentes et Telegram — avec un usage IA généreux — pour 12,90 €/mois en annuel (ou 15,90 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet à Brasier, sans carte bancaire — puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
         { q: 'L\'IA peut-elle publier sans mon accord ?', a: 'Non. La publication automatique est un réglage opt-in, post par post. Par défaut, tout contenu attend votre validation — dans l\'app ou directement depuis Telegram.' },
         { q: 'Comment mes comptes sociaux sont-ils connectés ?', a: 'Par OAuth via Composio : vous autorisez chaque plateforme dans une fenêtre officielle (LinkedIn, Google…), et vous pouvez révoquer chaque connexion en un clic depuis la Configuration. LaunchForge ne voit jamais vos mots de passe.' },
         { q: 'Et mes données ?', a: 'Export complet en JSON et suppression définitive du compte en libre-service (RGPD art. 17 et 20), depuis la vue Configuration. Pas de cookies tiers, pas de revente de données.' },
@@ -301,25 +302,26 @@ const COPY: Record<Lang, {
       plans: [
         {
           name: 'Braise', price: '€0', per: 'forever', featured: false,
-          tagline: 'To get started and test the forge.',
+          tagline: 'To explore the engine.',
           cta: 'Start for free',
           features: [
             '1 project',
-            '15 AI content generations / month',
-            '5 AI images / month',
-            'Every feature: multi-platform publishing, calendar, analytics, lead detection, assistant & Telegram',
+            '5 AI content generations / month',
+            '2 AI images / month',
+            'AI launch plan, manual writing & calendar',
             'Self-service GDPR export & deletion',
           ],
         },
         {
-          name: 'Brasier', price: '€15', per: '/ month', featured: true,
-          tagline: 'Billed annually · or €20/month monthly.',
+          name: 'Brasier', price: '€12.90', per: '/ month', featured: true,
+          tagline: 'Billed annually · or €15.90/month monthly.',
           cta: 'Move up to Brasier',
           features: [
-            'Unlimited projects',
-            'Unlimited AI content generations',
-            'Unlimited AI images',
-            'Every feature, with no limits at all',
+            'Multi-platform publishing & auto-publishing',
+            'Full analytics + AI post-mortems',
+            'Lead detection & CRM',
+            'Recurring series & Telegram control',
+            '300 generations + 50 images / month (fair use)',
             'Priority support',
           ],
         },
@@ -328,7 +330,7 @@ const COPY: Record<Lang, {
     faq: {
       title: 'Straight questions, straight answers',
       items: [
-        { q: 'How much does it cost?', a: 'Two plans. Braise is free forever: 1 project, 15 AI contents and 5 AI images per month, and every feature. Brasier unlocks everything for €15/month billed annually (or €20 monthly). Every sign-up starts with 15 days of full Brasier access, no credit card — then automatically switches to Braise. 14-day money-back guarantee.' },
+        { q: 'How much does it cost?', a: 'Two plans. Braise is free forever: 1 project, 5 AI contents and 2 AI images per month, the launch plan and manual writing. Brasier unlocks multi-platform publishing, analytics, lead detection, recurring series and Telegram — with generous AI usage — for €12.90/month billed annually (or €15.90 monthly). Every sign-up starts with 15 days of full Brasier access, no credit card — then automatically switches to Braise. 14-day money-back guarantee.' },
         { q: 'Can the AI publish without my approval?', a: 'No. Auto-publishing is an opt-in setting, per post. By default, every piece of content waits for your approval — in the app or straight from Telegram.' },
         { q: 'How are my social accounts connected?', a: 'Through OAuth via Composio: you authorize each platform in its official window (LinkedIn, Google…), and you can revoke any connection in one click from Settings. LaunchForge never sees your passwords.' },
         { q: 'What about my data?', a: 'Full JSON export and permanent account deletion, self-service (GDPR art. 17 & 20), from the Settings view. No third-party cookies, no data resale.' },

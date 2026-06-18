@@ -16,6 +16,7 @@ import { publishViaComposio, resolvePublishedUrl, isComposioConfigured } from '.
 import { isAIConfigured } from './aiClient';
 import { markPublished, cleanupPublishedVideo } from './postPublisher';
 import { syncPostsToCalendarInBackground } from './calendarSync';
+import { isBrasier } from './entitlements';
 
 const TICK_MS = 60_000;
 
@@ -32,7 +33,9 @@ export async function processDuePosts(
   now: Date = new Date(),
   publish: PublishFn = publishViaComposio,
 ): Promise<number> {
-  const due = storage.getDueAutoPublishPosts(now.toISOString());
+  // Comptes Braise exclus : leurs connexions héritées d'un essai ne doivent
+  // plus déclencher publication ni régénération d'occurrence (hors quota).
+  const due = storage.getDueAutoPublishPosts(now.toISOString()).filter((p) => isBrasier(p.userId));
   let published = 0;
 
   for (const post of due) {

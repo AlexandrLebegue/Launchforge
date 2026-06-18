@@ -48,19 +48,27 @@ function UsageBar({ label, used, limit }: { label: string; used: number; limit: 
 
 const BRAISE_FEATURES = [
   '1 projet',
-  '15 générations de contenu IA / mois',
-  '5 images IA / mois',
-  'Toutes les fonctionnalités : publication multi-plateformes, calendrier, analytics, détection de leads, assistant & Telegram',
+  '5 générations de contenu IA / mois',
+  '2 images IA / mois',
+  'Plan de lancement IA, rédaction manuelle & calendrier',
+  'Assistant IA (dans la limite des 5 générations)',
   'Export & suppression RGPD en libre-service',
 ];
 
+const BRAISE_LOCKED = 'Publication · analytics · détection de leads · séries récurrentes · Telegram';
+
 const BRASIER_FEATURES = [
   'Projets illimités',
-  'Générations de contenu IA illimitées',
-  'Images IA illimitées',
-  'Toutes les fonctionnalités, sans aucune limite',
+  'Publication multi-plateformes & auto-publication',
+  'Analytics complets + post-mortem IA',
+  'Détection de leads & CRM',
+  'Séries récurrentes & pilotage Telegram',
+  '300 générations + 50 images IA / mois (usage équitable)',
   'Support prioritaire',
 ];
+
+/** Formate un montant € à la française (12,90 €) */
+const euro = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
 export default function BillingPage() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -142,10 +150,10 @@ export default function BillingPage() {
   const isBrasier = status.tier === 'brasier';
   const paidActive = status.status === 'active' || status.status === 'past_due';
   const priceLine = interval === 'year'
-    ? `${status.pricing.annualMonthly} €/mois`
-    : `${status.pricing.monthly} €/mois`;
+    ? `${euro(status.pricing.annualMonthly)}/mois`
+    : `${euro(status.pricing.monthly)}/mois`;
   const subPriceNote = interval === 'year'
-    ? `facturé ${status.pricing.annualTotal} €/an · 2 mois offerts`
+    ? `facturé ${euro(status.pricing.annualTotal)}/an`
     : 'facturé chaque mois';
 
   return (
@@ -221,6 +229,9 @@ export default function BillingPage() {
           <div style={{ fontSize: 30, fontWeight: 800, marginTop: 12 }}>Gratuit</div>
           <div style={{ fontSize: 13, opacity: 0.6 }}>pour toujours</div>
           <FeatureList items={BRAISE_FEATURES} />
+          <p style={{ fontSize: 12, opacity: 0.55, marginTop: 14, lineHeight: 1.4 }}>
+            Non inclus : {BRAISE_LOCKED} — réservés à Brasier.
+          </p>
         </div>
 
         {/* Brasier */}
@@ -238,7 +249,7 @@ export default function BillingPage() {
             <button onClick={() => setInterval('year')} style={{
               border: 0, cursor: 'pointer', padding: '5px 12px', borderRadius: 99,
               background: interval === 'year' ? EMBER : 'transparent', color: interval === 'year' ? '#fff' : 'inherit', fontWeight: 600,
-            }}>Annuel −25%</button>
+            }}>Annuel −19%</button>
             <button onClick={() => setInterval('month')} style={{
               border: 0, cursor: 'pointer', padding: '5px 12px', borderRadius: 99,
               background: interval === 'month' ? EMBER : 'transparent', color: interval === 'month' ? '#fff' : 'inherit', fontWeight: 600,
