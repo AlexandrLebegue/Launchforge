@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary, SubscriptionRecord, SubscriptionStatus, UsageKind } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -54,6 +54,102 @@ export class Storage {
   /** Marque le tutoriel d'accueil comme vu (ne se reproposera plus) */
   clearTutorialPending(userId: string): void {
     getDb().prepare(`UPDATE users SET tutorialPending = 0 WHERE id = ?`).run(userId);
+  }
+
+  // ── Abonnement & facturation (offres Braise / Brasier) ────────────────────
+
+  /** Démarre l'essai « reverse trial » : accès complet pendant `days` jours.
+   *  Ne réécrit jamais une date déjà posée (idempotent à l'inscription). */
+  startTrial(userId: string, days = 15): void {
+    const endsAt = new Date(Date.now() + days * 86_400_000).toISOString();
+    getDb()
+      .prepare(`UPDATE users SET trialEndsAt = COALESCE(trialEndsAt, ?) WHERE id = ?`)
+      .run(endsAt, userId);
+  }
+
+  /** État d'abonnement brut de l'utilisateur (null si compte introuvable) */
+  getSubscription(userId: string): SubscriptionRecord | null {
+    const row = getDb()
+      .prepare(
+        `SELECT subscriptionStatus, stripeCustomerId, stripeSubscriptionId,
+                subscriptionInterval, subscriptionCurrentPeriodEnd,
+                subscriptionCancelAt, trialEndsAt, firstPaidAt
+         FROM users WHERE id = ?`
+      )
+      .get(userId) as any;
+    if (!row) return null;
+    return {
+      status:               (row.subscriptionStatus ?? 'none') as SubscriptionStatus,
+      stripeCustomerId:     row.stripeCustomerId ?? null,
+      stripeSubscriptionId: row.stripeSubscriptionId ?? null,
+      interval:             row.subscriptionInterval ?? null,
+      currentPeriodEnd:     row.subscriptionCurrentPeriodEnd ?? null,
+      cancelAt:             row.subscriptionCancelAt ?? null,
+      trialEndsAt:          row.trialEndsAt ?? null,
+      firstPaidAt:          row.firstPaidAt ?? null,
+    };
+  }
+
+  /** Mémorise l'identifiant client Stripe (1re session de paiement) */
+  setStripeCustomerId(userId: string, customerId: string): void {
+    getDb().prepare(`UPDATE users SET stripeCustomerId = ? WHERE id = ?`).run(customerId, userId);
+  }
+
+  /** Retrouve l'utilisateur par son client Stripe (résolution des webhooks) */
+  getUserIdByStripeCustomerId(customerId: string): string | null {
+    const row = getDb().prepare(`SELECT id FROM users WHERE stripeCustomerId = ?`).get(customerId) as { id: string } | undefined;
+    return row?.id ?? null;
+  }
+
+  /** Met à jour l'état d'abonnement depuis Stripe (webhook ou checkout) */
+  updateSubscription(userId: string, patch: Partial<SubscriptionRecord>): void {
+    const map: Record<string, string> = {
+      status:               'subscriptionStatus',
+      stripeCustomerId:     'stripeCustomerId',
+      stripeSubscriptionId: 'stripeSubscriptionId',
+      interval:             'subscriptionInterval',
+      currentPeriodEnd:     'subscriptionCurrentPeriodEnd',
+      cancelAt:             'subscriptionCancelAt',
+      trialEndsAt:          'trialEndsAt',
+      firstPaidAt:          'firstPaidAt',
+    };
+    const fields: string[] = [];
+    const vals: any[] = [];
+    for (const [key, col] of Object.entries(map)) {
+      if (key in patch) { fields.push(`${col} = ?`); vals.push((patch as any)[key]); }
+    }
+    if (fields.length === 0) return;
+    vals.push(userId);
+    getDb().prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  /** Pose la date du 1er paiement une seule fois (fenêtre de remboursement) */
+  markFirstPaidAt(userId: string, iso: string): void {
+    getDb().prepare(`UPDATE users SET firstPaidAt = COALESCE(firstPaidAt, ?) WHERE id = ?`).run(iso, userId);
+  }
+
+  // ── Compteurs d'usage IA mensuel (bornes de l'offre Braise) ───────────────
+
+  /** Enregistre une unité d'usage IA pour le mois courant */
+  recordUsage(userId: string, kind: UsageKind, at = new Date()): void {
+    const month = at.toISOString().slice(0, 7); // 'YYYY-MM'
+    getDb()
+      .prepare(`INSERT INTO usage_events (id, userId, kind, month, createdAt) VALUES (?, ?, ?, ?, ?)`)
+      .run(randomUUID(), userId, kind, month, at.toISOString());
+  }
+
+  /** Nombre d'unités d'usage consommées ce mois (par défaut le mois courant) */
+  countUsage(userId: string, kind: UsageKind, month = new Date().toISOString().slice(0, 7)): number {
+    const row = getDb()
+      .prepare(`SELECT COUNT(*) AS n FROM usage_events WHERE userId = ? AND kind = ? AND month = ?`)
+      .get(userId, kind, month) as { n: number };
+    return row.n;
+  }
+
+  /** Nombre de projets (plans) possédés par l'utilisateur — borne Braise */
+  countOwnedPlans(userId: string): number {
+    const row = getDb().prepare(`SELECT COUNT(*) AS n FROM plans WHERE userId = ?`).get(userId) as { n: number };
+    return row.n;
   }
 
   // ── Authentification OAuth (Google & co) ─────────────────────────────────
@@ -145,7 +241,7 @@ export class Storage {
     db.transaction(() => {
       db.prepare(`DELETE FROM agent_runs WHERE agentId IN (SELECT id FROM agents WHERE userId = ?)`).run(userId);
       for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'knowledge_sources', 'contacts',
-                           'telegram_links', 'reminders', 'decks', 'campaign_reports', 'onboarding_sessions', 'conversations', 'plans']) {
+                           'telegram_links', 'reminders', 'decks', 'campaign_reports', 'onboarding_sessions', 'conversations', 'usage_events', 'plans']) {
         db.prepare(`DELETE FROM ${table} WHERE userId = ?`).run(userId);
       }
       // Équipes possédées : on supprime l'équipe, ses invitations et ses membres

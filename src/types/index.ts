@@ -209,6 +209,29 @@ export interface User {
   tutorialPending?: boolean;
 }
 
+// ── Abonnement & facturation ──────────────────────────────────────────────────
+// Deux offres : « Braise » (gratuite, limitée) et « Brasier » (payante, tout
+// illimité). L'accès Brasier vient soit d'un abonnement Stripe actif, soit de
+// l'essai « reverse trial » de 15 jours non expiré (cf. services/entitlements).
+
+export type PlanTier = 'braise' | 'brasier';
+export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | 'canceled';
+
+/** État d'abonnement brut, tel que stocké sur l'utilisateur */
+export interface SubscriptionRecord {
+  status: SubscriptionStatus;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  interval: 'month' | 'year' | null;
+  currentPeriodEnd: string | null;
+  cancelAt: string | null;
+  trialEndsAt: string | null;
+  firstPaidAt: string | null;
+}
+
+/** Compteur d'usage IA mensuel (ressource bornée pour l'offre Braise) */
+export type UsageKind = 'ai_generation' | 'ai_image';
+
 export interface AuthRequest {
   email: string;
   password: string;

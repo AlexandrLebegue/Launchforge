@@ -14,6 +14,8 @@ import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../service
 import { analyzePost } from '../services/analytics';
 import { fetchPostContentDirect } from '../services/composioDirect';
 import { checkEmbeddable } from '../services/embed';
+import { assertWithinUsage, recordUsage } from '../services/entitlements';
+import { handleQuota } from '../middleware/quota';
 import { Post, PostStatus, Recurrence } from '../types';
 
 const router = Router();
@@ -352,8 +354,12 @@ router.post('/:id/crosspost', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'platforms must be a non-empty array of platform names' });
   }
 
+  // L'adaptation IA réécrit chaque exemplaire (coût) ; la simple duplication non.
+  const useAI = Boolean(adapt);
   try {
-    const created = await crosspostTo(post, platforms as string[], Boolean(adapt));
+    if (useAI) assertWithinUsage(req.user!.userId, 'ai_generation', platforms.length);
+    const created = await crosspostTo(post, platforms as string[], useAI);
+    if (useAI) for (let i = 0; i < created.length; i++) recordUsage(req.user!.userId, 'ai_generation');
     // Les exemplaires programmés repartent dans le calendrier personnel
     const scheduled = created.filter((p) => p.status === 'scheduled' && p.scheduledAt);
     if (scheduled.length > 0) syncPostsToCalendarInBackground(scheduled);
@@ -362,6 +368,7 @@ router.post('/:id/crosspost', async (req: Request, res: Response) => {
       data: { posts: created, post: storage.getPostById(post.id)!, skipped: platforms.length - created.length },
     });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Déclinaison échouée' });
   }
 });
@@ -395,10 +402,13 @@ router.post('/:id/recurrence/preview', async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const gen = await generateOccurrenceContent(candidate);
+    recordUsage(req.user!.userId, 'ai_generation');
     const tags = gen.hashtags.length > 0 ? `\n\n${gen.hashtags.map((h) => `#${h}`).join(' ')}` : '';
     res.json({ success: true, data: { title: gen.title, content: gen.content + tags } });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Simulation échouée' });
   }
 });
@@ -544,9 +554,12 @@ router.post('/:id/analyze', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'Seuls les posts publiés peuvent être analysés' });
   }
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const result = await analyzePost(post.userId, post);
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: result });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Analyse échouée' });
   }
 });

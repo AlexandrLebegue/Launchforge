@@ -56,6 +56,8 @@ router.post('/register', registerLimiter, (req: Request, res: Response) => {
     // Chaque nouveau compte a sa propre entité Composio (connexions isolées) ;
     // les comptes créés avant le multi-utilisateur restent sur l'identité legacy.
     storage.setComposioUserId(id, `lf-${id}`);
+    // Essai « reverse trial » : 15 jours d'accès complet (Brasier), puis Braise.
+    storage.startTrial(id);
     logEvent(id, 'user.register', id, { email });
 
     const token = signToken({ userId: id, email });
@@ -167,6 +169,8 @@ router.get('/google/callback', async (req: Request, res: Response) => {
       const newUser: User = { id, email: profile.email, name: profile.name, createdAt: now };
       storage.saveOAuthUser(newUser, 'google', profile.sub);
       storage.setComposioUserId(id, `lf-${id}`);
+      // Essai « reverse trial » : 15 jours d'accès complet (Brasier), puis Braise.
+      storage.startTrial(id);
       logEvent(id, 'user.register', id, { email: profile.email, provider: 'google' });
       user = newUser;
     }

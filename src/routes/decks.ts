@@ -16,6 +16,8 @@ import {
 import { renderDeckGif, renderDeckMp4 } from '../services/deckMedia';
 import { saveMediaFile } from '../services/mediaStore';
 import { uploadPublicImage } from '../services/imageGen';
+import { assertWithinUsage, recordUsage } from '../services/entitlements';
+import { handleQuota } from '../middleware/quota';
 
 const router = Router();
 
@@ -58,7 +60,9 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const { title, markdown } = await generateDeckMarkdown(ctx.ownerUserId, brief.trim().slice(0, 1000), Number(slides) || 8);
+    recordUsage(req.user!.userId, 'ai_generation');
     const deck = {
       id: uuid(),
       userId: ctx.ownerUserId,
@@ -70,6 +74,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     storage.saveDeck(deck);
     res.status(201).json({ success: true, data: { id: deck.id, title: deck.title, createdAt: deck.createdAt } });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération échouée' });
   }
 });

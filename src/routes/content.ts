@@ -14,9 +14,20 @@ import { generateContent, isContentAssistantConfigured } from '../services/conte
 import { generateContentCalendar, clampParams } from '../services/calendarGenerator';
 import { syncPostsToCalendarInBackground } from '../services/calendarSync';
 import { runPostChatTurn, PostChatMessage } from '../services/postAssistant';
+import { assertWithinUsage, recordUsage, QuotaError } from '../services/entitlements';
 
 const router = Router();
 router.use(requireAuth);
+
+/** Traduit une QuotaError en réponse HTTP 402 (paiement requis). Renvoie true
+ *  si l'erreur a été gérée. */
+function handleQuota(res: Response, err: unknown): boolean {
+  if (err instanceof QuotaError) {
+    res.status(402).json({ success: false, error: err.message, code: err.code, resource: err.resource, used: err.used, limit: err.limit });
+    return true;
+  }
+  return false;
+}
 
 router.post('/generate', async (req: Request, res: Response) => {
   if (!isContentAssistantConfigured()) {
@@ -39,6 +50,7 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const result = await generateContent({
       userId: req.user!.userId,
       platform,
@@ -47,8 +59,10 @@ router.post('/generate', async (req: Request, res: Response) => {
       baseContent: typeof baseContent === 'string' && baseContent.trim() ? baseContent : undefined,
       useNews: Boolean(useNews),
     });
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: result });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     const msg = err instanceof Error ? err.message : 'Generation failed';
     res.status(msg === 'AI_NOT_CONFIGURED' ? 503 : 502).json({ success: false, error: msg });
   }
@@ -79,6 +93,9 @@ router.post('/calendar', async (req: Request, res: Response) => {
   }
 
   try {
+    // Lot : on réserve le quota pour le nombre de posts demandé (évite qu'un
+    // seul calendrier dépasse largement la limite Braise)
+    assertWithinUsage(req.user!.userId, 'ai_generation', Math.max(1, weeks * postsPerWeek));
     const posts = await generateContentCalendar({
       userId: req.user!.userId,
       weeks,
@@ -86,12 +103,16 @@ router.post('/calendar', async (req: Request, res: Response) => {
       platforms,
       startDate: start,
     });
+    // Un calendrier = un lot de posts rédigés par l'IA : on comptabilise une
+    // unité d'usage par post produit (coût réel proportionnel).
+    for (let i = 0; i < posts.length; i++) recordUsage(req.user!.userId, 'ai_generation');
 
     // Tout le lot part dans le calendrier personnel (best-effort, non bloquant)
     syncPostsToCalendarInBackground(posts);
 
     res.status(201).json({ success: true, data: posts });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     const msg = err instanceof Error ? err.message : 'Generation failed';
     res.status(msg === 'AI_NOT_CONFIGURED' ? 503 : 502).json({ success: false, error: msg });
   }
@@ -121,6 +142,14 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'messages must end with a user message' });
   }
 
+  // Quota d'offre vérifié AVANT d'ouvrir le flux SSE (réponse 402 propre)
+  try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
+  } catch (err) {
+    if (handleQuota(res, err)) return;
+    throw err;
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -132,6 +161,7 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
 
   try {
     const result = await runPostChatTurn(req.user!.userId, history, send);
+    recordUsage(req.user!.userId, 'ai_generation');
     send({ type: 'done', reply: result.reply, actions: result.actions, savedPosts: result.savedPosts });
   } catch (err) {
     send({ type: 'error', error: err instanceof Error ? err.message : 'Chat failed' });
@@ -153,9 +183,12 @@ router.get('/report', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
   }
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const { report, stats } = await generateCampaignReport(req.user!.userId);
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: { report, stats } });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Rapport échoué' });
   }
 });
@@ -210,10 +243,13 @@ router.post('/comments/analyze', async (req: Request, res: Response) => {
     return res.status(503).json({ success: false, error: 'AI_NOT_CONFIGURED' });
   }
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const ctx = storage.resolveActiveProject(req.user!.userId);
     const analysis = await analyzeComments(ctx.ownerUserId, ctx.planId);
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: analysis });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     const msg = err instanceof Error ? err.message : 'Analyse échouée';
     res.status(msg === 'AI_NOT_CONFIGURED' ? 503 : 502).json({ success: false, error: msg });
   }
@@ -230,13 +266,16 @@ router.post('/image', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'brief is required' });
   }
   try {
+    assertWithinUsage(req.user!.userId, 'ai_image');
     const { url, public: isPublic } = await generateImage(req.user!.userId, brief.trim().slice(0, 600));
+    recordUsage(req.user!.userId, 'ai_image');
     if (postId) {
       const post = storage.getPostById(postId);
       if (post && post.userId === req.user!.userId) storage.updatePost(post.id, { imageUrl: url });
     }
     res.json({ success: true, data: { url, publicUrl: isPublic ? url : null } });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Génération échouée' });
   }
 });

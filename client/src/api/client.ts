@@ -1483,3 +1483,56 @@ export async function getAdminActivity(limit = 50, before?: string): Promise<Api
   if (before) params.set('before', before);
   return request(`/admin/activity?${params}`);
 }
+
+// ── Abonnement & facturation (offres Braise / Brasier) ────────────────────────
+
+export type PlanTier = 'braise' | 'brasier';
+export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | 'canceled';
+
+export interface UsageMetric {
+  used: number;
+  /** null = illimité */
+  limit: number | null;
+}
+
+export interface BillingStatus {
+  tier: PlanTier;
+  status: SubscriptionStatus;
+  founder: boolean;
+  trial: { active: boolean; endsAt: string | null; daysLeft: number };
+  subscription: { interval: 'month' | 'year' | null; currentPeriodEnd: string | null; cancelAt: string | null };
+  refundEligible: boolean;
+  enforcement: boolean;
+  usage: { aiGenerations: UsageMetric; aiImages: UsageMetric; projects: UsageMetric };
+  pricing: { currency: string; monthly: number; annualMonthly: number; annualTotal: number };
+  trialDays: number;
+  refundDays: number;
+  billingConfigured: boolean;
+}
+
+export interface RefundResult {
+  refunded: boolean;
+  amount: number | null;
+  currency: string | null;
+  reason?: string;
+}
+
+/** État de l'offre, de l'essai et de l'usage du compte courant */
+export async function getBillingStatus(): Promise<ApiResponse<BillingStatus>> {
+  return request('/billing/status');
+}
+
+/** Démarre le paiement Stripe (renvoie l'URL Checkout à ouvrir) */
+export async function startCheckout(interval: 'month' | 'year'): Promise<ApiResponse<{ url: string }>> {
+  return request('/billing/checkout', { method: 'POST', body: JSON.stringify({ interval }) });
+}
+
+/** Ouvre le portail client Stripe (gérer/résilier) */
+export async function openBillingPortal(): Promise<ApiResponse<{ url: string }>> {
+  return request('/billing/portal', { method: 'POST' });
+}
+
+/** Remboursement self-service (garantie 14 jours) */
+export async function requestRefund(): Promise<ApiResponse<RefundResult>> {
+  return request('/billing/refund', { method: 'POST' });
+}

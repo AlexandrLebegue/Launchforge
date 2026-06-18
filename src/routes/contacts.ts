@@ -17,6 +17,8 @@ import { isComposioConfigured } from '../services/composio';
 import {
   analyzeMessages, scanInbox, scanPostEngagement, draftEmailForContact, sendEmailViaComposio,
 } from '../services/leadAnalysis';
+import { assertWithinUsage, recordUsage } from '../services/entitlements';
+import { handleQuota } from '../middleware/quota';
 import { Contact, ContactType } from '../types';
 
 const router = Router();
@@ -125,13 +127,16 @@ router.post('/analyze', async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const candidates = await analyzeMessages(
       storage.resolveActiveProject(req.user!.userId).ownerUserId,
       text,
       str(source, 100) || 'messages collés',
     );
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: candidates });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Analyse failed' });
   }
 });
@@ -144,9 +149,12 @@ router.post('/scan-inbox', async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const candidates = await scanInbox(storage.resolveActiveProject(req.user!.userId).ownerUserId);
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: candidates });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Scan failed' });
   }
 });
@@ -171,14 +179,17 @@ router.post('/scan-post', async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const candidates = await scanPostEngagement(
       post.userId,
       post.platform,
       post.externalUrl,
       post.title,
     );
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: candidates });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Scan failed' });
   }
 });
@@ -198,9 +209,12 @@ router.post('/:id/draft-email', async (req: Request, res: Response) => {
   }
 
   try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
     const draft = await draftEmailForContact(contact.userId, contact, goal);
+    recordUsage(req.user!.userId, 'ai_generation');
     res.json({ success: true, data: draft });
   } catch (err) {
+    if (handleQuota(res, err)) return;
     res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Draft failed' });
   }
 });

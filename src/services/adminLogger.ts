@@ -14,7 +14,9 @@ export type AdminAction =
   | 'agent.run'
   | 'knowledge.created'
   | 'team.created'
-  | 'team.joined';
+  | 'team.joined'
+  | 'billing.checkout_started'
+  | 'billing.refunded';
 
 export function logEvent(
   userId: string,

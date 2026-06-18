@@ -3,9 +3,9 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Flame, LayoutDashboard, Megaphone, CalendarDays, MessageSquare,
   TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut, HelpCircle,
-  Compass, PenLine, Users, Shield,
+  Compass, PenLine, Users, Shield, Gem,
 } from 'lucide-react';
-import { User, setToken, getOverview, activatePlan, markTutorialSeen, ProjectSummary } from '../api/client';
+import { User, setToken, getOverview, activatePlan, markTutorialSeen, ProjectSummary, getBillingStatus, BillingStatus } from '../api/client';
 import { isAdminEmail } from '../utils/admin';
 import LogoEmbers from './LogoEmbers';
 import GuidedTour, { TourStep } from './GuidedTour';
@@ -222,6 +222,7 @@ export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
+  const [billing, setBilling] = useState<BillingStatus | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -290,6 +291,11 @@ export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
     const timer = setInterval(loadOverview, 30000);
     return () => clearInterval(timer);
   }, [loadOverview, location.pathname]);
+
+  // État d'abonnement (badge essai / pastille upgrade) — rafraîchi à la navigation
+  useEffect(() => {
+    getBillingStatus().then((res) => { if (res.success && res.data) setBilling(res.data); });
+  }, [location.pathname]);
 
   const activeProject = projects.find((p) => p.active) ?? projects[0];
 
@@ -439,6 +445,22 @@ export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
               <div className="layout-user-role">Founder</div>
             </div>
           </div>
+
+          <Link
+            to="/billing"
+            className={`layout-nav-item${location.pathname.startsWith('/billing') ? ' active' : ''}`}
+            onClick={closeSidebar}
+            title="Abonnement & facturation"
+          >
+            <span className="layout-nav-icon"><Gem size={17} /></span>
+            Abonnement
+            {billing?.trial.active && (
+              <span className="layout-nav-badge" title="Essai en cours">{billing.trial.daysLeft}j</span>
+            )}
+            {billing && !billing.trial.active && billing.tier === 'braise' && (
+              <span className="layout-nav-badge" style={{ background: '#ff6b35' }} title="Passer à Brasier">↑</span>
+            )}
+          </Link>
 
           {isAdminEmail(user.email) && (
             <Link

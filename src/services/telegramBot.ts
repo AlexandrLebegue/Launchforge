@@ -23,6 +23,7 @@ import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
 import { generateDeckMarkdown, themeForUser } from './decks';
 import { analyzePost, generateCampaignReport } from './analytics';
+import { assertWithinUsage, recordUsage, QuotaError } from './entitlements';
 import { renderDeckGif, renderDeckMp4 } from './deckMedia';
 import { saveMediaFile } from './mediaStore';
 import { uploadPublicImage } from './imageGen';
@@ -400,7 +401,35 @@ function findByShortId<T extends { id: string }>(items: T[], ref: string): T | u
   return items.find((i) => i.id === ref || i.id.startsWith(ref));
 }
 
-export async function executeTool(userId: string, _chatId: string, name: string, args: any): Promise<string> {
+// Outils Telegram qui consomment une génération IA (mêmes quotas que les routes
+// HTTP — le bot est une interface à part qui ne passe pas par leur garde).
+const AI_GEN_TOOLS = new Set([
+  'simulate_recurrence', 'crosspost_post', 'draft_post', 'generate_deck', 'analyze_post', 'campaign_report',
+]);
+const AI_IMAGE_TOOLS = new Set(['generate_image']);
+
+/**
+ * Garde de quota autour du dispatcher : un compte Braise au-delà de sa limite
+ * reçoit un message clair au lieu de générer (sinon Telegram contournerait
+ * l'offre freemium). L'usage n'est compté qu'après une exécution réussie.
+ */
+export async function executeTool(userId: string, chatId: string, name: string, args: any): Promise<string> {
+  const kind: 'ai_image' | 'ai_generation' | null =
+    AI_IMAGE_TOOLS.has(name) ? 'ai_image' : (AI_GEN_TOOLS.has(name) ? 'ai_generation' : null);
+  if (kind) {
+    try {
+      assertWithinUsage(userId, kind);
+    } catch (e) {
+      if (e instanceof QuotaError) return `⚠️ ${e.message}`;
+      throw e;
+    }
+  }
+  const result = await executeToolInner(userId, chatId, name, args);
+  if (kind) recordUsage(userId, kind);
+  return result;
+}
+
+async function executeToolInner(userId: string, _chatId: string, name: string, args: any): Promise<string> {
   // Le bot travaille dans le contexte du projet actif, comme l'app web
   const planId = storage.getActivePlanId(userId);
   switch (name) {

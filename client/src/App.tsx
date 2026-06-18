@@ -20,6 +20,7 @@ import ContentHubPage from './pages/ContentHubPage';
 import CalendarPage from './pages/CalendarPage';
 import KnowledgePage from './pages/KnowledgePage';
 import TeamsPage from './pages/TeamsPage';
+import BillingPage from './pages/BillingPage';
 import AdminPage from './pages/AdminPage';
 import { isAdminEmail } from './utils/admin';
 
@@ -81,6 +82,7 @@ export default function App() {
             <Route path="performance" element={<PerformancePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
             <Route path="teams" element={<TeamsPage />} />
+            <Route path="billing" element={<BillingPage />} />
             {isAdminEmail(user.email) && (
               <Route path="admin" element={<AdminPage />} />
             )}

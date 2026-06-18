@@ -58,6 +58,16 @@ services:
       # ── Administration ────────────────────────────────────────
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
 
+      # ── Abonnement & facturation — Stripe (optionnel) ─────────
+      # Sans ces variables : l'essai + l'offre Braise marchent, mais le
+      # paiement Brasier est indisponible (bouton « bientôt »). Voir docs/BILLING.md.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:-}
+      STRIPE_PRICE_ANNUAL: ${STRIPE_PRICE_ANNUAL:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # 'false' = ne bride personne (lancement souple). Défaut : true.
+      BILLING_ENFORCE_LIMITS: ${BILLING_ENFORCE_LIMITS:-true}
+
       # ── Intégrations optionnelles ─────────────────────────────
       COMPOSIO_MCP_URL: ${COMPOSIO_MCP_URL:-}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}

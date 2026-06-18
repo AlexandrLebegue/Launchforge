@@ -7,6 +7,7 @@ import { generateContentCalendar } from '../services/calendarGenerator';
 import { platformsForNiche, bootstrapKnowledgeFromProfile } from '../services/bootstrap';
 import { notifyLinkedChats } from '../services/telegramBot';
 import { logEvent } from '../services/adminLogger';
+import { assertCanCreateProject, hasUsage, recordUsage, QuotaError } from '../services/entitlements';
 import { PlanInput, ApiResponse, LaunchPlan, AuthPayload, KanbanState, Post } from '../types';
 
 const router = Router();
@@ -15,6 +16,17 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
   try {
     const input = req.body as PlanInput;
     const user = req.user as AuthPayload;
+
+    // Quota d'offre : Braise est limitée à 1 projet (Brasier illimité)
+    try {
+      assertCanCreateProject(user.userId);
+    } catch (e) {
+      if (e instanceof QuotaError) {
+        return res.status(402).json({ success: false, error: e.message, code: e.code, resource: e.resource, used: e.used, limit: e.limit });
+      }
+      throw e;
+    }
+
     // AI generation by default when configured; createAILaunchPlan falls back
     // to templates internally, and mode=template forces the static templates.
     const mode = (req.body as any).mode
@@ -45,8 +57,12 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
     // premières idées de posts (brouillons à valider) dans la même requête —
     // le splashscreen côté client couvre l'attente, et l'utilisateur arrive
     // sur un hub déjà rempli.
+    // Amorçage du Hub (6 posts) compté dans le quota IA. On ne l'exécute que si
+    // le quota le permet (sinon le plan est quand même créé, sans posts auto) —
+    // sans ce garde-fou, supprimer/recréer un projet contournerait la limite.
     let bootstrappedPosts: Post[] = [];
-    if (mode === 'ai' && process.env.OPENROUTER_API_KEY) {
+    const BOOTSTRAP_POSTS = 6; // weeks 2 × postsPerWeek 3
+    if (mode === 'ai' && process.env.OPENROUTER_API_KEY && hasUsage(user.userId, 'ai_generation', BOOTSTRAP_POSTS)) {
       try {
         const start = new Date();
         start.setDate(start.getDate() + 1);
@@ -58,6 +74,7 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
           startDate: start,
           status: 'draft',
         });
+        for (let i = 0; i < bootstrappedPosts.length; i++) recordUsage(user.userId, 'ai_generation');
         notifyLinkedChats(
           user.userId,
           `🚀 Ton plan « ${input.productName} » est prêt !\n📝 ${bootstrappedPosts.length} idées de posts ont été rédigées et datées dans ton Hub de contenu — relis-les et valide. Demande-moi « mes brouillons » pour les voir ici.`,

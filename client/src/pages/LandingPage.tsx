@@ -66,24 +66,28 @@ function FeatureHub({ hub }: { hub: { core: { title: string; sub: string }; aria
 }
 
 const COPY: Record<Lang, {
-  nav: { loop: string; product: string; how: string; faq: string; login: string; start: string };
+  nav: { loop: string; product: string; pricing: string; how: string; faq: string; login: string; start: string };
   hero: { before: string; em: string; after: string; sub: string; cta: string; cta2: string; truths: string[] };
   mock: { bar: string; calTitle: string; feedTitle: string; feed: { strong: string; rest: string; badge?: string }[] };
   loop: { title: string; sub: string; aria: string; returnLabel: string; steps: { title: string; desc: string }[] };
   features: { title: string; hub: { core: { title: string; sub: string }; aria: string; nodes: string[] }; items: { title: string; desc: string }[] };
   product: { title: string; sub: string; shots: { title: string; desc: string; points: string[]; alt: string }[] };
   how: { title: string; steps: { title: string; desc: string }[] };
+  pricing: {
+    title: string; sub: string; trialNote: string; guarantee: string;
+    plans: { name: string; price: string; per: string; tagline: string; cta: string; featured: boolean; features: string[] }[];
+  };
   faq: { title: string; items: { q: string; a: string }[] };
   honest: { title: string; body: string; cta: string };
   footer: { tagline: string };
 }> = {
   fr: {
-    nav: { loop: 'La boucle', product: 'Le produit', how: 'Comment ça marche', faq: 'FAQ', login: 'Se connecter', start: 'Commencer' },
+    nav: { loop: 'La boucle', product: 'Le produit', pricing: 'Tarifs', how: 'Comment ça marche', faq: 'FAQ', login: 'Se connecter', start: 'Commencer' },
     hero: {
       before: 'Forgez la ', em: 'traction', after: 'de votre startup',
       sub: 'LaunchForge transforme votre plan de lancement en posts rédigés, adaptés et publiés sur LinkedIn, X, Instagram et YouTube — puis mesure ce qui marche et apprend de vos résultats. Vous gardez la main à chaque étape.',
       cta: 'Commencer gratuitement →', cta2: 'Voir le produit',
-      truths: ['Gratuit pendant la bêta', 'RGPD : export & suppression en libre-service', 'Pilotable depuis Telegram'],
+      truths: ['15 jours en accès complet, sans carte', 'Offre gratuite pour toujours', 'Pilotable depuis Telegram'],
     },
     mock: {
       bar: 'LAUNCHFORGE — VOTRE AGENT TRAVAILLE',
@@ -158,10 +162,42 @@ const COPY: Record<Lang, {
         { title: 'Publiez et apprenez', desc: 'Publication automatique ou validée, métriques relevées, leads détectés — et l\'IA s\'améliore avec vos résultats.' },
       ],
     },
+    pricing: {
+      title: 'Un prix simple, deux offres',
+      sub: 'Commencez gratuitement. Passez à Brasier quand la forge tourne à plein régime.',
+      trialNote: '15 jours d\'accès complet à Brasier offerts à l\'inscription — sans carte bancaire, puis bascule automatique sur Braise.',
+      guarantee: 'Garantie 14 jours satisfait ou remboursé.',
+      plans: [
+        {
+          name: 'Braise', price: '0 €', per: 'pour toujours', featured: false,
+          tagline: 'Pour démarrer et tester la forge.',
+          cta: 'Commencer gratuitement',
+          features: [
+            '1 projet',
+            '15 générations de contenu IA / mois',
+            '5 images IA / mois',
+            'Toutes les fonctionnalités : publication multi-plateformes, calendrier, analytics, détection de leads, assistant & Telegram',
+            'Export & suppression RGPD en libre-service',
+          ],
+        },
+        {
+          name: 'Brasier', price: '15 €', per: '/ mois', featured: true,
+          tagline: 'Facturé annuellement · ou 20 €/mois en mensuel.',
+          cta: 'Passer à Brasier',
+          features: [
+            'Projets illimités',
+            'Générations de contenu IA illimitées',
+            'Images IA illimitées',
+            'Toutes les fonctionnalités, sans aucune limite',
+            'Support prioritaire',
+          ],
+        },
+      ],
+    },
     faq: {
       title: 'Questions directes, réponses directes',
       items: [
-        { q: 'Combien ça coûte ?', a: 'Rien pendant la bêta — pas de carte bancaire demandée. Un tarif simple sera annoncé à la sortie de bêta, et les premiers utilisateurs seront prévenus avant tout changement.' },
+        { q: 'Combien ça coûte ?', a: 'Deux offres. Braise est gratuite pour toujours : 1 projet, 15 contenus IA et 5 images IA par mois, et toutes les fonctionnalités. Brasier débride tout pour 15 €/mois en annuel (ou 20 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet à Brasier, sans carte bancaire — puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
         { q: 'L\'IA peut-elle publier sans mon accord ?', a: 'Non. La publication automatique est un réglage opt-in, post par post. Par défaut, tout contenu attend votre validation — dans l\'app ou directement depuis Telegram.' },
         { q: 'Comment mes comptes sociaux sont-ils connectés ?', a: 'Par OAuth via Composio : vous autorisez chaque plateforme dans une fenêtre officielle (LinkedIn, Google…), et vous pouvez révoquer chaque connexion en un clic depuis la Configuration. LaunchForge ne voit jamais vos mots de passe.' },
         { q: 'Et mes données ?', a: 'Export complet en JSON et suppression définitive du compte en libre-service (RGPD art. 17 et 20), depuis la vue Configuration. Pas de cookies tiers, pas de revente de données.' },
@@ -170,19 +206,19 @@ const COPY: Record<Lang, {
     },
     honest: {
       title: 'Pas de faux avis ici',
-      body: 'LaunchForge est un produit jeune. Plutôt que d\'inventer des témoignages cinq étoiles, on préfère vous montrer le vrai produit — et vous laisser juger. C\'est gratuit pendant la bêta, sans carte bancaire, et vos données s\'exportent ou s\'effacent en deux clics, comme l\'exige le RGPD.',
+      body: 'LaunchForge est un produit jeune. Plutôt que d\'inventer des témoignages cinq étoiles, on préfère vous montrer le vrai produit — et vous laisser juger. L\'offre Braise est gratuite pour toujours, l\'inscription ouvre 15 jours d\'accès complet sans carte bancaire, et vos données s\'exportent ou s\'effacent en deux clics, comme l\'exige le RGPD.',
       cta: 'Essayer et se faire son avis →',
     },
     footer: { tagline: 'Conçu pour les fondateurs qui exécutent.' },
   },
 
   en: {
-    nav: { loop: 'The loop', product: 'The product', how: 'How it works', faq: 'FAQ', login: 'Sign in', start: 'Get started' },
+    nav: { loop: 'The loop', product: 'The product', pricing: 'Pricing', how: 'How it works', faq: 'FAQ', login: 'Sign in', start: 'Get started' },
     hero: {
       before: 'Forge your startup\'s ', em: 'traction', after: '',
       sub: 'LaunchForge turns your launch plan into posts that are written, adapted and published on LinkedIn, X, Instagram and YouTube — then measures what works and learns from your results. You stay in control at every step.',
       cta: 'Start for free →', cta2: 'See the product',
-      truths: ['Free during beta', 'GDPR: self-service export & deletion', 'Drive it from Telegram'],
+      truths: ['15 days of full access, no card', 'Free plan, forever', 'Drive it from Telegram'],
     },
     mock: {
       bar: 'LAUNCHFORGE — YOUR AGENT AT WORK',
@@ -257,10 +293,42 @@ const COPY: Record<Lang, {
         { title: 'Publish and learn', desc: 'Automatic or approved publishing, metrics collected, leads detected — and the AI improves with your results.' },
       ],
     },
+    pricing: {
+      title: 'Simple pricing, two plans',
+      sub: 'Start for free. Move up to Brasier when the forge runs at full blast.',
+      trialNote: '15 days of full Brasier access on sign-up — no credit card, then it automatically switches to Braise.',
+      guarantee: '14-day money-back guarantee.',
+      plans: [
+        {
+          name: 'Braise', price: '€0', per: 'forever', featured: false,
+          tagline: 'To get started and test the forge.',
+          cta: 'Start for free',
+          features: [
+            '1 project',
+            '15 AI content generations / month',
+            '5 AI images / month',
+            'Every feature: multi-platform publishing, calendar, analytics, lead detection, assistant & Telegram',
+            'Self-service GDPR export & deletion',
+          ],
+        },
+        {
+          name: 'Brasier', price: '€15', per: '/ month', featured: true,
+          tagline: 'Billed annually · or €20/month monthly.',
+          cta: 'Move up to Brasier',
+          features: [
+            'Unlimited projects',
+            'Unlimited AI content generations',
+            'Unlimited AI images',
+            'Every feature, with no limits at all',
+            'Priority support',
+          ],
+        },
+      ],
+    },
     faq: {
       title: 'Straight questions, straight answers',
       items: [
-        { q: 'How much does it cost?', a: 'Nothing during the beta — no credit card required. Simple pricing will be announced at the end of the beta, and early users will be notified before any change.' },
+        { q: 'How much does it cost?', a: 'Two plans. Braise is free forever: 1 project, 15 AI contents and 5 AI images per month, and every feature. Brasier unlocks everything for €15/month billed annually (or €20 monthly). Every sign-up starts with 15 days of full Brasier access, no credit card — then automatically switches to Braise. 14-day money-back guarantee.' },
         { q: 'Can the AI publish without my approval?', a: 'No. Auto-publishing is an opt-in setting, per post. By default, every piece of content waits for your approval — in the app or straight from Telegram.' },
         { q: 'How are my social accounts connected?', a: 'Through OAuth via Composio: you authorize each platform in its official window (LinkedIn, Google…), and you can revoke any connection in one click from Settings. LaunchForge never sees your passwords.' },
         { q: 'What about my data?', a: 'Full JSON export and permanent account deletion, self-service (GDPR art. 17 & 20), from the Settings view. No third-party cookies, no data resale.' },
@@ -269,7 +337,7 @@ const COPY: Record<Lang, {
     },
     honest: {
       title: 'No fake reviews here',
-      body: 'LaunchForge is a young product. Rather than inventing five-star testimonials, we\'d rather show you the real thing — and let you judge. It\'s free during the beta, no credit card, and your data can be exported or wiped in two clicks, as the GDPR requires.',
+      body: 'LaunchForge is a young product. Rather than inventing five-star testimonials, we\'d rather show you the real thing — and let you judge. The Braise plan is free forever, signing up opens 15 days of full access with no credit card, and your data can be exported or wiped in two clicks, as the GDPR requires.',
       cta: 'Try it and make up your own mind →',
     },
     footer: { tagline: 'Built for founders who ship.' },
@@ -447,6 +515,7 @@ export default function LandingPage() {
           <nav className="landing-nav-links" aria-label="Navigation principale">
             <a href="#boucle">{c.nav.loop}</a>
             <a href="#produit">{c.nav.product}</a>
+            <a href="#tarifs">{c.nav.pricing}</a>
             <a href="#how">{c.nav.how}</a>
             <a href="#faq">{c.nav.faq}</a>
             <LangSwitch />
@@ -573,6 +642,63 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Tarifs ── */}
+      <section className="landing-section landing-section-alt gs-section" id="tarifs">
+        <div className="landing-section-inner">
+          <h2 className="landing-section-title gs-reveal">{c.pricing.title}</h2>
+          <div className="ember-line gs-reveal" />
+          <p className="landing-section-sub gs-reveal" style={{ marginTop: 14 }}>{c.pricing.sub}</p>
+          <div
+            className="gs-reveal"
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 22, marginTop: 36, maxWidth: 820, marginInline: 'auto' }}
+          >
+            {c.pricing.plans.map((p) => (
+              <div
+                key={p.name}
+                style={{
+                  position: 'relative', borderRadius: 16, padding: '26px 24px',
+                  border: p.featured ? '2px solid #ff6b35' : '1px solid rgba(255,255,255,0.12)',
+                  background: p.featured ? 'rgba(255,107,53,0.06)' : 'rgba(255,255,255,0.02)',
+                  boxShadow: p.featured ? '0 0 0 5px rgba(255,107,53,0.08)' : 'none',
+                }}
+              >
+                {p.featured && (
+                  <span style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: '#ff6b35', color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 99, letterSpacing: 0.5, whiteSpace: 'nowrap' }}>
+                    POPULAIRE
+                  </span>
+                )}
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 22, margin: 0 }}>
+                  <Flame size={18} style={{ color: p.featured ? '#ff6b35' : 'inherit' }} /> {p.name}
+                </h3>
+                <div style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontSize: 40, fontWeight: 800 }}>{p.price}</span>
+                  <span style={{ opacity: 0.6, fontSize: 15 }}>{p.per}</span>
+                </div>
+                <p style={{ opacity: 0.7, fontSize: 14, marginTop: 6, minHeight: 38 }}>{p.tagline}</p>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 0', display: 'grid', gap: 11 }}>
+                  {p.features.map((f) => (
+                    <li key={f} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 14, lineHeight: 1.45 }}>
+                      <Flame size={13} style={{ color: '#ff6b35', flexShrink: 0, marginTop: 4 }} /> <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  to="/register"
+                  className={`btn ${p.featured ? 'btn-primary btn-primary-glow' : 'btn-ghost'} btn-lg`}
+                  style={{ width: '100%', marginTop: 22, justifyContent: 'center' }}
+                >
+                  {p.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
+          <div className="gs-reveal" style={{ textAlign: 'center', marginTop: 24, fontSize: 14, opacity: 0.85, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+            <span><Sparkles size={14} style={{ verticalAlign: -2, color: '#ff6b35' }} /> {c.pricing.trialNote}</span>
+            <span><ShieldCheck size={14} style={{ verticalAlign: -2, color: '#ff6b35' }} /> {c.pricing.guarantee}</span>
+          </div>
+        </div>
+      </section>
+
       {/* ── FAQ ── */}
       <section className="landing-section gs-section" id="faq">
         <div className="landing-section-inner" style={{ maxWidth: 720 }}>
@@ -610,6 +736,8 @@ export default function LandingPage() {
           <a href="#boucle">{c.nav.loop}</a>
           {' · '}
           <a href="#produit">{c.nav.product}</a>
+          {' · '}
+          <a href="#tarifs">{c.nav.pricing}</a>
           {' · '}
           <Link to="/register">{c.nav.start}</Link>
           {' · '}

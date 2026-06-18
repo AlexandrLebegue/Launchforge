@@ -21,6 +21,7 @@ import { requireAuth } from '../middleware/auth';
 import { runAssistantTurn, isAIConfigured, AssistantMessage } from '../services/assistant';
 import { ChatAttachment } from '../services/attachments';
 import { storage } from '../services/storage';
+import { assertWithinUsage, recordUsage, QuotaError } from '../services/entitlements';
 import { ConversationMessage } from '../types';
 
 const router = Router();
@@ -62,6 +63,16 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     return res.status(400).json({ success: false, error: 'messages must end with a user message' });
   }
 
+  // Quota d'offre (un tour d'assistant = une génération IA) vérifié AVANT le flux SSE
+  try {
+    assertWithinUsage(req.user!.userId, 'ai_generation');
+  } catch (err) {
+    if (err instanceof QuotaError) {
+      return res.status(402).json({ success: false, error: err.message, code: err.code, resource: err.resource, used: err.used, limit: err.limit });
+    }
+    throw err;
+  }
+
   // Identifiant du fil à historiser (fourni par le client). Absent → tour non sauvegardé.
   const rawConvId = (req.body as { conversationId?: unknown }).conversationId;
   const conversationId = typeof rawConvId === 'string' && rawConvId.length <= 64 ? rawConvId : null;
@@ -97,6 +108,7 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
   try {
     const result = await runAssistantTurn(req.user!.userId, history, send, ac.signal, attachments);
     if (!ac.signal.aborted) {
+      recordUsage(req.user!.userId, 'ai_generation');
       send({ type: 'done', reply: result.reply, actions: result.actions });
 
       // Historisation : on persiste le fil complet (échanges précédents + ce

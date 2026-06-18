@@ -575,4 +575,64 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_conversations_user   ON conversations(userId, updatedAt DESC);
     CREATE INDEX IF NOT EXISTS idx_conversations_expiry ON conversations(updatedAt);
   `);
+
+  // ── Abonnement & facturation (offres « Braise » gratuite / « Brasier » payante) ─
+  // Modèle freemium : tout compte démarre par un essai « reverse trial » de 15
+  // jours en accès complet (trialEndsAt), puis retombe sur l'offre Braise
+  // (limitée) tant qu'aucun abonnement Brasier (Stripe) n'est actif.
+  //   subscriptionStatus : 'none' | 'trialing' | 'active' | 'past_due' | 'canceled'
+  //     (le statut Stripe ; 'none' = jamais abonné. L'accès complet vient soit
+  //     d'un abonnement actif, soit de l'essai non expiré — cf. entitlements.ts)
+  if (!userCols.some((c) => c.name === 'subscriptionStatus')) {
+    database.exec(`ALTER TABLE users ADD COLUMN subscriptionStatus TEXT NOT NULL DEFAULT 'none'`);
+  }
+  if (!userCols.some((c) => c.name === 'stripeCustomerId')) {
+    database.exec(`ALTER TABLE users ADD COLUMN stripeCustomerId TEXT`);
+  }
+  if (!userCols.some((c) => c.name === 'stripeSubscriptionId')) {
+    database.exec(`ALTER TABLE users ADD COLUMN stripeSubscriptionId TEXT`);
+  }
+  // 'month' | 'year' — sert à l'affichage et n'est pas la source de vérité du prix
+  if (!userCols.some((c) => c.name === 'subscriptionInterval')) {
+    database.exec(`ALTER TABLE users ADD COLUMN subscriptionInterval TEXT`);
+  }
+  // Fin de la période payée en cours (ISO) — accès maintenu jusque-là même après
+  // résiliation programmée (cancel_at_period_end)
+  if (!userCols.some((c) => c.name === 'subscriptionCurrentPeriodEnd')) {
+    database.exec(`ALTER TABLE users ADD COLUMN subscriptionCurrentPeriodEnd TEXT`);
+  }
+  // Date de résiliation programmée (ISO) — null si l'abonnement se renouvelle
+  if (!userCols.some((c) => c.name === 'subscriptionCancelAt')) {
+    database.exec(`ALTER TABLE users ADD COLUMN subscriptionCancelAt TEXT`);
+  }
+  // Fin de l'essai « reverse trial » (ISO) — accès complet tant que > maintenant
+  if (!userCols.some((c) => c.name === 'trialEndsAt')) {
+    database.exec(`ALTER TABLE users ADD COLUMN trialEndsAt TEXT`);
+  }
+  // Date du 1er paiement (ISO) — fenêtre de la garantie 14 jours satisfait/remboursé
+  if (!userCols.some((c) => c.name === 'firstPaidAt')) {
+    database.exec(`ALTER TABLE users ADD COLUMN firstPaidAt TEXT`);
+    // Backfill : les comptes existants (bêta) reçoivent une période de grâce de
+    // 30 jours en accès complet à partir de la migration — honore la promesse
+    // « les premiers utilisateurs seront prévenus avant tout changement ».
+    // WHERE trialEndsAt IS NULL : posé une seule fois (les boots suivants sautent).
+    // strftime …'Z' : ISO 8601 UTC explicite — sinon datetime() renvoie
+    // 'YYYY-MM-DD HH:MM:SS' (sans fuseau), que `new Date()` lit en heure LOCALE,
+    // décalant l'expiration de l'essai du décalage horaire du serveur.
+    database.exec(`UPDATE users SET trialEndsAt = strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '+30 days') WHERE trialEndsAt IS NULL`);
+  }
+
+  // Compteurs d'usage mensuel des ressources IA (coût variable principal) —
+  // bornent l'offre Braise. Un événement par génération ; comptage par mois
+  // calendaire (month = 'YYYY-MM'). kind : 'ai_generation' | 'ai_image'.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id        TEXT PRIMARY KEY,
+      userId    TEXT NOT NULL,
+      kind      TEXT NOT NULL,
+      month     TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_usage_events_count ON usage_events(userId, kind, month);
+  `);
 }

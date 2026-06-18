@@ -21,11 +21,17 @@ import assistantRoutes from './routes/assistant';
 import deckRoutes from './routes/decks';
 import teamRoutes from './routes/teams';
 import adminRoutes from './routes/admin';
+import billingRoutes, { billingWebhookHandler } from './routes/billing';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
 
 app.use(cors());
+
+// Webhook Stripe : DOIT recevoir le corps BRUT (Buffer) pour vérifier la
+// signature — monté avant express.json(), qui ne s'applique donc pas à lui.
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), billingWebhookHandler);
+
 // 15mb pour accepter les PDF en base64 joints à l'onboarding
 app.use(express.json({ limit: '15mb' }));
 app.use(rateLimit);
@@ -55,6 +61,7 @@ app.use('/api/assistant', assistantRoutes);
 app.use('/api/decks', deckRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Médias générés (GIF/MP4 des decks, visuels) — purge automatique à 90 jours.
 // Le dossier est résolu à chaque requête : UPLOADS_DIR peut être posé après l'import.
