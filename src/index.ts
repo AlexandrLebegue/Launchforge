@@ -10,10 +10,21 @@ import { startTelegramBot } from './services/telegramBot';
 import { startMediaCleanup } from './services/mediaStore';
 import { startWeeklyReports } from './services/analytics';
 import { startConversationCleanup } from './services/conversationCleanup';
+import { jwtSecretIsWeak } from './middleware/auth';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function main() {
+  // Sécurité : en production, refuser de démarrer avec un JWT_SECRET faible/par
+  // défaut (sinon les jetons sont forgeables → usurpation de n'importe quel compte).
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.APP_URL);
+  if (isProd && jwtSecretIsWeak()) {
+    throw new Error(
+      'SECURITY: JWT_SECRET absent, trop court ou par défaut en production. ' +
+      'Définissez une valeur aléatoire forte (`openssl rand -hex 32`) dans .env avant de démarrer.',
+    );
+  }
+
   await initEngine();
   getDb();
 

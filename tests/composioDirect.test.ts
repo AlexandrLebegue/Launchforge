@@ -68,6 +68,17 @@ describe('publishDirect — LinkedIn', () => {
     expect(second.calls.map((c) => c.slug)).toEqual(['LINKEDIN_CREATE_LINKED_IN_POST']);
   });
 
+  it('capture l\'URN du permalien depuis x_restli_id (forme réelle de l\'API LinkedIn)', async () => {
+    const { exec } = recorder({
+      LINKEDIN_GET_MY_INFO: { author_urn: 'urn:li:person:abc123' },
+      // forme réellement renvoyée par LINKEDIN_CREATE_LINKED_IN_POST
+      LINKEDIN_CREATE_LINKED_IN_POST: { x_restli_id: 'urn:li:share:7473431170635079680' },
+    });
+    const out = await publishDirect(userId, 'linkedin', 'Mon post', null, '', exec);
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('urn:li:share:7473431170635079680');
+  });
+
   it('joint l\'image du post : téléversement Composio (s3key) puis paramètre images', async () => {
     const uploaded: string[] = [];
     const upload: FileUploader = async (toolkit, tool, fileUrl) => {
@@ -209,19 +220,25 @@ describe('publishDirect — Instagram', () => {
 });
 
 describe('publishDirect — YouTube', () => {
-  it('mappe titre/description/tags et passe l\'URL publique en videoFilePath', async () => {
-    const { calls, exec } = recorder({ YOUTUBE_UPLOAD_VIDEO: { id: 'dQw4w9WgXcQ' } });
+  it('téléverse la vidéo puis la passe en videoFilePath (fichier) avec version latest', async () => {
+    const uploaded: string[] = [];
+    const upload: FileUploader = async (toolkit, tool, fileUrl) => {
+      uploaded.push(`${toolkit}/${tool}/${fileUrl}`);
+      return { name: 'demo.mp4', mimetype: 'video/mp4', s3key: '42/youtube/req/vid' };
+    };
+    // forme réelle renvoyée par l'outil : { response_data: { id } }
+    const { calls, exec } = recorder({ YOUTUBE_UPLOAD_VIDEO: { response_data: { id: 'dQw4w9WgXcQ' } } });
     const out = await publishDirect(
       userId, 'youtube',
-      'Découvrez la v2 !\nToutes les nouveautés en 3 minutes. #launchforge #saas',
-      'https://launchforge.example/uploads/demo.mp4', 'LaunchForge v2 — démo', exec,
+      'Découvrez la v2 !\nToutes les nouveautés. #launchforge #saas',
+      'https://launchforge.example/uploads/demo.mp4', 'LaunchForge v2 — démo', exec, undefined, upload,
     );
     expect(out.result).toContain('https://youtu.be/dQw4w9WgXcQ');
+    expect(uploaded).toEqual(['youtube/YOUTUBE_UPLOAD_VIDEO/https://launchforge.example/uploads/demo.mp4']);
+    expect(calls[0].version).toBe('latest'); // file_uploadable seulement sur 'latest'
     expect(calls[0].args).toMatchObject({
-      title: 'LaunchForge v2 — démo',
-      privacyStatus: 'public',
-      categoryId: '22',
-      videoFilePath: 'https://launchforge.example/uploads/demo.mp4',
+      title: 'LaunchForge v2 — démo', privacyStatus: 'public', categoryId: '22',
+      videoFilePath: { name: 'demo.mp4', mimetype: 'video/mp4', s3key: '42/youtube/req/vid' },
       tags: ['launchforge', 'saas'],
     });
   });
@@ -294,6 +311,19 @@ describe('publishDirect — Reddit', () => {
       subreddit: 'startups', title: 'Mon lancement', kind: 'self',
       text: 'Lancement de LaunchForge sur r/startups aujourd\'hui !',
     });
+  });
+
+  it('utilise le champ Subreddit dédié (prioritaire, sans mention r/<nom> dans le texte)', async () => {
+    const { calls, exec } = recorder({
+      REDDIT_CREATE_REDDIT_POST: { json: { data: { id: 'fld123', name: 't3_fld123', url: 'https://www.reddit.com/r/test/comments/fld123/x/' } } },
+    });
+    const out = await publishDirect(
+      userId, 'reddit', 'Un post sans aucune mention de subreddit dans le texte.', null,
+      'Mon titre', exec, undefined, undefined, 'test',
+    );
+    expect(out.result).toContain('OK:');
+    expect(out.result).toContain('r/test');
+    expect(calls[0].args).toMatchObject({ subreddit: 'test', kind: 'self' });
   });
 
   it('avec média : post lien vers l\'image, texte publié en premier commentaire', async () => {

@@ -433,8 +433,8 @@ export default function PerformancePage() {
             <p className="form-hint">Chaque barre agrège les métriques des posts publiés cette semaine-là.</p>
           </div>
 
-          {/* ── Progression relative + Camembert côte à côte ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'stretch' }}>
+          {/* ── Progression relative + Camembert côte à côte (empilés en mobile) ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 16, alignItems: 'stretch' }}>
             <RelativeDeltaCard weekly={weekly} />
             <NetworkPieChart data={byPlatform} />
           </div>

@@ -100,6 +100,7 @@ export type FileUploader = (
 
 const EXT_MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
 };
 
 /**
@@ -118,7 +119,7 @@ export const uploadFileToComposio: FileUploader = async (toolkitSlug, toolSlug, 
   const name = decodeURIComponent(new URL(fileUrl).pathname.split('/').pop() || 'media');
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   const headerType = file.headers.get('content-type')?.split(';')[0]?.trim();
-  const mimetype = (headerType?.startsWith('image/') ? headerType : EXT_MIME[ext]) ?? 'application/octet-stream';
+  const mimetype = (headerType && /^(image|video)\//.test(headerType) ? headerType : EXT_MIME[ext]) ?? 'application/octet-stream';
 
   const req = await fetch(`${COMPOSIO_API}/files/upload/request`, {
     method: 'POST',
@@ -346,6 +347,8 @@ export async function publishDirect(
   exec: ToolExecutor = executeComposioTool,
   mcp: McpToolCaller = callMcpToolDirect,
   upload: FileUploader = uploadFileToComposio,
+  /** Subreddit cible (champ dédié de l'éditeur) — prioritaire sur le parsing r/<nom> */
+  subreddit?: string | null,
 ): Promise<DirectPublishResult> {
   const uid = composioUserIdFor(userId);
   if (!uid) return { handled: false };
@@ -399,7 +402,12 @@ export async function publishDirect(
             lifecycleState: 'PUBLISHED',
             ...(images ? { images } : {}),
           }, 'latest');
-          const urn = data?.share_id ?? data?.id ?? data?.urn ?? '';
+          // L'API LinkedIn renvoie l'URN du post dans x_restli_id
+          // (urn:li:share:<id>) ; on garde des replis + un scan profond de la
+          // réponse pour rester robuste aux variations de forme.
+          const urn = data?.x_restli_id ?? data?.share_id ?? data?.id ?? data?.urn
+            ?? JSON.stringify(data ?? {}).match(/urn:li:(?:share|ugcPost|activity):\d+/i)?.[0]
+            ?? '';
           return { handled: true, result: `OK: post LinkedIn publié${urn ? ` ${urn}` : ''}${images ? ' (image jointe)' : note}` };
         } catch (err) {
           const msg = err instanceof Error ? err.message : '';
@@ -476,16 +484,26 @@ export async function publishDirect(
       case 'youtube': {
         if (!mediaUrl || !mediaIsVideo) return { handled: true, result: 'ECHEC: YouTube exige une vidéo (mp4/webm/mov).' };
         const tags = hashtags(content);
+        // videoFilePath est « file_uploadable » UNIQUEMENT sur la version 'latest'
+        // de l'outil (la version épinglée du projet le traite comme un chemin
+        // LOCAL → « No such file »). On téléverse donc la vidéo vers l'infra
+        // Composio (comme les images LinkedIn) puis on passe la référence fichier.
+        let videoFile;
+        try {
+          videoFile = await upload('youtube', 'YOUTUBE_UPLOAD_VIDEO', mediaUrl);
+        } catch (err) {
+          const m = err instanceof Error ? err.message : 'erreur inconnue';
+          return { handled: true, result: `ECHEC: téléversement de la vidéo vers YouTube impossible — ${m}` };
+        }
         const data = await exec(uid, 'YOUTUBE_UPLOAD_VIDEO', {
           title: (title || firstLine(content) || 'Vidéo').slice(0, 95),
           description: content,
           tags: tags.length > 0 ? tags : ['video'],
           categoryId: '22', // People & Blogs
           privacyStatus: 'public',
-          // Composio télécharge le fichier depuis l'URL publique
-          videoFilePath: mediaUrl,
-        });
-        const videoId = data?.id ?? data?.videoId ?? data?.data?.id;
+          videoFilePath: videoFile,
+        }, 'latest');
+        const videoId = data?.response_data?.id ?? data?.id ?? data?.videoId ?? data?.data?.id;
         return { handled: true, result: `OK: vidéo YouTube publiée${videoId ? ` https://youtu.be/${videoId}` : ''}` };
       }
 
@@ -558,8 +576,11 @@ export async function publishDirect(
       }
 
       case 'reddit': {
-        // Le subreddit cible se déclare en mentionnant r/<nom> dans le titre ou le contenu
-        const sub = `${title}\n${content}`.match(/(?:^|[\s("'«])r\/([A-Za-z0-9][A-Za-z0-9_]{1,20})/)?.[1];
+        // Priorité au champ « Subreddit » de l'éditeur (post.subreddit) ; à défaut,
+        // on déduit la cible d'un r/<nom> mentionné dans le titre ou le contenu.
+        const fromField = subreddit?.trim().replace(/^\/?r\//i, '').replace(/[^A-Za-z0-9_]/g, '');
+        const sub = (fromField && fromField.length >= 2 ? fromField : undefined)
+          ?? `${title}\n${content}`.match(/(?:^|[\s("'«])r\/([A-Za-z0-9][A-Za-z0-9_]{1,20})/)?.[1];
         if (!sub) {
           return { handled: true, result: 'ECHEC: indiquez le subreddit cible en mentionnant r/<nom> dans le titre ou le contenu du post (ex. « r/startups »).' };
         }

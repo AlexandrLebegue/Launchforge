@@ -218,7 +218,7 @@ export async function publishViaComposio(
   // Publication DIRECTE (API Composio, déterministe, sans appel modèle) pour
   // les plateformes au schéma vérifié — l'opérateur IA reste le repli des autres.
   if (process.env.COMPOSIO_API_KEY) {
-    const direct = await publishDirect(userId, platform, content, mediaUrl, title ?? '');
+    const direct = await publishDirect(userId, platform, content, mediaUrl, title ?? '', undefined, undefined, undefined, subreddit);
     if (direct.handled) return direct.result!;
   }
 
