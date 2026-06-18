@@ -4,7 +4,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Flame, Bot, Megaphone, BarChart3, Target, MessageSquare,
-  PenLine, Send, TrendingUp, BookOpen, RefreshCw, ShieldCheck, Sparkles,
+  PenLine, Send, TrendingUp, BookOpen, RefreshCw, ShieldCheck, Sparkles, CreditCard,
 } from 'lucide-react';
 import LogoEmbers from '../components/LogoEmbers';
 import { useLang, LangSwitch, Lang } from '../i18n';
@@ -67,7 +67,7 @@ function FeatureHub({ hub }: { hub: { core: { title: string; sub: string }; aria
 
 const COPY: Record<Lang, {
   nav: { loop: string; product: string; pricing: string; how: string; faq: string; login: string; start: string };
-  hero: { before: string; em: string; after: string; sub: string; cta: string; cta2: string; truths: string[] };
+  hero: { before: string; em: string; after: string; sub: string; cta: string; cta2: string; noCard: string; truths: string[] };
   mock: { bar: string; calTitle: string; feedTitle: string; feed: { strong: string; rest: string; badge?: string }[] };
   loop: { title: string; sub: string; aria: string; returnLabel: string; steps: { title: string; desc: string }[] };
   features: { title: string; hub: { core: { title: string; sub: string }; aria: string; nodes: string[] }; items: { title: string; desc: string }[] };
@@ -87,6 +87,7 @@ const COPY: Record<Lang, {
       before: 'Forgez la ', em: 'traction', after: 'de votre startup',
       sub: 'LaunchForge transforme votre plan de lancement en posts rédigés, adaptés et publiés sur LinkedIn, X, Instagram et YouTube — puis mesure ce qui marche et apprend de vos résultats. Vous gardez la main à chaque étape.',
       cta: 'Commencer gratuitement →', cta2: 'Voir le produit',
+      noCard: 'Pas besoin de carte de crédit pour commencer',
       truths: ['15 jours en accès complet, sans carte', 'Offre gratuite pour toujours', 'Pilotable depuis Telegram'],
     },
     mock: {
@@ -219,6 +220,7 @@ const COPY: Record<Lang, {
       before: 'Forge your startup\'s ', em: 'traction', after: '',
       sub: 'LaunchForge turns your launch plan into posts that are written, adapted and published on LinkedIn, X, Instagram and YouTube — then measures what works and learns from your results. You stay in control at every step.',
       cta: 'Start for free →', cta2: 'See the product',
+      noCard: 'No credit card required to start',
       truths: ['15 days of full access, no card', 'Free plan, forever', 'Drive it from Telegram'],
     },
     mock: {
@@ -542,6 +544,7 @@ export default function LandingPage() {
             <Link to="/register" className="btn btn-primary btn-primary-glow btn-lg">{c.hero.cta}</Link>
             <a href="#produit" className="btn btn-ghost btn-lg">{c.hero.cta2}</a>
           </div>
+          <p className="landing-hero-nocard gs-up"><CreditCard size={14} /> {c.hero.noCard}</p>
           <div className="hero-truths gs-up">
             <span><Flame size={13} /> {c.hero.truths[0]}</span>
             <span><ShieldCheck size={13} /> {c.hero.truths[1]}</span>

@@ -2355,6 +2355,17 @@ form .btn { margin-top: 8px; }
   justify-content: center;
   flex-wrap: wrap;
 }
+.landing-hero-nocard {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  width: 100%;
+  margin: 12px 0 0;
+  font-size: 0.86rem;
+  color: var(--color-text-muted);
+}
+.landing-hero-nocard svg { color: var(--color-primary); }
 
 /* Stats row */
 .landing-stats {
