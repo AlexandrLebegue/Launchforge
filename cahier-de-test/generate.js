@@ -10,8 +10,8 @@ const matrixSections = [recurrenceSection, leadsSection];
 const esc = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const DATE = '16 juin 2026';
-const VERSION = '1.0';
+const DATE = '18 juin 2026';
+const VERSION = '1.1';
 
 /** Rend les étapes / l'attendu : tableau -> liste, sinon texte. */
 function cell(v) {
@@ -377,7 +377,8 @@ const html = `<!doctype html>
       <tr><td class="toc-id">Réseaux</td><td>Composio (COMPOSIO_API_KEY) + comptes connectés pour publier, lire métriques, scanner emails/réactions, agenda.</td></tr>
       <tr><td class="toc-id">Google</td><td>GOOGLE_CLIENT_ID/SECRET pour « Continuer avec Google ».</td></tr>
       <tr><td class="toc-id">Telegram</td><td>Bot global ou bot perso (token @BotFather) pour notifications et liaison.</td></tr>
-      <tr><td class="toc-id">Données</td><td>2 comptes (dont 1 admin) + 1 équipe avec membres editor/viewer pour les tests de rôles.</td></tr>
+      <tr><td class="toc-id">Stripe</td><td>Clés Stripe en mode <b>test</b> + webhook (offre Brasier : paiement, portail, remboursement). <b>BILLING_ENFORCE_LIMITS</b> active (true) ou désactive (false) les limites freemium.</td></tr>
+      <tr><td class="toc-id">Données</td><td>2 comptes (dont 1 admin) + 1 équipe avec membres editor/viewer pour les rôles. Pour tester les murs de l'offre <b>Braise</b> : un compte <b>non-admin à l'essai expiré</b> (le fondateur et l'essai restent en Brasier). Carte de test Stripe : <b>4242 4242 4242 4242</b>.</td></tr>
     </table>
   </div>
 

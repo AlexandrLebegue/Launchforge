@@ -415,6 +415,45 @@ const sections = [
       { id: 'U10', t: "Purge des médias générés", e: "Vérifier la politique de rétention", a: "Les médias /uploads sont purgés à 90 j ; la vidéo publiée est nettoyée une fois récupérée par la plateforme." },
     ],
   },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: 'Y',
+    title: "Abonnement, offres & facturation (freemium / Stripe)",
+    intro:
+      "Modèle freemium à deux offres — Braise (gratuite, limitée) et Brasier (payante, 12,90 €/mois en annuel · 15,90 € mensuel) — " +
+      "avec essai de 15 jours en accès complet, quotas d'IA, verrous de fonctionnalités, paiement Stripe, portail client et remboursement. " +
+      "ASTUCE : pour voir les murs de Braise, utiliser un compte NON-admin dont l'essai est expiré — le fondateur (ADMIN_EMAILS) et l'essai sont toujours en Brasier.",
+    cases: [
+      { id: 'Y1', t: "Section Tarifs sur la landing (FR/EN)", e: ["Ouvrir / déconnecté", "Aller à la section « Tarifs »", "Basculer FR/EN"], a: "Deux offres : Braise (0 €, 1 projet · 5 contenus · 2 images, plan + rédaction manuelle) et Brasier (12,90 €/mois annuel, ou 15,90 € mensuel). Mentions essai 15 j sans carte + garantie 14 j. Libellés honnêtes (le « non inclus » de Braise est explicite), prix cohérents FR/EN.", man: true },
+      { id: 'Y2', t: "Page Abonnement", e: "Ouvrir /billing (connecté)", a: "Offre actuelle, consommation du mois (générations / images / projets), deux cartes Braise/Brasier, prix 12,90 €/mois annuel & 15,90 € mensuel." },
+      { id: 'Y3', t: "Badge essai / pastille upgrade (sidebar)", e: "Observer le lien « Abonnement » de la barre latérale", a: "Pendant l'essai : badge « N j ». Après bascule en Braise : pastille « ↑ » (incitation à passer Brasier)." },
+      { id: 'Y4', t: "Reverse trial à l'inscription (15 j)", e: ["Créer un nouveau compte", "Ouvrir /billing"], a: "Accès complet Brasier pendant 15 jours (tout débloqué, usage affiché sans plafond restrictif) ; bannière « N jours d'accès complet »." },
+      { id: 'Y5', t: "Bascule automatique en Braise (fin d'essai)", e: "Compte non-admin dont l'essai est expiré", pre: "Essai expiré (ou trialEndsAt passé)", a: "Tier = Braise : quotas 5 générations / 2 images / 1 projet, fonctionnalités premium verrouillées. Rien n'est cassé, le travail est conservé." },
+      { id: 'Y6', t: "Quota générations IA Braise (5/mois)", e: ["Sur un compte Braise, enchaîner des générations (rédaction IA, calendrier, assistant, chat, deck, thème Marp IA, analyse de messages, knowledge-sync…)", "Atteindre la 6e"], a: "À la 6e : HTTP 402 « Limite de l'offre Braise atteinte : 5 générations IA ce mois-ci. Passez à Brasier… ». Tous les chemins IA partagent ce compteur.", pre: "Compte Braise (essai expiré)" },
+      { id: 'Y7', t: "Quota images IA Braise (2/mois)", e: "Générer une 3e image IA", a: "HTTP 402 « … 2 images IA ce mois-ci ».", pre: "Compte Braise" },
+      { id: 'Y8', t: "Quota projets Braise (1)", e: "Tenter de créer un 2e projet", a: "HTTP 402 « L'offre Braise est limitée à 1 projet. Passez à Brasier… ».", pre: "Compte Braise avec déjà 1 projet" },
+      { id: 'Y9', t: "Verrou Publication (Braise)", e: "Tenter : connecter un compte (Config), « Publier maintenant », activer l'auto-publication", a: "HTTP 402 « La publication et la connexion de comptes sociaux est réservé à l'offre Brasier ».", pre: "Compte Braise" },
+      { id: 'Y10', t: "Verrou Analytics (Braise)", e: "Tenter : ouvrir Performances, synchro métriques, rapport de campagne, analyse des commentaires, post-mortem d'un post", a: "HTTP 402 « Les analyses et la synchronisation des métriques est réservé à Brasier ».", pre: "Compte Braise" },
+      { id: 'Y11', t: "Verrou Détection de leads (Braise)", e: "Tenter : analyse de messages, scan boîte mail, scan d'un post, brouillon d'email IA", a: "HTTP 402 « La détection de leads est réservé à Brasier ».", pre: "Compte Braise" },
+      { id: 'Y12', t: "Verrou Séries récurrentes (Braise)", e: "Tenter : définir une récurrence sur un post (création/édition), « Simuler » une occurrence", a: "HTTP 402 « Les séries récurrentes est réservé à Brasier ».", pre: "Compte Braise" },
+      { id: 'Y13', t: "Verrou Telegram (Braise)", e: "Tenter : générer un code de liaison, connecter un bot perso", a: "HTTP 402 « Le pilotage depuis Telegram est réservé à Brasier ».", pre: "Compte Braise" },
+      { id: 'Y14', t: "Compteur d'usage mensuel", e: "Consommer puis recharger /billing", a: "Les barres « used / limit » se mettent à jour ; mention « réinitialisation le 1er du mois (UTC) »." },
+      { id: 'Y15', t: "Plafonds Brasier (usage équitable)", e: "Sur un compte Brasier, ouvrir /billing", a: "Quotas affichés 300 générations / 50 images par mois (et non « illimité ») — plafonds anti-abus." },
+      { id: 'Y16', t: "Compte fondateur toujours Brasier", e: "Se connecter avec un email ADMIN_EMAILS", a: "Tier Brasier en permanence (tout débloqué) ; badge « Compte fondateur » sur /billing.", man: true },
+      { id: 'Y17', t: "Workers de fond ignorent Braise", e: "Compte passé en Braise mais ayant connecté des comptes pendant l'essai (auto-publish/métriques/knowledge-sync activés)", a: "Plus aucune publication auto, synchro de métriques, mise à jour auto de la base, ni rapport hebdo pour ce compte (pas de consommation IA hors quota).", man: true, pre: "Compte Braise avec connexions héritées d'un essai" },
+      { id: 'Y18', t: "Paiement « Passer à Brasier » (Checkout Stripe)", e: ["Sur /billing, choisir mensuel ou annuel", "« Passer à Brasier »", "Payer avec la carte test 4242 4242 4242 4242 (date future, CVC quelconque)"], a: "Redirection vers le Checkout Stripe hébergé puis retour /billing?checkout=success ; bascule en Brasier, message de bienvenue.", pre: "Stripe configuré (mode test)" },
+      { id: 'Y19', t: "Webhook d'activation", e: "Après le paiement de Y18, observer /billing (sans rechargement forcé puis après rafraîchissement)", a: "L'abonnement est enregistré via le webhook : statut actif, intervalle, date de fin de période. Tier Brasier effectif.", pre: "Webhook Stripe configuré (ou `stripe listen` en local)" },
+      { id: 'Y20', t: "Bascule mensuel / annuel & remise", e: "Sur la carte Brasier, basculer « Annuel −19 % » ↔ « Mensuel »", a: "Le prix affiché passe 12,90 €/mois (facturé 154,80 €/an) ↔ 15,90 €/mois ; le Checkout utilise le bon prix Stripe." },
+      { id: 'Y21', t: "Portail client (gérer l'abonnement)", e: "Sur un compte Brasier, cliquer « Gérer mon abonnement »", a: "Ouverture du portail client Stripe : résiliation, moyen de paiement, historique des factures.", pre: "Abonné Brasier (test)" },
+      { id: 'Y22', t: "Résiliation en fin de période", e: ["Dans le portail, résilier l'abonnement", "Revenir sur /billing"], a: "Affichage « Abonnement résilié — accès Brasier maintenu jusqu'au [date de fin de période] » ; l'accès reste complet jusqu'à l'échéance, puis bascule Braise.", pre: "Abonné Brasier (test)" },
+      { id: 'Y23', t: "Garantie 14 j — remboursement self-service", e: ["1er paiement < 14 j", "Cliquer « Demander un remboursement »", "Confirmer"], a: "Remboursement Stripe (idempotent) + résiliation immédiate + retour en Braise. Au-delà de 14 j, ou déjà remboursé : action indisponible/refusée.", man: true, pre: "Abonné Brasier (test), 1er paiement récent" },
+      { id: 'Y24', t: "Comptes bêta — période de grâce 30 j", e: "Compte créé AVANT la migration de facturation", a: "trialEndsAt = +30 j à la migration : accès complet pendant la transition (« prévenus avant tout changement »)." },
+      { id: 'Y25', t: "Paiement non configuré (dégradation)", e: "Sans clés Stripe (STRIPE_SECRET_KEY absente)", a: "Bouton « Paiement bientôt disponible » (désactivé) ; l'essai et l'offre Braise fonctionnent normalement." },
+      { id: 'Y26', t: "Interrupteur d'enforcement", e: "Poser BILLING_ENFORCE_LIMITS=false puis recréer le conteneur", a: "Aucune limite ni verrou appliqués (tout débloqué pour tous) ; mention « Limites désactivées sur cette instance » sur /billing." },
+      { id: 'Y27', t: "Annulation du paiement", e: "Depuis le Checkout, cliquer « retour »/annuler", a: "Retour /billing?checkout=cancel ; message « Paiement annulé — vous pouvez réessayer ». Aucun abonnement créé.", pre: "Stripe configuré (mode test)" },
+    ],
+  },
 ];
 
 module.exports = { sections };

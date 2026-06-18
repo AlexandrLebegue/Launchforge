@@ -117,15 +117,15 @@
     <div class="sub">Plan de test fonctionnel exhaustif &amp; checklist de recette</div>
     <div class="meta">
       <div><b>Produit :</b> LaunchForge — plateforme SaaS de lancement (plan, contenu, IA, leads, équipes)</div>
-      <div><b>Version du document :</b> 1.0 &nbsp;·&nbsp; <b>Date :</b> 16 juin 2026</div>
-      <div><b>Périmètre :</b> 24 modules · 323 cas de test (dont 130 à vérification manuelle ★)</div>
+      <div><b>Version du document :</b> 1.1 &nbsp;·&nbsp; <b>Date :</b> 18 juin 2026</div>
+      <div><b>Périmètre :</b> 25 modules · 350 cas de test (dont 134 à vérification manuelle ★)</div>
       <div><b>Environnements :</b> dev (localhost:5173) · prod (launchforge.alexandre-lebegue.com)</div>
       <div><b>Testeur :</b> ____________________  &nbsp; <b>Build / commit :</b> ____________________</div>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="n">24</div><div class="l">Modules</div></div>
-      <div class="kpi"><div class="n">323</div><div class="l">Cas de test</div></div>
-      <div class="kpi"><div class="n">130</div><div class="l">Vérif. manuelles ★</div></div>
+      <div class="kpi"><div class="n">25</div><div class="l">Modules</div></div>
+      <div class="kpi"><div class="n">350</div><div class="l">Cas de test</div></div>
+      <div class="kpi"><div class="n">134</div><div class="l">Vérif. manuelles ★</div></div>
     </div>
   </div>
 
@@ -223,6 +223,10 @@
       <td>Transverse : responsive, états d'erreur, sécurité, robustesse</td>
       <td class="toc-n">10</td>
     </tr><tr>
+      <td class="toc-id">Y</td>
+      <td>Abonnement, offres &amp; facturation (freemium / Stripe)</td>
+      <td class="toc-n">27</td>
+    </tr><tr>
       <td class="toc-id">V</td>
       <td>Validation déclinée par type de post (plateforme) <span class="chip">12 plateformes</span></td>
       <td class="toc-n">98</td>
@@ -235,7 +239,7 @@
       <td>Détection de leads via commentaires &amp; réactions (par plateforme)  ★ manuel <span class="chip">manuel ★</span></td>
       <td class="toc-n">14</td>
     </tr>
-      <tr><td></td><td style="font-weight:700">Total</td><td class="toc-n" style="font-weight:700">323</td></tr>
+      <tr><td></td><td style="font-weight:700">Total</td><td class="toc-n" style="font-weight:700">350</td></tr>
     </table>
 
     <div class="legend">
@@ -258,7 +262,8 @@
       <tr><td class="toc-id">Réseaux</td><td>Composio (COMPOSIO_API_KEY) + comptes connectés pour publier, lire métriques, scanner emails/réactions, agenda.</td></tr>
       <tr><td class="toc-id">Google</td><td>GOOGLE_CLIENT_ID/SECRET pour « Continuer avec Google ».</td></tr>
       <tr><td class="toc-id">Telegram</td><td>Bot global ou bot perso (token @BotFather) pour notifications et liaison.</td></tr>
-      <tr><td class="toc-id">Données</td><td>2 comptes (dont 1 admin) + 1 équipe avec membres editor/viewer pour les tests de rôles.</td></tr>
+      <tr><td class="toc-id">Stripe</td><td>Clés Stripe en mode <b>test</b> + webhook (offre Brasier : paiement, portail, remboursement). <b>BILLING_ENFORCE_LIMITS</b> active (true) ou désactive (false) les limites freemium.</td></tr>
+      <tr><td class="toc-id">Données</td><td>2 comptes (dont 1 admin) + 1 équipe avec membres editor/viewer pour les rôles. Pour tester les murs de l'offre <b>Braise</b> : un compte <b>non-admin à l'essai expiré</b> (le fondateur et l'essai restent en Brasier). Carte de test Stripe : <b>4242 4242 4242 4242</b>.</td></tr>
     </table>
   </div>
 
@@ -2722,6 +2727,320 @@
           <td class="c-n"></td>
         </tr></tbody>
       </table>
+    </section><section class="module">
+      <h2 id="sec-Y"><span class="sec-id">Y</span> Abonnement, offres &amp; facturation (freemium / Stripe)</h2>
+      <p class="intro">Modèle freemium à deux offres — Braise (gratuite, limitée) et Brasier (payante, 12,90 €/mois en annuel · 15,90 € mensuel) — avec essai de 15 jours en accès complet, quotas d'IA, verrous de fonctionnalités, paiement Stripe, portail client et remboursement. ASTUCE : pour voir les murs de Braise, utiliser un compte NON-admin dont l'essai est expiré — le fondateur (ADMIN_EMAILS) et l'essai sont toujours en Brasier.</p>
+      
+      <table class="cases">
+        <thead>
+          <tr>
+            <th class="h-id">ID</th>
+            <th class="h-t">Cas de test</th>
+            <th class="h-e">Étapes</th>
+            <th class="h-a">Résultat attendu</th>
+            <th class="h-s">Statut</th>
+            <th class="h-n">Notes / Anomalie</th>
+          </tr>
+        </thead>
+        <tbody><tr class="manual">
+          <td class="c-id">Y1 <span class="star" title="Vérification manuelle">★</span></td>
+          <td class="c-t">Section Tarifs sur la landing (FR/EN)</td>
+          <td class="c-e"><ol class="steps"><li>Ouvrir / déconnecté</li><li>Aller à la section « Tarifs »</li><li>Basculer FR/EN</li></ol></td>
+          <td class="c-a">Deux offres : Braise (0 €, 1 projet · 5 contenus · 2 images, plan + rédaction manuelle) et Brasier (12,90 €/mois annuel, ou 15,90 € mensuel). Mentions essai 15 j sans carte + garantie 14 j. Libellés honnêtes (le « non inclus » de Braise est explicite), prix cohérents FR/EN.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y2</td>
+          <td class="c-t">Page Abonnement</td>
+          <td class="c-e">Ouvrir /billing (connecté)</td>
+          <td class="c-a">Offre actuelle, consommation du mois (générations / images / projets), deux cartes Braise/Brasier, prix 12,90 €/mois annuel &amp; 15,90 € mensuel.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y3</td>
+          <td class="c-t">Badge essai / pastille upgrade (sidebar)</td>
+          <td class="c-e">Observer le lien « Abonnement » de la barre latérale</td>
+          <td class="c-a">Pendant l'essai : badge « N j ». Après bascule en Braise : pastille « ↑ » (incitation à passer Brasier).</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y4</td>
+          <td class="c-t">Reverse trial à l'inscription (15 j)</td>
+          <td class="c-e"><ol class="steps"><li>Créer un nouveau compte</li><li>Ouvrir /billing</li></ol></td>
+          <td class="c-a">Accès complet Brasier pendant 15 jours (tout débloqué, usage affiché sans plafond restrictif) ; bannière « N jours d'accès complet ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y5</td>
+          <td class="c-t">Bascule automatique en Braise (fin d'essai)<div class="pre">Prérequis : Essai expiré (ou trialEndsAt passé)</div></td>
+          <td class="c-e">Compte non-admin dont l'essai est expiré</td>
+          <td class="c-a">Tier = Braise : quotas 5 générations / 2 images / 1 projet, fonctionnalités premium verrouillées. Rien n'est cassé, le travail est conservé.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y6</td>
+          <td class="c-t">Quota générations IA Braise (5/mois)<div class="pre">Prérequis : Compte Braise (essai expiré)</div></td>
+          <td class="c-e"><ol class="steps"><li>Sur un compte Braise, enchaîner des générations (rédaction IA, calendrier, assistant, chat, deck, thème Marp IA, analyse de messages, knowledge-sync…)</li><li>Atteindre la 6e</li></ol></td>
+          <td class="c-a">À la 6e : HTTP 402 « Limite de l'offre Braise atteinte : 5 générations IA ce mois-ci. Passez à Brasier… ». Tous les chemins IA partagent ce compteur.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y7</td>
+          <td class="c-t">Quota images IA Braise (2/mois)<div class="pre">Prérequis : Compte Braise</div></td>
+          <td class="c-e">Générer une 3e image IA</td>
+          <td class="c-a">HTTP 402 « … 2 images IA ce mois-ci ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y8</td>
+          <td class="c-t">Quota projets Braise (1)<div class="pre">Prérequis : Compte Braise avec déjà 1 projet</div></td>
+          <td class="c-e">Tenter de créer un 2e projet</td>
+          <td class="c-a">HTTP 402 « L'offre Braise est limitée à 1 projet. Passez à Brasier… ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y9</td>
+          <td class="c-t">Verrou Publication (Braise)<div class="pre">Prérequis : Compte Braise</div></td>
+          <td class="c-e">Tenter : connecter un compte (Config), « Publier maintenant », activer l'auto-publication</td>
+          <td class="c-a">HTTP 402 « La publication et la connexion de comptes sociaux est réservé à l'offre Brasier ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y10</td>
+          <td class="c-t">Verrou Analytics (Braise)<div class="pre">Prérequis : Compte Braise</div></td>
+          <td class="c-e">Tenter : ouvrir Performances, synchro métriques, rapport de campagne, analyse des commentaires, post-mortem d'un post</td>
+          <td class="c-a">HTTP 402 « Les analyses et la synchronisation des métriques est réservé à Brasier ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y11</td>
+          <td class="c-t">Verrou Détection de leads (Braise)<div class="pre">Prérequis : Compte Braise</div></td>
+          <td class="c-e">Tenter : analyse de messages, scan boîte mail, scan d'un post, brouillon d'email IA</td>
+          <td class="c-a">HTTP 402 « La détection de leads est réservé à Brasier ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y12</td>
+          <td class="c-t">Verrou Séries récurrentes (Braise)<div class="pre">Prérequis : Compte Braise</div></td>
+          <td class="c-e">Tenter : définir une récurrence sur un post (création/édition), « Simuler » une occurrence</td>
+          <td class="c-a">HTTP 402 « Les séries récurrentes est réservé à Brasier ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y13</td>
+          <td class="c-t">Verrou Telegram (Braise)<div class="pre">Prérequis : Compte Braise</div></td>
+          <td class="c-e">Tenter : générer un code de liaison, connecter un bot perso</td>
+          <td class="c-a">HTTP 402 « Le pilotage depuis Telegram est réservé à Brasier ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y14</td>
+          <td class="c-t">Compteur d'usage mensuel</td>
+          <td class="c-e">Consommer puis recharger /billing</td>
+          <td class="c-a">Les barres « used / limit » se mettent à jour ; mention « réinitialisation le 1er du mois (UTC) ».</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y15</td>
+          <td class="c-t">Plafonds Brasier (usage équitable)</td>
+          <td class="c-e">Sur un compte Brasier, ouvrir /billing</td>
+          <td class="c-a">Quotas affichés 300 générations / 50 images par mois (et non « illimité ») — plafonds anti-abus.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="manual">
+          <td class="c-id">Y16 <span class="star" title="Vérification manuelle">★</span></td>
+          <td class="c-t">Compte fondateur toujours Brasier</td>
+          <td class="c-e">Se connecter avec un email ADMIN_EMAILS</td>
+          <td class="c-a">Tier Brasier en permanence (tout débloqué) ; badge « Compte fondateur » sur /billing.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="manual">
+          <td class="c-id">Y17 <span class="star" title="Vérification manuelle">★</span></td>
+          <td class="c-t">Workers de fond ignorent Braise<div class="pre">Prérequis : Compte Braise avec connexions héritées d'un essai</div></td>
+          <td class="c-e">Compte passé en Braise mais ayant connecté des comptes pendant l'essai (auto-publish/métriques/knowledge-sync activés)</td>
+          <td class="c-a">Plus aucune publication auto, synchro de métriques, mise à jour auto de la base, ni rapport hebdo pour ce compte (pas de consommation IA hors quota).</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y18</td>
+          <td class="c-t">Paiement « Passer à Brasier » (Checkout Stripe)<div class="pre">Prérequis : Stripe configuré (mode test)</div></td>
+          <td class="c-e"><ol class="steps"><li>Sur /billing, choisir mensuel ou annuel</li><li>« Passer à Brasier »</li><li>Payer avec la carte test 4242 4242 4242 4242 (date future, CVC quelconque)</li></ol></td>
+          <td class="c-a">Redirection vers le Checkout Stripe hébergé puis retour /billing?checkout=success ; bascule en Brasier, message de bienvenue.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y19</td>
+          <td class="c-t">Webhook d'activation<div class="pre">Prérequis : Webhook Stripe configuré (ou `stripe listen` en local)</div></td>
+          <td class="c-e">Après le paiement de Y18, observer /billing (sans rechargement forcé puis après rafraîchissement)</td>
+          <td class="c-a">L'abonnement est enregistré via le webhook : statut actif, intervalle, date de fin de période. Tier Brasier effectif.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y20</td>
+          <td class="c-t">Bascule mensuel / annuel &amp; remise</td>
+          <td class="c-e">Sur la carte Brasier, basculer « Annuel −19 % » ↔ « Mensuel »</td>
+          <td class="c-a">Le prix affiché passe 12,90 €/mois (facturé 154,80 €/an) ↔ 15,90 €/mois ; le Checkout utilise le bon prix Stripe.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y21</td>
+          <td class="c-t">Portail client (gérer l'abonnement)<div class="pre">Prérequis : Abonné Brasier (test)</div></td>
+          <td class="c-e">Sur un compte Brasier, cliquer « Gérer mon abonnement »</td>
+          <td class="c-a">Ouverture du portail client Stripe : résiliation, moyen de paiement, historique des factures.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y22</td>
+          <td class="c-t">Résiliation en fin de période<div class="pre">Prérequis : Abonné Brasier (test)</div></td>
+          <td class="c-e"><ol class="steps"><li>Dans le portail, résilier l'abonnement</li><li>Revenir sur /billing</li></ol></td>
+          <td class="c-a">Affichage « Abonnement résilié — accès Brasier maintenu jusqu'au [date de fin de période] » ; l'accès reste complet jusqu'à l'échéance, puis bascule Braise.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="manual">
+          <td class="c-id">Y23 <span class="star" title="Vérification manuelle">★</span></td>
+          <td class="c-t">Garantie 14 j — remboursement self-service<div class="pre">Prérequis : Abonné Brasier (test), 1er paiement récent</div></td>
+          <td class="c-e"><ol class="steps"><li>1er paiement &lt; 14 j</li><li>Cliquer « Demander un remboursement »</li><li>Confirmer</li></ol></td>
+          <td class="c-a">Remboursement Stripe (idempotent) + résiliation immédiate + retour en Braise. Au-delà de 14 j, ou déjà remboursé : action indisponible/refusée.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y24</td>
+          <td class="c-t">Comptes bêta — période de grâce 30 j</td>
+          <td class="c-e">Compte créé AVANT la migration de facturation</td>
+          <td class="c-a">trialEndsAt = +30 j à la migration : accès complet pendant la transition (« prévenus avant tout changement »).</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y25</td>
+          <td class="c-t">Paiement non configuré (dégradation)</td>
+          <td class="c-e">Sans clés Stripe (STRIPE_SECRET_KEY absente)</td>
+          <td class="c-a">Bouton « Paiement bientôt disponible » (désactivé) ; l'essai et l'offre Braise fonctionnent normalement.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y26</td>
+          <td class="c-t">Interrupteur d'enforcement</td>
+          <td class="c-e">Poser BILLING_ENFORCE_LIMITS=false puis recréer le conteneur</td>
+          <td class="c-a">Aucune limite ni verrou appliqués (tout débloqué pour tous) ; mention « Limites désactivées sur cette instance » sur /billing.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr><tr class="">
+          <td class="c-id">Y27</td>
+          <td class="c-t">Annulation du paiement<div class="pre">Prérequis : Stripe configuré (mode test)</div></td>
+          <td class="c-e">Depuis le Checkout, cliquer « retour »/annuler</td>
+          <td class="c-a">Retour /billing?checkout=cancel ; message « Paiement annulé — vous pouvez réessayer ». Aucun abonnement créé.</td>
+          <td class="c-s">
+            <span class="box">OK</span>
+            <span class="box">KO</span>
+            <span class="box">N/A</span>
+          </td>
+          <td class="c-n"></td>
+        </tr></tbody>
+      </table>
     </section>
 
     <section class="module">
@@ -3789,13 +4108,13 @@
     <h2><span class="sec-id">✔</span> Synthèse &amp; validation de la recette</h2>
     <p class="intro">À compléter en fin de campagne de test.</p>
     <table class="signoff">
-      <tr><td class="lab">Cas exécutés</td><td>______ / 323</td><td class="lab">Cas OK</td><td>______</td></tr>
+      <tr><td class="lab">Cas exécutés</td><td>______ / 350</td><td class="lab">Cas OK</td><td>______</td></tr>
       <tr><td class="lab">Cas KO (anomalies)</td><td>______</td><td class="lab">Cas N/A</td><td>______</td></tr>
       <tr><td class="lab">Anomalies bloquantes</td><td colspan="3">____________________________________________________</td></tr>
       <tr><td class="lab">Verdict</td><td colspan="3"><span class="box">Recette acceptée</span> &nbsp; <span class="box">Acceptée avec réserves</span> &nbsp; <span class="box">Refusée</span></td></tr>
       <tr><td class="lab">Testeur / date</td><td>____________________</td><td class="lab">Responsable / date</td><td>____________________</td></tr>
     </table>
-    <p class="muted" style="margin-top:14px; text-align:center;">Cahier de test LaunchForge · v1.0 · 16 juin 2026 · 323 cas de test</p>
+    <p class="muted" style="margin-top:14px; text-align:center;">Cahier de test LaunchForge · v1.1 · 18 juin 2026 · 350 cas de test</p>
   </div>
 
 </body></html>
