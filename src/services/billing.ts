@@ -110,16 +110,25 @@ export async function createPortalSession(userId: string): Promise<string> {
   return session.url;
 }
 
-/** Applique l'état d'un objet Subscription Stripe à l'utilisateur */
+/** Applique l'état d'un objet Subscription Stripe à l'utilisateur.
+ *  Compat API : depuis Stripe 2025, `current_period_end` est porté par les
+ *  ITEMS de l'abonnement (et non plus au niveau racine) ; et une résiliation
+ *  « en fin de période » pose `cancel_at` (timestamp) plutôt que le booléen
+ *  `cancel_at_period_end`. On lit donc l'item en priorité, et on considère
+ *  l'abonnement « résilié » dès que `cancel_at` est posé. */
 function applySubscription(userId: string, sub: any): void {
   const item = sub.items?.data?.[0];
   const interval = (item?.price?.recurring?.interval as 'month' | 'year' | undefined) ?? null;
+  const periodEnd = toIso(item?.current_period_end ?? sub.current_period_end);
+  const cancelAt = sub.cancel_at
+    ? toIso(sub.cancel_at)
+    : (sub.cancel_at_period_end ? periodEnd : null);
   storage.updateSubscription(userId, {
     status: mapStatus(sub.status),
     stripeSubscriptionId: sub.id,
     interval,
-    currentPeriodEnd: toIso(sub.current_period_end),
-    cancelAt: sub.cancel_at_period_end ? (toIso(sub.cancel_at) ?? toIso(sub.current_period_end)) : null,
+    currentPeriodEnd: periodEnd,
+    cancelAt,
   });
 }
 
