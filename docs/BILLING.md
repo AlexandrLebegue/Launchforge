@@ -13,12 +13,12 @@ Stripe, et la politique de remboursement. Il accompagne le code :
 |---|---|---|
 | Prix | 0 € pour toujours | **12,90 €/mois en annuel** (154,80 €/an) · **15,90 €/mois** en mensuel |
 | Projets | 1 | illimités |
-| Générations de contenu IA | 5 / mois | 300 / mois (usage équitable) |
+| Générations de contenu IA | 30 / mois | 1000 / mois (usage équitable) |
 | Images IA | 2 / mois | 50 / mois (usage équitable) |
 | Publication, analytics, leads, séries, Telegram | ❌ (réservés à Brasier) | ✅ |
 | Plan IA, rédaction manuelle, calendrier, export RGPD | ✅ | ✅ |
 
-**Pourquoi des plafonds Brasier plutôt qu'« illimité » ?** Coûts réels : ~0,015 €/génération texte (OpenRouter), 0,04 €/image (seedream-4.5), + Composio **30 €/mois fixe** (amorti sur tous les payants). À 12,90 €, l'infra fixe (≈36 €/mois) est couverte dès ~3 abonnés ; les plafonds 300/50 laissent une marge ~85 % en usage normal et restent positifs même au plafond (anti-abus/scripting), sans jamais gêner un vrai utilisateur.
+**Pourquoi des plafonds Brasier plutôt qu'« illimité » ?** Coûts réels : ~0,015 €/génération texte (OpenRouter), 0,04 €/image (seedream-4.5), + Composio **30 €/mois fixe** (amorti sur tous les payants). À 12,90 €, l'infra fixe (≈36 €/mois) est couverte dès ~3 abonnés ; les plafonds 1000/50 sont calés très au-dessus d'un usage réel (le modèle texte par défaut est bon marché) et servent surtout de garde-fou anti-abus/scripting, sans jamais gêner un vrai utilisateur.
 | Support | communauté | prioritaire |
 
 **Principe de bridage** : seules les **quantités** qui ont un coût variable réel

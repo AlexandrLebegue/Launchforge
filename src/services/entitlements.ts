@@ -44,7 +44,7 @@ export const LIMITS: Record<PlanTier, TierLimits> = {
   // Braise : « goûter le moteur » — peu de génération, fonctionnalités verrouillées
   braise: {
     projects: 1,
-    aiGenerationsPerMonth: 5,
+    aiGenerationsPerMonth: 30,
     aiImagesPerMonth: 2,
   },
   // Brasier : usage IA en « illimité équitable » — plafonds très au-dessus d'un
@@ -52,7 +52,7 @@ export const LIMITS: Record<PlanTier, TierLimits> = {
   // pour rester margé même au plafond et bloquer l'abus/scripting.
   brasier: {
     projects: UNLIMITED,
-    aiGenerationsPerMonth: 300,
+    aiGenerationsPerMonth: 1000,
     aiImagesPerMonth: 50,
   },
 };

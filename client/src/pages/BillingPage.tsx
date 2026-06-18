@@ -48,10 +48,10 @@ function UsageBar({ label, used, limit }: { label: string; used: number; limit: 
 
 const BRAISE_FEATURES = [
   '1 projet',
-  '5 générations de contenu IA / mois',
+  '30 générations de contenu IA / mois',
   '2 images IA / mois',
   'Plan de lancement IA, rédaction manuelle & calendrier',
-  'Assistant IA (dans la limite des 5 générations)',
+  'Assistant IA (dans la limite des 30 générations)',
   'Export & suppression RGPD en libre-service',
 ];
 
@@ -63,7 +63,7 @@ const BRASIER_FEATURES = [
   'Analytics complets + post-mortem IA',
   'Détection de leads & CRM',
   'Séries récurrentes & pilotage Telegram',
-  '300 générations + 50 images IA / mois (usage équitable)',
+  '1000 générations + 50 images IA / mois (usage équitable)',
   'Support prioritaire',
 ];
 
