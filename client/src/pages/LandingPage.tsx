@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, Fragment, ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Flame, Bot, Megaphone, BarChart3, Target, MessageSquare,
   PenLine, Send, TrendingUp, BookOpen, RefreshCw, ShieldCheck, Sparkles, CreditCard, History,
-  Briefcase, MessageCircle, Camera, Users, Music2, Play, MessagesSquare, Check, Minus, ChevronDown,
+  Briefcase, MessageCircle, Camera, Users, Music2, Play, MessagesSquare, Check, Minus, Maximize2, X,
 } from 'lucide-react';
 import LogoEmbers from '../components/LogoEmbers';
 import { useLang, LangSwitch, Lang } from '../i18n';
@@ -204,7 +205,7 @@ const COPY: Record<Lang, {
             '30 générations de contenu IA / mois',
             '2 images IA / mois',
             'Plan de lancement IA, rédaction manuelle & calendrier',
-            'Export & suppression RGPD en libre-service',
+            'Import de vos anciens posts',
           ],
         },
         {
@@ -355,7 +356,7 @@ const COPY: Record<Lang, {
             '30 AI content generations / month',
             '2 AI images / month',
             'AI launch plan, manual writing & calendar',
-            'Self-service GDPR export & deletion',
+            'Import your past posts',
           ],
         },
         {
@@ -509,7 +510,20 @@ export default function LandingPage() {
   const rootRef = useRef<HTMLDivElement>(null);
   const { lang } = useLang();
   const c = COPY[lang];
-  const [showNetDetails, setShowNetDetails] = useState(false);
+  // Lightbox des particularités des réseaux : ouverte en gros plan sur fond assombri
+  const [netModalOpen, setNetModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!netModalOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNetModalOpen(false); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden'; // pas de scroll de la page derrière
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [netModalOpen]);
 
   useEffect(() => {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -722,40 +736,60 @@ export default function LandingPage() {
               </thead>
               <tbody>
                 {SOCIAL_NETWORKS.map((n) => (
-                  <Fragment key={n.slug}>
-                    <tr>
-                      <td data-label={c.networks.cols.network}>
-                        <span className="net-name"><span className="net-icon">{n.icon}</span>{n.name}</span>
-                      </td>
-                      <td data-label={c.networks.cols.publish}>{netCell(n.publish, c.networks.val)}</td>
-                      <td data-label={c.networks.cols.metrics}>{netCell(n.metrics, c.networks.val)}</td>
-                      <td data-label={c.networks.cols.import}>{netCell(n.import, c.networks.val)}</td>
-                    </tr>
-                    {showNetDetails && (
-                      <tr className="net-detail-row">
-                        <td colSpan={4}>
-                          <span className="net-detail-name"><span className="net-icon">{n.icon}</span>{n.name}</span>
-                          {(c.networks.details as Record<string, string>)[n.slug]}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                  <tr key={n.slug}>
+                    <td data-label={c.networks.cols.network}>
+                      <span className="net-name"><span className="net-icon">{n.icon}</span>{n.name}</span>
+                    </td>
+                    <td data-label={c.networks.cols.publish}>{netCell(n.publish, c.networks.val)}</td>
+                    <td data-label={c.networks.cols.metrics}>{netCell(n.metrics, c.networks.val)}</td>
+                    <td data-label={c.networks.cols.import}>{netCell(n.import, c.networks.val)}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
 
-            <button
-              type="button"
-              className="net-toggle"
-              onClick={() => setShowNetDetails((v) => !v)}
-              aria-expanded={showNetDetails}
-            >
-              {showNetDetails ? c.networks.less : c.networks.more}
-              <ChevronDown size={16} className={`net-chevron${showNetDetails ? ' open' : ''}`} />
+            <button type="button" className="net-toggle" onClick={() => setNetModalOpen(true)} aria-haspopup="dialog">
+              <Maximize2 size={15} /> {c.networks.more}
             </button>
           </div>
         </div>
       </section>
+
+      {/* Lightbox « particularités » — gros plan sur fond assombri, animée */}
+      {netModalOpen && createPortal(
+        <div
+          className="net-modal-overlay"
+          onClick={() => setNetModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={c.networks.title}
+        >
+          <div className="net-modal-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="net-modal-head">
+              <h3>{c.networks.title}</h3>
+              <button type="button" className="net-modal-close" onClick={() => setNetModalOpen(false)} aria-label={c.networks.less} title={c.networks.less}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="net-modal-body">
+              {SOCIAL_NETWORKS.map((n) => (
+                <div key={n.slug} className="net-card">
+                  <div className="net-card-head">
+                    <span className="net-name"><span className="net-icon">{n.icon}</span>{n.name}</span>
+                    <span className="net-card-caps">
+                      <span className="net-cap"><em>{c.networks.cols.publish}</em>{netCell(n.publish, c.networks.val)}</span>
+                      <span className="net-cap"><em>{c.networks.cols.metrics}</em>{netCell(n.metrics, c.networks.val)}</span>
+                      <span className="net-cap"><em>{c.networks.cols.import}</em>{netCell(n.import, c.networks.val)}</span>
+                    </span>
+                  </div>
+                  <p className="net-card-detail">{(c.networks.details as Record<string, string>)[n.slug]}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* ── Comment ça marche ── */}
       <section className="landing-section gs-section" id="how">

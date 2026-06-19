@@ -7145,90 +7145,173 @@ video.md-media { background: #000; }
 }
 
 /* ============================================================
-   LANDING — TABLEAU DES RÉSEAUX SOCIAUX PRIS EN CHARGE
+   LANDING — TABLEAU DES RÉSEAUX SOCIAUX PRIS EN CHARGE (condensé)
    ============================================================ */
-.landing-networks { max-width: 840px; margin: 40px auto 0; }
+.landing-networks { max-width: 720px; margin: 32px auto 0; }
 .landing-networks-table {
   width: 100%;
   border-collapse: collapse;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
   text-align: left;
 }
 .landing-networks-table th {
   text-align: left;
-  font-size: 0.73rem;
+  font-size: 0.66rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   color: rgba(255, 255, 255, 0.5);
   font-weight: 700;
-  padding: 14px 16px;
+  padding: 8px 12px;
   background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
 .landing-networks-table td {
-  padding: 13px 16px;
+  padding: 7px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   vertical-align: middle;
 }
 .landing-networks-table tbody tr:last-child td { border-bottom: none; }
-.net-name { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; color: #fff; }
+.landing-networks-table tbody tr { transition: background 0.15s ease; }
+.landing-networks-table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
+.net-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: #fff; }
 .net-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 8px;
+  width: 24px; height: 24px; border-radius: 7px;
   background: rgba(255, 107, 53, 0.12); color: #ff8a5b; flex-shrink: 0;
 }
-.net-cell { display: inline-flex; align-items: center; gap: 5px; font-size: 0.84rem; font-weight: 600; }
+.net-icon svg { width: 15px; height: 15px; }
+.net-cell { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; font-weight: 600; }
 .net-yes { color: #34d399; }
 .net-partial { color: #ffb347; }
 .net-no { color: rgba(255, 255, 255, 0.35); }
 
-.net-detail-row td {
-  background: rgba(255, 107, 53, 0.04);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 0.85rem;
-  line-height: 1.65;
-  padding-top: 10px;
-  padding-bottom: 16px;
-}
-.net-detail-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: #fff; margin-right: 8px; }
-.net-detail-name .net-icon { width: 24px; height: 24px; }
-
 .net-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 18px auto 0;
-  padding: 10px 22px;
+  gap: 7px;
+  margin: 14px auto 0;
+  padding: 8px 18px;
   background: rgba(255, 107, 53, 0.10);
   border: 1px solid rgba(255, 107, 53, 0.35);
   color: #ff8a5b;
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   border-radius: 99px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
-.net-toggle:hover { background: rgba(255, 107, 53, 0.18); border-color: rgba(255, 107, 53, 0.6); }
-.net-chevron { transition: transform 0.25s ease; }
-.net-chevron.open { transform: rotate(180deg); }
+.net-toggle:hover { background: rgba(255, 107, 53, 0.18); border-color: rgba(255, 107, 53, 0.6); transform: translateY(-1px); }
+
+/* ── Lightbox « particularités » : gros plan sur fond assombri, animé ── */
+.net-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 6, 4, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: net-fade-in 0.22s ease both;
+}
+.net-modal-panel {
+  width: min(720px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: #161210;
+  border: 1px solid rgba(255, 107, 53, 0.25);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  animation: net-pop-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.net-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.net-modal-head h3 {
+  font-family: var(--font-display, inherit);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+.net-modal-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.net-modal-close:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.net-modal-body { padding: 12px 20px 20px; overflow-y: auto; }
+.net-card {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.net-card:last-child { border-bottom: none; }
+.net-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 7px;
+}
+.net-card-caps { display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.net-cap { display: inline-flex; align-items: center; gap: 6px; }
+.net-cap em {
+  font-style: normal;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+}
+.net-card-detail {
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0;
+}
+
+@keyframes net-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes net-pop-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .net-modal-overlay, .net-modal-panel { animation: none; }
+}
 
 @media (max-width: 680px) {
   .landing-networks-table thead { display: none; }
   .landing-networks-table, .landing-networks-table tbody, .landing-networks-table tr, .landing-networks-table td { display: block; width: 100%; }
   .landing-networks-table tr { border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
-  .landing-networks-table td { border: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 9px 16px; }
+  .landing-networks-table td { border: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 8px 14px; }
   .landing-networks-table td::before {
     content: attr(data-label);
     color: rgba(255, 255, 255, 0.5);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .net-detail-row td { display: block; }
-  .net-detail-row td::before { display: none; }
+  .net-modal-overlay { padding: 12px; align-items: flex-end; }
+  .net-modal-panel { max-height: 92vh; width: 100%; border-radius: 16px 16px 0 0; }
+  .net-card-head { align-items: flex-start; }
 }

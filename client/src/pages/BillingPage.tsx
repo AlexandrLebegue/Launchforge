@@ -52,7 +52,7 @@ const BRAISE_FEATURES = [
   '2 images IA / mois',
   'Plan de lancement IA, rédaction manuelle & calendrier',
   'Assistant IA (dans la limite des 30 générations)',
-  'Export & suppression RGPD en libre-service',
+  'Import de vos anciens posts',
 ];
 
 const BRAISE_LOCKED = 'Publication · analytics · détection de leads · séries récurrentes · Telegram';
