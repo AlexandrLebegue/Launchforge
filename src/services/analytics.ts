@@ -419,6 +419,38 @@ export function upsertNewsArchive(userId: string, planId: string | null, facts: 
   return upsertAutoEntry(userId, planId, 'news', NEWS_TITLE, dated);
 }
 
+const CHANNELS_TITLE = '📡 Canaux & présence sociale (auto)';
+
+/**
+ * Consigne dans la base de connaissances les canaux sociaux que l'utilisateur
+ * configure (onboarding ou Configuration) — pour que l'IA adapte le ton et les
+ * recommandations aux plateformes réellement utilisées.
+ */
+export function upsertActivePlatforms(userId: string, planId: string | null, platforms: string[]): number {
+  const clean = platforms.map((p) => p.trim()).filter(Boolean);
+  if (clean.length === 0) return 0;
+  const line = `Plateformes choisies pour publier : ${clean.join(', ')}.`;
+  return upsertAutoEntry(userId, planId, 'audience', CHANNELS_TITLE, [line]);
+}
+
+/**
+ * Consigne un résumé d'import d'historique (plateforme + volume + meilleurs
+ * posts) — alimente l'analyse rétro : l'IA voit ce qui a marché par le passé.
+ */
+export function upsertImportSummary(
+  userId: string, planId: string | null,
+  platform: string, imported: number, topPosts: { title: string; likes: number }[] = [],
+): number {
+  if (imported <= 0) return 0;
+  const date = new Date().toLocaleDateString('fr-FR');
+  const lines = [`${date} — ${imported} post(s) ${platform} importé(s) dans le Hub.`];
+  for (const p of topPosts.slice(0, 3)) {
+    const title = (p.title || 'post sans titre').slice(0, 80);
+    lines.push(`Post ${platform} performant (${p.likes} likes) : « ${title} ».`);
+  }
+  return upsertAutoEntry(userId, planId, 'learnings', LEARNINGS_TITLE, lines);
+}
+
 export interface PostAnalysis {
   analysis: string;
   learnings: string[];

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
   MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot, Globe,
-  Sparkles, BookOpen, Presentation, Send, ShieldCheck,
+  Sparkles, BookOpen, Presentation, Send, ShieldCheck, Music2,
 } from 'lucide-react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
@@ -44,7 +44,7 @@ const TOOLKIT_ICONS: Record<string, React.ReactNode> = {
   linkedin: <Briefcase size={18} />, twitter: <MessageCircle size={18} />, instagram: <Camera size={18} />,
   facebook: <Users size={18} />, gmail: <Mail size={18} />, googlecalendar: <CalendarDays size={18} />,
   reddit: <MessagesSquare size={18} />, youtube: <Play size={18} />, discord: <Gamepad2 size={18} />,
-  slack: <Hash size={18} />, github: <GitBranch size={18} />,
+  slack: <Hash size={18} />, github: <GitBranch size={18} />, tiktok: <Music2 size={18} />,
 };
 
 /**

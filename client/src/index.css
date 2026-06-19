@@ -7016,3 +7016,219 @@ video.md-media { background: #000; }
   /* ── Choix du mode de publication (Config) : empilé pour respirer ── */
   .approval-mode-picker { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   IMPORT D'HISTORIQUE + TABLEAU DE CONNEXION DES PLATEFORMES
+   ============================================================ */
+
+/* Bouton secondaire neutre (surface + bordure) */
+.btn-secondary {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+.btn-secondary:hover {
+  border-color: rgba(255, 107, 53, 0.4);
+  color: var(--color-text);
+}
+
+/* En-tête du dashboard : actions à droite (bouton import + date) */
+.dashboard-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Modale d'import — résultat */
+.import-result-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: rgba(52, 211, 153, 0.10);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: var(--color-text);
+  margin-bottom: 14px;
+}
+.import-result-banner svg { color: var(--color-success); flex-shrink: 0; }
+.import-result-stats {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 0;
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+.import-result-stats strong { color: var(--color-text); }
+.import-result-fail strong { color: #f87171; }
+
+.import-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.import-warn svg { color: #f59e0b; flex-shrink: 0; margin-top: 2px; }
+.import-warn a { color: var(--color-primary); display: inline-flex; align-items: center; gap: 3px; }
+
+/* Tableau de connexion des plateformes (Config + onboarding) */
+.platform-connect-table { width: 100%; overflow-x: auto; }
+.platform-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.platform-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-subtle);
+  font-weight: 600;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.platform-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+.platform-cell { display: inline-flex; align-items: center; gap: 10px; }
+.platform-cell-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface-2);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.platform-actions { display: inline-flex; align-items: center; gap: 10px; justify-content: flex-end; }
+.badge-connected {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-success);
+}
+.own-app-form {
+  padding: 12px 14px;
+  background: var(--color-surface-2);
+  border-radius: var(--radius);
+  border: 1px dashed var(--color-border);
+}
+.own-app-form code {
+  font-size: 0.78rem;
+  background: var(--color-surface);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Étape de configuration des plateformes dans l'onboarding */
+.onboarding-config-step { display: flex; flex-direction: column; gap: 14px; }
+.onboarding-platforms-card { padding: 18px 20px; }
+
+@media (max-width: 640px) {
+  .dashboard-header-actions { align-items: stretch; }
+  .platform-table th:nth-child(2), .platform-table td:nth-child(2) { display: none; }
+}
+
+/* ============================================================
+   LANDING — TABLEAU DES RÉSEAUX SOCIAUX PRIS EN CHARGE
+   ============================================================ */
+.landing-networks { max-width: 840px; margin: 40px auto 0; }
+.landing-networks-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 16px;
+  overflow: hidden;
+  text-align: left;
+}
+.landing-networks-table th {
+  text-align: left;
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+.landing-networks-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+.landing-networks-table tbody tr:last-child td { border-bottom: none; }
+.net-name { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; color: #fff; }
+.net-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: rgba(255, 107, 53, 0.12); color: #ff8a5b; flex-shrink: 0;
+}
+.net-cell { display: inline-flex; align-items: center; gap: 5px; font-size: 0.84rem; font-weight: 600; }
+.net-yes { color: #34d399; }
+.net-partial { color: #ffb347; }
+.net-no { color: rgba(255, 255, 255, 0.35); }
+
+.net-detail-row td {
+  background: rgba(255, 107, 53, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.85rem;
+  line-height: 1.65;
+  padding-top: 10px;
+  padding-bottom: 16px;
+}
+.net-detail-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: #fff; margin-right: 8px; }
+.net-detail-name .net-icon { width: 24px; height: 24px; }
+
+.net-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px auto 0;
+  padding: 10px 22px;
+  background: rgba(255, 107, 53, 0.10);
+  border: 1px solid rgba(255, 107, 53, 0.35);
+  color: #ff8a5b;
+  font-weight: 600;
+  font-size: 0.88rem;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.net-toggle:hover { background: rgba(255, 107, 53, 0.18); border-color: rgba(255, 107, 53, 0.6); }
+.net-chevron { transition: transform 0.25s ease; }
+.net-chevron.open { transform: rotate(180deg); }
+
+@media (max-width: 680px) {
+  .landing-networks-table thead { display: none; }
+  .landing-networks-table, .landing-networks-table tbody, .landing-networks-table tr, .landing-networks-table td { display: block; width: 100%; }
+  .landing-networks-table tr { border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+  .landing-networks-table td { border: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 9px 16px; }
+  .landing-networks-table td::before {
+    content: attr(data-label);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .net-detail-row td { display: block; }
+  .net-detail-row td::before { display: none; }
+}

@@ -14,6 +14,7 @@ import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/tel
 import { availableThemes, generateCustomTheme, CUSTOM_THEMES, BUILTIN_THEMES } from '../services/decks';
 import { assertFeature, assertWithinUsage, recordUsage, Feature } from '../services/entitlements';
 import { handleQuota } from '../middleware/quota';
+import { upsertActivePlatforms } from '../services/analytics';
 
 const router = Router();
 router.use(requireAuth);
@@ -34,6 +35,7 @@ const FEATURED_TOOLKITS = [
   { slug: 'googlecalendar', name: 'Google Calendar', capability: 'Synchro de vos posts dans l\'agenda' },
   { slug: 'reddit',         name: 'Reddit',          capability: 'Publication Reddit' },
   { slug: 'youtube',        name: 'YouTube',         capability: 'Publication YouTube' },
+  { slug: 'tiktok',         name: 'TikTok',          capability: 'Publication TikTok + import' },
   { slug: 'discord',        name: 'Discord',         capability: 'Messages Discord' },
   { slug: 'slack',          name: 'Slack',           capability: 'Messages Slack' },
   { slug: 'github',         name: 'GitHub',          capability: 'Publication GitHub (releases, discussions)' },
@@ -195,6 +197,25 @@ router.post('/disconnect', async (req: Request, res: Response) => {
       error: err instanceof Error ? err.message : 'Déconnexion impossible',
     });
   }
+});
+
+// ── POST /api/config/active-platforms ─────────────────────────────────────────
+// Consigne dans la base de connaissances du projet actif les plateformes
+// sociales actuellement CONNECTÉES (détectées côté serveur, pas de confiance au
+// client) — pour que l'IA adapte ton et recommandations aux canaux réellement
+// utilisés. Appelée après l'onboarding et à chaque (dé)connexion de compte.
+const SOCIAL_PUBLISH_TOOLKITS = new Set(['linkedin', 'twitter', 'instagram', 'facebook', 'reddit', 'youtube', 'tiktok']);
+router.post('/active-platforms', async (req: Request, res: Response) => {
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.ownerUserId !== req.user!.userId) {
+    return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
+  }
+  const connected = await getConnectedToolkits(composioUserIdFor(ctx.ownerUserId), true);
+  const platforms = [...connected]
+    .filter((slug) => SOCIAL_PUBLISH_TOOLKITS.has(slug))
+    .map((slug) => FEATURED_TOOLKITS.find((t) => t.slug === slug)?.name ?? slug);
+  const added = platforms.length > 0 ? upsertActivePlatforms(ctx.ownerUserId, ctx.planId, platforms) : 0;
+  res.json({ success: true, data: { platforms, added } });
 });
 
 // ── Bot Telegram personnel ───────────────────────────────────────────────────

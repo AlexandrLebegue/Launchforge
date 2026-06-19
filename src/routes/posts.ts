@@ -11,8 +11,9 @@ import { isComposioConfigured, syncMetricsViaComposio, publishViaComposio, resol
 import { logEvent } from '../services/adminLogger';
 import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from '../services/postPublisher';
 import { syncPostsToCalendarInBackground, syncPostsToCalendar } from '../services/calendarSync';
-import { analyzePost } from '../services/analytics';
+import { analyzePost, upsertImportSummary } from '../services/analytics';
 import { fetchPostContentDirect } from '../services/composioDirect';
+import { listHistory, isImportablePlatform, HISTORY_CAPABILITIES, ImportError, ImportedPost } from '../services/historyImport';
 import { checkEmbeddable } from '../services/embed';
 import { assertWithinUsage, recordUsage, assertFeature, Feature } from '../services/entitlements';
 import { handleQuota } from '../middleware/quota';
@@ -123,6 +124,7 @@ router.post('/', (req: Request, res: Response) => {
     scheduledAt: body.scheduledAt || null,
     publishedAt: null,
     externalUrl: typeof body.externalUrl === 'string' && body.externalUrl.trim() ? body.externalUrl.trim() : null,
+    externalId:  null,
     imageUrl:    typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null,
     subreddit:   normalizeSubreddit(body.subreddit),
     recurrence:  RECURRENCES.includes(body.recurrence as Recurrence) ? (body.recurrence as Recurrence) : 'none',
@@ -184,6 +186,7 @@ router.post('/import', async (req: Request, res: Response) => {
     scheduledAt: null,
     publishedAt: now,
     externalUrl: cleanUrl,
+    externalId:  null,
     imageUrl:    null,
     subreddit:   platform === 'reddit' ? normalizeSubreddit(cleanUrl.match(/reddit\.com\/r\/([A-Za-z0-9_]+)/i)?.[1]) : null,
     recurrence:  'none',
@@ -251,6 +254,135 @@ router.post('/import', async (req: Request, res: Response) => {
   res.status(201).json({
     success: true,
     data: { post: storage.getPostById(post.id) ?? post, synced, note, commentsAdded },
+  });
+});
+
+// ── GET /api/posts/import-history/options ─────────────────────────────────────
+// Capacités d'import d'historique par plateforme — pilote la modale du dashboard.
+router.get('/import-history/options', (_req: Request, res: Response) => {
+  res.json({ success: true, data: { platforms: HISTORY_CAPABILITIES } });
+});
+
+// ── POST /api/posts/import-history ────────────────────────────────────────────
+// Importe EN MASSE les anciens posts de l'utilisateur depuis un compte connecté
+// (Composio, déterministe, sans coût IA). Déduplique contre la base (id natif
+// puis URL) : un post déjà présent n'est jamais recréé. Les posts importés
+// arrivent en statut « publié », avec leurs métriques quand la plateforme les
+// expose. Accessible à toutes les offres (lecture seule, aucune génération IA).
+router.post('/import-history', async (req: Request, res: Response) => {
+  const { platform: rawPlatform, handle, limit } = req.body as { platform?: unknown; handle?: unknown; limit?: unknown };
+  const platform = typeof rawPlatform === 'string' ? rawPlatform.trim().toLowerCase() : '';
+  if (!platform) {
+    return res.status(400).json({ success: false, error: 'Indiquez la plateforme à importer.' });
+  }
+  if (!isImportablePlatform(platform)) {
+    const cap = HISTORY_CAPABILITIES.find((c) => c.platform === platform);
+    return res.status(400).json({ success: false, error: cap?.note ?? `Import d'historique non disponible pour « ${platform} ».` });
+  }
+  if (!process.env.COMPOSIO_API_KEY) {
+    return res.status(503).json({ success: false, error: 'COMPOSIO_NOT_CONFIGURED' });
+  }
+
+  // Boundary délibérée : l'import est une ACTION DE CONTENU (il rapatrie des
+  // posts dans le projet), au même titre que la publication immédiate ou le
+  // cross-post — donc autorisée aux éditeurs, via les comptes du PROPRIÉTAIRE
+  // du projet (ctx.ownerUserId). La GESTION des comptes (connexion/déconnexion,
+  // /config/active-platforms) reste, elle, réservée au propriétaire.
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.role === 'viewer') {
+    return res.status(403).json({ success: false, error: 'Rôle Lecteur : import non autorisé' });
+  }
+
+  let items: ImportedPost[];
+  try {
+    items = await listHistory(ctx.ownerUserId, platform, {
+      handle: typeof handle === 'string' ? handle.trim() : undefined,
+      limit: typeof limit === 'number' && limit > 0 ? Math.floor(limit) : undefined,
+    });
+  } catch (err) {
+    if (err instanceof ImportError) {
+      return res.status(422).json({ success: false, error: err.message });
+    }
+    return res.status(502).json({ success: false, error: err instanceof Error ? err.message : 'Import échoué' });
+  }
+
+  const now = new Date().toISOString();
+  let imported = 0;
+  let skipped = 0;
+  let failed = 0;
+  const importedPosts: Post[] = [];
+
+  for (const item of items) {
+    try {
+      // Dédup : déjà importé/publié (par id natif puis par URL) → on saute.
+      const existing = storage.getImportedPost(ctx.ownerUserId, ctx.planId, platform, item.externalId, item.externalUrl);
+      if (existing) { skipped += 1; continue; }
+
+      const post: Post = {
+        id:          uuid(),
+        userId:      ctx.ownerUserId,
+        planId:      ctx.planId,
+        platform,
+        title:       (item.title || '').slice(0, 300),
+        content:     (item.content || '').slice(0, 20000),
+        status:      'published',
+        scheduledAt: null,
+        publishedAt: item.publishedAt || now,
+        externalUrl: item.externalUrl,
+        externalId:  item.externalId,
+        imageUrl:    item.imageUrl,
+        subreddit:   item.subreddit,
+        recurrence:  'none',
+        recurrenceBrief: null,
+        seriesId:    null,
+        recurrenceUseNews:      0,
+        recurrenceUseKnowledge: 1,
+        recurrenceUpdateKb:     0,
+        crossPostId: null,
+        autoPublish: 0,
+        publishError: null,
+        calendarSynced: 0,
+        impressions: item.impressions,
+        likes:       item.likes,
+        comments:    item.comments,
+        shares:      item.shares,
+        clicks:      item.clicks,
+        createdAt:   now,
+        updatedAt:   now,
+      };
+      storage.savePost(post);
+      imported += 1;
+      importedPosts.push(post);
+      // L'import déterministe a DÉJÀ capturé les métriques : on marque le post
+      // synchronisé (évite une re-synchro IA payante par le worker) et on
+      // enregistre l'instantané — best-effort, sans refaire échouer un post
+      // pourtant bien enregistré si une de ces écritures secondaires échoue.
+      try {
+        storage.markMetricsSynced(post.id, now);
+        storage.recordMetricSnapshot(post);
+      } catch { /* snapshot/marquage best-effort */ }
+    } catch {
+      failed += 1; // collision sur l'index unique (course) ou ligne malformée → ignorée
+    }
+  }
+
+  // Base de connaissances : trace de l'import pour l'analyse rétro (best-effort).
+  if (imported > 0) {
+    try {
+      const top = [...importedPosts].sort((a, b) => b.likes - a.likes).slice(0, 3).map((p) => ({ title: p.title, likes: p.likes }));
+      upsertImportSummary(ctx.ownerUserId, ctx.planId, platform, imported, top);
+    } catch { /* best-effort */ }
+  }
+
+  logEvent(ctx.ownerUserId, 'post.import_history', platform, { platform, imported, skipped, failed, found: items.length });
+
+  const note = items.length === 0
+    ? 'Aucun post trouvé sur ce compte (ou la plateforme n\'a rien renvoyé).'
+    : `${imported} importé(s), ${skipped} déjà présent(s)${failed ? `, ${failed} en échec` : ''}.`;
+
+  res.status(201).json({
+    success: true,
+    data: { platform, found: items.length, imported, skipped, failed, note, posts: importedPosts },
   });
 });
 

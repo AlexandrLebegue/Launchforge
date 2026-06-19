@@ -130,6 +130,7 @@ export async function generateContentCalendar(params: CalendarParams): Promise<P
       scheduledAt: scheduled.toISOString(),
       publishedAt: null,
       externalUrl: null,
+      externalId:  null,
       imageUrl:    null,
       subreddit:   null,
       recurrence:  'none',

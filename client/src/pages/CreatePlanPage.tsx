@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect, FormEvent, ChangeEvent, KeyboardEvent, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, User, Paperclip, Send } from 'lucide-react';
+import { Flame, User, Paperclip, Send, Plug } from 'lucide-react';
 import Markdown from '../components/Markdown';
+import PlatformConnectTable from '../components/PlatformConnectTable';
 import {
   startOnboarding,
   getOnboardingSession,
   streamOnboardingMessage,
   createPlan,
   invalidateOverview,
+  recordActivePlatforms,
   OnboardingSession,
   OnboardingAttachment,
   OnboardingProfile,
@@ -121,11 +123,14 @@ export default function CreatePlanPage() {
 
   useEffect(() => {
     (async () => {
-      // Resume an in-progress conversation after a reload
+      // Resume a conversation after a reload — y compris une session déjà
+      // TERMINÉE : l'utilisateur retrouve son profil, l'étape de connexion des
+      // plateformes et le bouton de génération (sinon il repartait de zéro et
+      // perdait son onboarding s'il fermait l'onglet avant de générer le plan).
       const savedId = localStorage.getItem(SESSION_KEY);
       if (savedId) {
         const res = await getOnboardingSession(savedId);
-        if (res.success && res.data && res.data.status === 'active') {
+        if (res.success && res.data && (res.data.status === 'active' || res.data.status === 'completed')) {
           setSession(res.data);
           setLoading(false);
           return;
@@ -231,13 +236,17 @@ export default function CreatePlanPage() {
       company:        p.company,
       mode:           'ai',
     });
-    setGenerating(false);
     if (res.success && res.data) {
+      // Le projet vient d'être créé et activé : on consigne dans sa base de
+      // connaissances les plateformes connectées pendant l'onboarding (best-effort).
+      await recordActivePlatforms().catch(() => { /* best-effort */ });
+      setGenerating(false);
       // Nouveau projet actif : la vue d'ensemble en cache est obsolète
       invalidateOverview();
       // Direction le Hub : les brouillons générés par l'IA y attendent
       navigate(`/content?drafts=${res.bootstrappedPosts ?? 0}&plan=${res.data.id}`);
     } else {
+      setGenerating(false);
       setError(res.error || 'La génération du plan a échoué — réessayez.');
     }
   };
@@ -312,13 +321,33 @@ export default function CreatePlanPage() {
               )}
 
               {completed && (
-                <div className="chat-generate-cta">
-                  <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
-                    {generating ? '⏳ Génération en cours…' : 'Générer mon plan de lancement'}
-                  </button>
-                  <button className="btn" onClick={restart} disabled={generating}>
-                    ↺ Recommencer
-                  </button>
+                <div className="onboarding-config-step">
+                  <div className="chat-msg chat-msg-bot">
+                    <div className="chat-avatar bot"><Flame size={16} /></div>
+                    <div className="chat-bubble bot">
+                      <Markdown text={"Parfait, votre profil est prêt ! 🎉\n\n**Dernière étape : sur quels réseaux voulez-vous publier ?** Connectez ceux que vous comptez utiliser — vous pourrez ensuite y publier en un clic, suivre vos métriques et même **importer vos anciens posts**. Vous pourrez toujours en ajouter d'autres plus tard."} />
+                    </div>
+                  </div>
+
+                  <div className="onboarding-platforms-card card">
+                    <div className="card-header"><Plug size={15} /> Connecter mes plateformes</div>
+                    {/* recordOnConnect=false : le projet n'existe pas encore ;
+                        la consignation en base de connaissances se fait après
+                        la génération du plan (handleGenerate → recordActivePlatforms). */}
+                    <PlatformConnectTable recordOnConnect={false} />
+                    <p className="form-hint-inline" style={{ marginTop: 12 }}>
+                      Cette étape est facultative — vous pouvez générer votre plan dès maintenant et connecter vos comptes plus tard depuis la Configuration.
+                    </p>
+                  </div>
+
+                  <div className="chat-generate-cta">
+                    <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+                      {generating ? '⏳ Génération en cours…' : 'Générer mon plan de lancement'}
+                    </button>
+                    <button className="btn" onClick={restart} disabled={generating}>
+                      ↺ Recommencer
+                    </button>
+                  </div>
                 </div>
               )}
 

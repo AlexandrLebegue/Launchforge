@@ -382,6 +382,9 @@ export interface Post {
   publishedAt: string | null;
   /** URL du post une fois publié sur la plateforme (sert à la synchro des métriques) */
   externalUrl: string | null;
+  /** Identifiant natif du post chez la plateforme (id vidéo, id média, fullname
+   *  Reddit, id tweet…) — renseigné par l'import d'historique pour dédupliquer */
+  externalId: string | null;
   /** URL du visuel à joindre au post (image hébergée) */
   imageUrl: string | null;
   /** Reddit : subreddit cible (sans le préfixe « r/ ») — null pour les autres plateformes */

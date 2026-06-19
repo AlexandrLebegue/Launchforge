@@ -115,6 +115,7 @@ async function executeTool(userId: string, name: string, args: any): Promise<{ o
       scheduledAt: scheduled && !Number.isNaN(scheduled.getTime()) ? scheduled.toISOString() : null,
       publishedAt: null,
       externalUrl: null,
+      externalId: null,
       imageUrl: typeof args.imageUrl === 'string' && args.imageUrl.trim() ? args.imageUrl.trim() : null,
       subreddit: typeof args.subreddit === 'string' && args.subreddit.trim()
         ? args.subreddit.trim().replace(/^\/?r\//i, '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 50) || null

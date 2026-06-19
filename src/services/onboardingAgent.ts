@@ -45,7 +45,7 @@ Information you need before finishing (gather, infer or research it):
 Tool usage:
 - web_search: search the web. Use targeted queries (company name + site, company name + reviews, "<niche> competitors", etc.). Use it proactively whenever the company exists.
 - fetch_website: read a specific page (the company's website, a competitor, a directory listing). Always fetch the company's own website when you have the URL.
-- complete_onboarding: call this EXACTLY ONCE, when you have all six items above and the user has confirmed your summary. Before calling it, present a short recap and ask for confirmation. After the tool succeeds, tell the user their profile is ready and that they can generate their plan.
+- complete_onboarding: call this EXACTLY ONCE, when you have all six items above and the user has confirmed your summary. Before calling it, present a short recap and ask for confirmation. After the tool succeeds, tell the user their profile is ready, invite them to connect the social platforms they want to publish on (a connection table is shown right below your message — they can import their existing posts from there too), and let them know they can then generate their plan.
 
 Never invent facts about a real company — research or ask. Keep the whole interview under ~8 exchanges when possible.`;
 

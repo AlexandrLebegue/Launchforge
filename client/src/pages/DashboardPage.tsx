@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarClock, PenLine, CheckCircle2, ClipboardCheck, Rocket } from 'lucide-react';
-import { getOverview, getPlan, Overview, LaunchPlan } from '../api/client';
+import { CalendarClock, PenLine, CheckCircle2, ClipboardCheck, Rocket, Download } from 'lucide-react';
+import { getOverview, getPlan, invalidateOverview, Overview, LaunchPlan } from '../api/client';
+import ImportHistoryModal from '../components/ImportHistoryModal';
 
 /**
  * Tableau de bord = vue d'ensemble du projet courant, directement.
@@ -13,25 +14,27 @@ export default function DashboardPage() {
   const [plan,     setPlan]     = useState<LaunchPlan | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
+  const [showImport, setShowImport] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    (async () => {
-      // L'overview (léger, souvent déjà en cache via la sidebar) donne le
-      // projet actif ; son plan complet est chargé dans la foulée.
-      const res = await getOverview();
-      if (res.success && res.data) {
-        setOverview(res.data);
-        if (res.data.project) {
-          const planRes = await getPlan(res.data.project.id);
-          if (planRes.success && planRes.data) setPlan(planRes.data);
-        }
-      } else {
-        setError(res.error || 'Impossible de charger votre projet');
+  const load = useCallback(async (refresh = false) => {
+    // L'overview (léger, souvent déjà en cache via la sidebar) donne le
+    // projet actif ; son plan complet est chargé dans la foulée.
+    if (refresh) invalidateOverview();
+    const res = await getOverview();
+    if (res.success && res.data) {
+      setOverview(res.data);
+      if (res.data.project) {
+        const planRes = await getPlan(res.data.project.id);
+        if (planRes.success && planRes.data) setPlan(planRes.data);
       }
-      setLoading(false);
-    })();
+    } else {
+      setError(res.error || 'Impossible de charger votre projet');
+    }
+    setLoading(false);
   }, []);
+
+  useEffect(() => { void load(); }, [load]);
 
   if (loading) return <div className="loading">⏳ Chargement de votre projet…</div>;
 
@@ -83,12 +86,29 @@ export default function DashboardPage() {
             </Link>
           </div>
         </div>
-        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', paddingTop: 4 }}>
-          Créé le {new Date(project.createdAt).toLocaleDateString('fr-FR', { month: 'long', day: 'numeric', year: 'numeric' })}
+        <div className="dashboard-header-actions">
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowImport(true)}
+            data-tour="dashboard-import"
+            title="Rapatrier vos posts déjà publiés sur vos réseaux connectés"
+          >
+            <Download size={15} /> Importer mes anciens posts
+          </button>
+          <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', paddingTop: 4 }}>
+            Créé le {new Date(project.createdAt).toLocaleDateString('fr-FR', { month: 'long', day: 'numeric', year: 'numeric' })}
+          </div>
         </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+
+      {showImport && (
+        <ImportHistoryModal
+          onClose={() => setShowImport(false)}
+          onDone={(imported) => { if (imported > 0) void load(true); }}
+        />
+      )}
 
       {/* Validations en attente — action prioritaire */}
       {approvals > 0 && (

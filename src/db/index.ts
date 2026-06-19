@@ -265,6 +265,21 @@ function runMigrations(database: Database.Database): void {
   if (!postCols.some((c) => c.name === 'recurrenceBrief')) {
     database.exec(`ALTER TABLE posts ADD COLUMN recurrenceBrief TEXT`);
   }
+  // Additive migration: identifiant natif du post chez la plateforme (id vidéo
+  // YouTube/TikTok, id média Instagram, fullname Reddit, id tweet…) — sert à
+  // dédupliquer l'import en masse de l'historique (ré-import idempotent).
+  if (!postCols.some((c) => c.name === 'externalId')) {
+    database.exec(`ALTER TABLE posts ADD COLUMN externalId TEXT`);
+  }
+  // Filet de sécurité contre les doublons d'import : un même post externe ne
+  // peut exister qu'une fois par projet+plateforme. IFNULL normalise planId
+  // (l'index UNIQUE de SQLite traite sinon chaque NULL comme distinct), et la
+  // clause WHERE laisse passer les posts internes (externalId NULL).
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_external_dedup
+       ON posts(userId, IFNULL(planId, ''), platform, externalId)
+       WHERE externalId IS NOT NULL`
+  );
 
   // ── Isolation par projet ───────────────────────────────────────────────────
   // Chaque projet (plan) a ses propres connaissances, contacts et agents.

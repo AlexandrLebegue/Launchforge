@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, Fragment, ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Flame, Bot, Megaphone, BarChart3, Target, MessageSquare,
-  PenLine, Send, TrendingUp, BookOpen, RefreshCw, ShieldCheck, Sparkles, CreditCard,
+  PenLine, Send, TrendingUp, BookOpen, RefreshCw, ShieldCheck, Sparkles, CreditCard, History,
+  Briefcase, MessageCircle, Camera, Users, Music2, Play, MessagesSquare, Check, Minus, ChevronDown,
 } from 'lucide-react';
 import LogoEmbers from '../components/LogoEmbers';
 import { useLang, LangSwitch, Lang } from '../i18n';
@@ -19,6 +20,7 @@ gsap.registerPlugin(ScrollTrigger);
 const FEATURE_ICONS = [
   <Bot size={22} />, <Megaphone size={22} />, <RefreshCw size={22} />,
   <BarChart3 size={22} />, <Target size={22} />, <MessageSquare size={22} />,
+  <History size={22} />,
 ];
 const LOOP_ICONS = [
   <BookOpen size={20} />, <Sparkles size={20} />, <Send size={20} />,
@@ -72,6 +74,12 @@ const COPY: Record<Lang, {
   loop: { title: string; sub: string; aria: string; returnLabel: string; steps: { title: string; desc: string }[] };
   features: { title: string; hub: { core: { title: string; sub: string }; aria: string; nodes: string[] }; items: { title: string; desc: string }[] };
   product: { title: string; sub: string; shots: { title: string; desc: string; points: string[]; alt: string }[] };
+  networks: {
+    title: string; sub: string; more: string; less: string;
+    cols: { network: string; publish: string; metrics: string; import: string };
+    val: { yes: string; partial: string; url: string; limited: string };
+    details: Record<string, string>;
+  };
   how: { title: string; steps: { title: string; desc: string }[] };
   pricing: {
     title: string; sub: string; trialNote: string; guarantee: string;
@@ -129,6 +137,7 @@ const COPY: Record<Lang, {
         { title: 'Métriques & analyse', desc: 'Vues, likes, commentaires relevés automatiquement depuis vos comptes. Post-mortem IA de chaque post et comparaison du même contenu entre plateformes.' },
         { title: 'Détection de leads', desc: 'L\'IA lit les réactions de vos posts et votre boîte mail, repère les personnes intéressées, les score de 0 à 100 et rédige la relance.' },
         { title: 'Pilotage par chat', desc: 'Tout se commande en français, depuis l\'app ou Telegram : « publie ce post sur X et Instagram », « simule ma série », « bilan de la semaine ».' },
+        { title: 'Import de vos anciens posts', desc: 'Rapatriez en un clic vos posts déjà publiés sur YouTube, Instagram, TikTok, Facebook, X… Ils rejoignent le Hub avec leurs métriques : l\'IA part de ce qui a déjà marché pour affûter vos prochains posts.' },
       ],
     },
     product: {
@@ -155,10 +164,27 @@ const COPY: Record<Lang, {
         },
       ],
     },
+    networks: {
+      title: 'Les réseaux sociaux pris en charge',
+      sub: 'Publiez, mesurez et importez votre historique — chaque réseau a ses règles, LaunchForge les gère pour vous.',
+      more: 'Voir les particularités de chaque réseau',
+      less: 'Masquer les détails',
+      cols: { network: 'Réseau', publish: 'Publication', metrics: 'Métriques', import: 'Import historique' },
+      val: { yes: 'Oui', partial: 'Partiel', url: 'Par URL', limited: 'Limité' },
+      details: {
+        linkedin: 'Publication de posts (texte + image) et lecture des réactions. L\'API LinkedIn n\'expose ni impressions ni commentaires pour un profil perso et ne permet pas de lister l\'historique — l\'import se fait à l\'unité via l\'URL du post.',
+        twitter: 'Publication de posts ; métriques publiques complètes (vues, likes, réponses, reposts). L\'import de l\'historique est limité aux 7 derniers jours (limite de l\'API X).',
+        instagram: 'Publication d\'images et de Reels (un média est requis) ; insights reach, likes et commentaires. Import de tout l\'historique sur un compte Business/Creator.',
+        facebook: 'Publication sur une Page (l\'API Meta ne couvre pas les profils perso) ; likes, commentaires et partages. Import de tout l\'historique de la Page.',
+        tiktok: 'Publication de vidéos et de posts photo ; vues, likes, commentaires et partages inclus. Import de toutes vos vidéos.',
+        youtube: 'Mise en ligne de vidéos ; vues, likes et commentaires. Import de tout l\'historique de la chaîne.',
+        reddit: 'Publication dans un subreddit (cible requise) ; score et nombre de commentaires (Reddit n\'expose pas les vues). Import de vos posts récents par auteur.',
+      },
+    },
     how: {
       title: 'Trois étapes, et la forge tourne',
       steps: [
-        { title: 'Décrivez votre entreprise', desc: 'Un chat d\'onboarding qui fait les recherches à votre place — entreprise existante ou simple idée.' },
+        { title: 'Décrivez votre entreprise', desc: 'Un chat d\'onboarding qui fait les recherches à votre place, connecte vos réseaux et peut importer vos posts existants — entreprise établie ou simple idée.' },
         { title: 'Recevez plan et calendrier', desc: 'Plan de lancement semaine par semaine et premiers posts rédigés, datés, prêts à relire.' },
         { title: 'Publiez et apprenez', desc: 'Publication automatique ou validée, métriques relevées, leads détectés — et l\'IA s\'améliore avec vos résultats.' },
       ],
@@ -262,6 +288,7 @@ const COPY: Record<Lang, {
         { title: 'Metrics & analysis', desc: 'Views, likes and comments collected automatically from your accounts. AI post-mortems and same-content comparison across platforms.' },
         { title: 'Lead detection', desc: 'The AI reads your posts\' reactions and your inbox, spots interested people, scores them 0–100 and drafts the follow-up.' },
         { title: 'Chat-first control', desc: 'Everything works in plain language, from the app or Telegram: "publish this on X and Instagram", "simulate my series", "this week\'s report".' },
+        { title: 'Import your past posts', desc: 'Pull in your already-published posts from YouTube, Instagram, TikTok, Facebook, X… in one click. They land in the Hub with their metrics: the AI starts from what already worked to sharpen your next posts.' },
       ],
     },
     product: {
@@ -288,10 +315,27 @@ const COPY: Record<Lang, {
         },
       ],
     },
+    networks: {
+      title: 'The supported social networks',
+      sub: 'Publish, measure and import your history — each network has its own rules, LaunchForge handles them for you.',
+      more: 'See each network\'s specifics',
+      less: 'Hide details',
+      cols: { network: 'Network', publish: 'Publishing', metrics: 'Metrics', import: 'History import' },
+      val: { yes: 'Yes', partial: 'Partial', url: 'By URL', limited: 'Limited' },
+      details: {
+        linkedin: 'Publish posts (text + image) and read reactions. LinkedIn\'s API exposes neither impressions nor comments for a personal profile and can\'t list your history — import is done one post at a time via its URL.',
+        twitter: 'Publish posts; full public metrics (views, likes, replies, reposts). History import is limited to the last 7 days (X API limit).',
+        instagram: 'Publish images and Reels (media required); reach, likes and comments insights. Import your whole history on a Business/Creator account.',
+        facebook: 'Publish to a Page (Meta\'s API doesn\'t cover personal profiles); likes, comments and shares. Import the Page\'s entire history.',
+        tiktok: 'Publish videos and photo posts; views, likes, comments and shares included. Import all your videos.',
+        youtube: 'Upload videos; views, likes and comments. Import your channel\'s entire history.',
+        reddit: 'Publish to a subreddit (target required); score and comment count (Reddit doesn\'t expose views). Import your recent posts by author.',
+      },
+    },
     how: {
       title: 'Three steps, and the forge runs',
       steps: [
-        { title: 'Describe your company', desc: 'An onboarding chat that does the research for you — existing business or just an idea.' },
+        { title: 'Describe your company', desc: 'An onboarding chat that does the research for you, connects your social accounts and can import your existing posts — existing business or just an idea.' },
         { title: 'Get a plan and a calendar', desc: 'A week-by-week launch plan and your first posts written, dated, ready to review.' },
         { title: 'Publish and learn', desc: 'Automatic or approved publishing, metrics collected, leads detected — and the AI improves with your results.' },
       ],
@@ -431,10 +475,41 @@ function HeroMock({ c }: { c: (typeof COPY)['fr']['mock'] }) {
 
 const SHOT_IMAGES = ['/landing/editeur.png', '/landing/calendrier.png', '/landing/performances.png'];
 
+// Réseaux pris en charge — capacités (drapeaux non traduits, libellés via COPY).
+//  publish: yes | media (média requis) | page (Page seulement) | sub (subreddit requis)
+//  metrics: yes (complètes) | partial (limitées par l'API) | no
+//  import : yes (historique complet) | limited (fenêtre/best-effort) | url (à l'unité) | no
+const SOCIAL_NETWORKS: { slug: string; name: string; icon: ReactElement; publish: string; metrics: string; import: string }[] = [
+  { slug: 'linkedin',  name: 'LinkedIn',    icon: <Briefcase size={18} />,      publish: 'yes',   metrics: 'partial', import: 'url' },
+  { slug: 'twitter',   name: 'X / Twitter', icon: <MessageCircle size={18} />,  publish: 'yes',   metrics: 'yes',     import: 'limited' },
+  { slug: 'instagram', name: 'Instagram',   icon: <Camera size={18} />,         publish: 'media', metrics: 'yes',     import: 'yes' },
+  { slug: 'facebook',  name: 'Facebook',    icon: <Users size={18} />,          publish: 'page',  metrics: 'yes',     import: 'yes' },
+  { slug: 'tiktok',    name: 'TikTok',      icon: <Music2 size={18} />,         publish: 'media', metrics: 'yes',     import: 'yes' },
+  { slug: 'youtube',   name: 'YouTube',     icon: <Play size={18} />,           publish: 'media', metrics: 'yes',     import: 'yes' },
+  { slug: 'reddit',    name: 'Reddit',      icon: <MessagesSquare size={18} />, publish: 'sub',   metrics: 'partial', import: 'limited' },
+];
+
+/** Rend une cellule de capacité du tableau des réseaux (Oui / Partiel / Par URL / —). */
+function netCell(flag: string, val: { yes: string; partial: string; url: string; limited: string }): ReactElement {
+  switch (flag) {
+    case 'yes': case 'media': case 'page': case 'sub':
+      return <span className="net-cell net-yes"><Check size={15} /> {val.yes}</span>;
+    case 'partial':
+      return <span className="net-cell net-partial">{val.partial}</span>;
+    case 'limited':
+      return <span className="net-cell net-partial">{val.limited}</span>;
+    case 'url':
+      return <span className="net-cell net-partial">{val.url}</span>;
+    default:
+      return <span className="net-cell net-no"><Minus size={14} /></span>;
+  }
+}
+
 export default function LandingPage() {
   const rootRef = useRef<HTMLDivElement>(null);
   const { lang } = useLang();
   const c = COPY[lang];
+  const [showNetDetails, setShowNetDetails] = useState(false);
 
   useEffect(() => {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -625,6 +700,60 @@ export default function LandingPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Réseaux pris en charge ── */}
+      <section className="landing-section gs-section" id="reseaux">
+        <div className="landing-section-inner">
+          <h2 className="landing-section-title gs-reveal">{c.networks.title}</h2>
+          <div className="ember-line gs-reveal" />
+          <p className="landing-section-sub gs-reveal" style={{ marginTop: 14 }}>{c.networks.sub}</p>
+
+          <div className="landing-networks gs-reveal">
+            <table className="landing-networks-table">
+              <thead>
+                <tr>
+                  <th>{c.networks.cols.network}</th>
+                  <th>{c.networks.cols.publish}</th>
+                  <th>{c.networks.cols.metrics}</th>
+                  <th>{c.networks.cols.import}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SOCIAL_NETWORKS.map((n) => (
+                  <Fragment key={n.slug}>
+                    <tr>
+                      <td data-label={c.networks.cols.network}>
+                        <span className="net-name"><span className="net-icon">{n.icon}</span>{n.name}</span>
+                      </td>
+                      <td data-label={c.networks.cols.publish}>{netCell(n.publish, c.networks.val)}</td>
+                      <td data-label={c.networks.cols.metrics}>{netCell(n.metrics, c.networks.val)}</td>
+                      <td data-label={c.networks.cols.import}>{netCell(n.import, c.networks.val)}</td>
+                    </tr>
+                    {showNetDetails && (
+                      <tr className="net-detail-row">
+                        <td colSpan={4}>
+                          <span className="net-detail-name"><span className="net-icon">{n.icon}</span>{n.name}</span>
+                          {(c.networks.details as Record<string, string>)[n.slug]}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+
+            <button
+              type="button"
+              className="net-toggle"
+              onClick={() => setShowNetDetails((v) => !v)}
+              aria-expanded={showNetDetails}
+            >
+              {showNetDetails ? c.networks.less : c.networks.more}
+              <ChevronDown size={16} className={`net-chevron${showNetDetails ? ' open' : ''}`} />
+            </button>
+          </div>
         </div>
       </section>
 

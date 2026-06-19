@@ -1103,15 +1103,15 @@ export class Storage {
       .prepare(
         `INSERT INTO posts
            (id, userId, planId, platform, title, content, status, scheduledAt, publishedAt,
-            externalUrl, imageUrl, subreddit, recurrence, recurrenceBrief, seriesId,
+            externalUrl, externalId, imageUrl, subreddit, recurrence, recurrenceBrief, seriesId,
             recurrenceUseNews, recurrenceUseKnowledge, recurrenceUpdateKb, crossPostId,
             autoPublish, publishError, calendarSynced,
             impressions, likes, comments, shares, clicks, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         post.id, post.userId, post.planId, post.platform, post.title, post.content, post.status,
-        post.scheduledAt, post.publishedAt, post.externalUrl, post.imageUrl, post.subreddit ?? null,
+        post.scheduledAt, post.publishedAt, post.externalUrl, post.externalId ?? null, post.imageUrl, post.subreddit ?? null,
         post.recurrence, post.recurrenceBrief,
         post.seriesId ?? null, post.recurrenceUseNews ?? 0, post.recurrenceUseKnowledge ?? 1, post.recurrenceUpdateKb ?? 0,
         post.crossPostId ?? null,
@@ -1119,6 +1119,34 @@ export class Storage {
         post.impressions, post.likes, post.comments, post.shares, post.clicks,
         post.createdAt, post.updatedAt
       );
+  }
+
+  /**
+   * Post déjà présent correspondant à une référence externe — pour dédupliquer
+   * l'import d'historique (et ne jamais réimporter un post déjà publié via l'app).
+   * Cherche d'abord par identifiant natif (le plus fiable), puis par URL.
+   * Scopé au projet : `IS ?` matche aussi un planId NULL.
+   */
+  getImportedPost(
+    userId: string,
+    planId: string | null,
+    platform: string,
+    externalId: string | null,
+    externalUrl: string | null,
+  ): Post | undefined {
+    const db = getDb();
+    if (externalId) {
+      const byId = db
+        .prepare(`SELECT * FROM posts WHERE userId = ? AND planId IS ? AND platform = ? AND externalId = ? LIMIT 1`)
+        .get(userId, planId, platform, externalId) as Post | undefined;
+      if (byId) return byId;
+    }
+    if (externalUrl) {
+      return db
+        .prepare(`SELECT * FROM posts WHERE userId = ? AND planId IS ? AND externalUrl = ? LIMIT 1`)
+        .get(userId, planId, externalUrl) as Post | undefined;
+    }
+    return undefined;
   }
 
   updatePost(id: string, patch: Partial<Post>): void {

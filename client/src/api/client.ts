@@ -557,6 +557,8 @@ export interface Post {
   publishedAt: string | null;
   /** URL du post publié sur la plateforme (pour la synchro des métriques) */
   externalUrl: string | null;
+  /** Identifiant natif du post chez la plateforme (renseigné par l'import d'historique) */
+  externalId: string | null;
   /** URL du visuel à joindre au post */
   imageUrl: string | null;
   /** Reddit : subreddit cible (sans le préfixe « r/ ») */
@@ -610,6 +612,35 @@ export async function importPost(
 
 export async function updatePost(id: string, data: Partial<Post>): Promise<ApiResponse<Post>> {
   return request(`/posts/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+/** Capacité d'import d'historique d'une plateforme (pilote la modale d'import) */
+export interface HistoryCapability {
+  platform: string;
+  label: string;
+  importable: boolean;
+  handleField?: { label: string; placeholder: string; required: boolean };
+  note: string;
+}
+
+/** Plateformes pour lesquelles l'import en masse de l'historique est possible */
+export async function getImportHistoryOptions(): Promise<ApiResponse<{ platforms: HistoryCapability[] }>> {
+  return request('/posts/import-history/options');
+}
+
+/** Importe EN MASSE les anciens posts d'un compte connecté (dédup automatique).
+ *  `handle` : handle YouTube ou username Reddit quand la plateforme le demande. */
+export async function importHistory(
+  platform: string,
+  handle?: string,
+  limit?: number,
+): Promise<ApiResponse<{
+  platform: string; found: number; imported: number; skipped: number; failed: number; note: string; posts: Post[];
+}>> {
+  return request('/posts/import-history', {
+    method: 'POST',
+    body: JSON.stringify({ platform, ...(handle ? { handle } : {}), ...(limit ? { limit } : {}) }),
+  });
 }
 
 export async function deletePost(id: string): Promise<ApiResponse<null>> {
@@ -951,6 +982,12 @@ export async function connectToolkit(
 /** Déconnecte un compte (supprime les comptes connectés du toolkit chez Composio) */
 export async function disconnectToolkit(toolkit: string): Promise<ApiResponse<{ removed: number }>> {
   return request('/config/disconnect', { method: 'POST', body: JSON.stringify({ toolkit }) });
+}
+
+/** Consigne dans la base de connaissances du projet actif les plateformes
+ *  sociales actuellement connectées (le serveur détecte la liste lui-même). */
+export async function recordActivePlatforms(): Promise<ApiResponse<{ platforms: string[]; added: number }>> {
+  return request('/config/active-platforms', { method: 'POST' });
 }
 
 /** Enregistre le bot Telegram personnel (token @BotFather) et démarre son poller */

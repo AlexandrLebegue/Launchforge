@@ -680,7 +680,7 @@ async function executeToolInner(userId: string, _chatId: string, name: string, a
         planId,
         platform: String(args.platform || 'linkedin'),
         title: generated.title, content: generated.content,
-        status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null,
+        status: 'draft', scheduledAt: null, publishedAt: null, externalUrl: null, externalId: null,
         imageUrl: typeof args.imageUrl === 'string' && /^https?:\/\//i.test(args.imageUrl.trim()) ? args.imageUrl.trim() : null,
         subreddit: null,
         recurrence: 'none', recurrenceBrief: null, seriesId: null, recurrenceUseNews: 0, recurrenceUseKnowledge: 1, recurrenceUpdateKb: 0, crossPostId: null,

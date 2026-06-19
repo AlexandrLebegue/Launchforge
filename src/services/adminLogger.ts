@@ -11,6 +11,7 @@ export type AdminAction =
   | 'post.published'
   | 'post.scheduled'
   | 'post.imported'
+  | 'post.import_history'
   | 'agent.run'
   | 'knowledge.created'
   | 'team.created'
