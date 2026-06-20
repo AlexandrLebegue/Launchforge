@@ -1,23 +1,46 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getPosts, syncAllToCalendar, getOverview, Post } from '../api/client';
+import { getPosts, syncAllToCalendar, getOverview, updatePost, Post } from '../api/client';
 import { PostEditor, STATUS_META, platformLabel } from './ContentHubPage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vue Calendrier — grille mensuelle façon Outlook (page dédiée)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
+/** Un post est déplaçable (drag) tant qu'il n'est pas déjà publié : on ne
+ *  réécrit pas l'historique, seuls programmés et brouillons datés bougent. */
+const canMove = (p: Post) => p.status !== 'published' && !!p.scheduledAt;
+
+function CalendarView({ posts, onOpen, onCreate, onMove, onSync, syncing, canEdit }: {
   posts: Post[];
   onOpen: (p: Post) => void;
   onCreate: (dateIso: string) => void;
+  onMove: (p: Post, newIso: string) => void;
   onSync: () => void;
   syncing: boolean;
+  canEdit: boolean;
 }) {
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  // Dépose un post glissé sur un jour : on conserve l'heure d'origine et on
+  // ne change que la date. Glissé sur son propre jour → aucun changement.
+  const handleDrop = (key: string, day: Date) => {
+    const id = draggingId;
+    setDraggingId(null);
+    setDragOverKey(null);
+    if (!id) return;
+    const post = posts.find((p) => p.id === id);
+    if (!post || !canMove(post)) return;
+    const orig = new Date(post.scheduledAt!);
+    if (orig.toDateString() === key) return;
+    const next = new Date(day.getFullYear(), day.getMonth(), day.getDate(), orig.getHours(), orig.getMinutes(), 0, 0);
+    onMove(post, next.toISOString());
+  };
 
   // Posts datés : programmés, brouillons datés, et publiés (historique visible)
   const dated = posts.filter((p) => p.scheduledAt || p.publishedAt);
@@ -85,7 +108,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
           return (
             <div
               key={key}
-              className={`cal-cell${inMonth ? '' : ' out'}${key === todayKey ? ' today' : ''}`}
+              className={`cal-cell${inMonth ? '' : ' out'}${key === todayKey ? ' today' : ''}${draggingId && dragOverKey === key ? ' drag-over' : ''}`}
               onClick={(e) => {
                 // Clic sur le fond de la case (pas sur un chip) → nouveau post pré-daté à 9 h
                 if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('cal-daynum')) {
@@ -94,23 +117,39 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
                   onCreate(d.toISOString());
                 }
               }}
+              onDragOver={draggingId ? (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragOverKey !== key) setDragOverKey(key);
+              } : undefined}
+              onDrop={draggingId ? (e) => { e.preventDefault(); handleDrop(key, day); } : undefined}
               title="Cliquer pour créer un post ce jour-là"
             >
               <span className="cal-daynum">{day.getDate()}</span>
-              {visible.map((p) => (
+              {visible.map((p) => {
+                const movable = canEdit && canMove(p);
+                return (
                 <button
                   key={p.id}
                   type="button"
-                  className={`cal-chip ${statusClass(p)}`}
+                  className={`cal-chip ${statusClass(p)}${movable ? ' movable' : ''}${draggingId === p.id ? ' dragging' : ''}`}
+                  draggable={movable}
+                  onDragStart={movable ? (e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', p.id);
+                    setDraggingId(p.id);
+                  } : undefined}
+                  onDragEnd={() => { setDraggingId(null); setDragOverKey(null); }}
                   onClick={(e) => { e.stopPropagation(); onOpen(p); }}
-                  title={`${p.title || platformLabel(p.platform)} — ${STATUS_META[p.status].label}`}
+                  title={`${p.title || platformLabel(p.platform)} — ${STATUS_META[p.status].label}${movable ? ' · glissez pour déplacer' : ''}`}
                 >
                   <span className="cal-chip-time">
                     {new Date(p.scheduledAt ?? p.publishedAt!).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                   {p.title || platformLabel(p.platform)}
                 </button>
-              ))}
+                );
+              })}
               {items.length > 3 && !expanded && (
                 <button type="button" className="cal-more" onClick={(e) => { e.stopPropagation(); setExpandedDay(key); }}>
                   +{items.length - 3} autres
@@ -126,7 +165,7 @@ function CalendarView({ posts, onOpen, onCreate, onSync, syncing }: {
         })}
       </div>
       <p className="form-hint" style={{ marginTop: 8 }}>
-        Cliquez sur un jour vide pour créer un post pré-daté, sur un chip pour l'ouvrir.
+        Cliquez sur un jour vide pour créer un post pré-daté, sur un chip pour l'ouvrir{canEdit ? ', ou glissez un post d\'un jour à l\'autre pour le reprogrammer' : ''}.
       </p>
     </div>
   );
@@ -165,6 +204,20 @@ export default function CalendarPage() {
       const exists = prev.some((p) => p.id === saved.id);
       return exists ? prev.map((p) => (p.id === saved.id ? saved : p)) : [saved, ...prev];
     });
+  };
+
+  // Déplacement drag-and-drop d'un post vers un autre jour : MAJ optimiste
+  // immédiate, persistance via PATCH, rollback + message si l'API échoue.
+  const handleMove = async (post: Post, newIso: string) => {
+    if (role === 'viewer') return;
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, scheduledAt: newIso, calendarSynced: 0 } : p)));
+    const res = await updatePost(post.id, { scheduledAt: newIso });
+    if (res.success && res.data) {
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? res.data! : p)));
+    } else {
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
+      setFeedback(res.error || 'Le déplacement du post a échoué.');
+    }
   };
 
   const handleSync = async () => {
@@ -210,8 +263,10 @@ export default function CalendarPage() {
         posts={posts}
         onOpen={(p) => setEditing(p)}
         onCreate={(dateIso) => { if (role === 'viewer') return; setCreateDate(dateIso); setEditing('new'); }}
+        onMove={handleMove}
         onSync={handleSync}
         syncing={syncing}
+        canEdit={role !== 'viewer'}
       />
 
       {editing !== null && (

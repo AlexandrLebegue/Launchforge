@@ -14,6 +14,8 @@ import PostAssistant from '../components/PostAssistant';
 import PlatformIcon from '../components/PlatformIcon';
 import { Send } from 'lucide-react';
 import Markdown from '../components/Markdown';
+import ForgeProgress from '../components/ForgeProgress';
+import PublishingOverlay from '../components/PublishingOverlay';
 
 export const PLATFORMS: { value: string; label: string }[] = [
   { value: 'linkedin', label: 'LinkedIn' },
@@ -387,7 +389,7 @@ function PublishedPostView({ post, readOnly = false, onClose, onSaved }: {
 
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box modal-box-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-box modal-box-xl pe-modal-enter" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{post.title || platformLabel(post.platform)}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -890,8 +892,10 @@ export function PostEditor({ post, initialScheduledAt, readOnly = false, onClose
   const mediaIsVideo = /\.(mp4|webm|mov)(\?|#|$)/i.test(mediaUrl);
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box modal-box-xl" onClick={(e) => e.stopPropagation()}>
+    <>
+      {publishing && <PublishingOverlay />}
+      <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box modal-box-xl pe-modal-enter" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{post ? 'Modifier le post' : 'Nouveau post'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -1184,6 +1188,7 @@ export function PostEditor({ post, initialScheduledAt, readOnly = false, onClose
                     </button>
                   )}
                 </div>
+                {generating && <ForgeProgress label="L'IA rédige votre post… (~20 s)" />}
               </section>
 
               {/* Visuel par l'IA */}
@@ -1219,6 +1224,7 @@ export function PostEditor({ post, initialScheduledAt, readOnly = false, onClose
                   </div>
                 )}
                 <span className="form-hint-inline">Le résultat s'attache au post et s'affiche dans l'aperçu ci-dessus.</span>
+                {imgBusy && <ForgeProgress label="Génération du visuel en cours… (~15 s)" />}
                 {imgError && <div className="chat-error" style={{ marginTop: 6 }}>{imgError}</div>}
               </section>
 
@@ -1358,7 +1364,8 @@ export function PostEditor({ post, initialScheduledAt, readOnly = false, onClose
           </div>
         </form>
       </div>
-    </div>,
+      </div>
+    </>,
     document.body
   );
 }
@@ -1800,6 +1807,7 @@ export default function ContentHubPage() {
 
   return (
     <div className="animate-fadeIn">
+      {publishingNowId && <PublishingOverlay />}
       <div className="dashboard-header">
         <div>
           <h1>Hub de contenu</h1>

@@ -5489,6 +5489,13 @@ video.md-media { background: #000; }
   border-color: #ff6b35;
   box-shadow: 0 0 0 1px rgba(255,107,53,0.35), 0 0 18px rgba(255,107,53,0.12) inset;
 }
+/* Jour survolé pendant un glisser-déposer : cible de dépôt mise en évidence */
+.cal-cell.drag-over {
+  border-color: #ff6b35;
+  border-style: dashed;
+  background: rgba(255,107,53,0.10);
+  box-shadow: 0 0 0 1px rgba(255,107,53,0.45);
+}
 .cal-daynum { font-size: 0.75rem; color: var(--color-text-muted); font-weight: 600; }
 .cal-cell.today .cal-daynum { color: #ff8557; }
 .cal-chip {
@@ -5504,6 +5511,10 @@ video.md-media { background: #000; }
 .cal-chip.draft     { background: rgba(255,255,255,0.04); border-left: 3px dashed #b8b3cc; opacity: 0.85; }
 .cal-chip.published { background: rgba(52,211,153,0.12); border-left: 3px solid #34d399; }
 .cal-chip:hover { filter: brightness(1.25); }
+/* Posts déplaçables : poignée de préhension + post en cours de glissé estompé */
+.cal-chip.movable { cursor: grab; }
+.cal-chip.movable:active { cursor: grabbing; }
+.cal-chip.dragging { opacity: 0.4; }
 .cal-more {
   font: inherit; font-size: 0.66rem; color: var(--color-primary);
   background: none; border: none; cursor: pointer; text-align: left; padding: 0 6px;
@@ -6799,6 +6810,7 @@ video.md-media { background: #000; }
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  color: var(--color-text);
   cursor: pointer;
   transition: var(--transition-fast);
 }
@@ -7461,4 +7473,176 @@ video.md-media { background: #000; }
   .net-modal-overlay { padding: 12px; align-items: flex-end; }
   .net-modal-panel { max-height: 92vh; width: 100%; border-radius: 16px 16px 0 0; }
   .net-card-head { align-items: flex-start; }
+}
+
+/* ============================================================
+   ANIMATIONS UX — barre de chargement IA, overlay de publication,
+   transition d'ouverture d'un post (Hub de contenu)
+   ============================================================ */
+
+/* ── Barre de chargement des actions IA longues (rédaction, amélioration,
+   génération d'image) — indéterminée + rappel « ne pas actualiser » ── */
+.forge-progress {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fadeIn 0.25s ease both;
+}
+.forge-progress-track {
+  position: relative;
+  height: 7px;
+  border-radius: 99px;
+  background: rgba(255, 107, 53, 0.12);
+  border: 1px solid rgba(255, 107, 53, 0.18);
+  overflow: hidden;
+}
+.forge-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, rgba(255, 179, 71, 0) 0%, #ffb347 42%, #ff6b35 62%, rgba(255, 107, 53, 0) 100%);
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.7);
+  animation: forgeProgressSweep 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes forgeProgressSweep {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+.forge-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.forge-progress-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-primary-hover);
+}
+.forge-progress-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+/* ── Overlay plein écran pendant la publication d'un post ──
+   Métaphore forge : une volée de braises monte de la base, le post « chauffe »
+   et s'envoie. */
+.publishing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 116%, rgba(255, 107, 53, 0.22) 0%, rgba(4, 5, 10, 0.86) 55%, rgba(4, 5, 10, 0.94) 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: fadeIn 0.3s ease both;
+}
+.publishing-coals {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -60px;
+  height: 260px;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 80% at 40% 100%, rgba(255, 107, 53, 0.28) 0%, transparent 70%),
+    radial-gradient(45% 70% at 70% 100%, rgba(232, 89, 12, 0.22) 0%, transparent 70%);
+  animation: coalsBreath 6s ease-in-out infinite;
+}
+.publishing-embers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.publishing-ember {
+  position: absolute;
+  bottom: -10px;
+  border-radius: 50%;
+  background: #ffb347;
+  box-shadow: 0 0 8px rgba(255, 107, 53, 0.9), 0 0 18px rgba(255, 107, 53, 0.35);
+  opacity: 0;
+  animation: publishEmberRise linear infinite;
+  will-change: transform, opacity;
+}
+@keyframes publishEmberRise {
+  0%   { transform: translate(0, 0) scale(1); opacity: 0; }
+  10%  { opacity: 0.9; }
+  70%  { opacity: 0.5; }
+  100% { transform: translate(var(--drift, 0px), -100vh) scale(0.2); opacity: 0; }
+}
+.publishing-core {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  padding: 0 24px;
+  animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.publishing-flame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  color: #fff;
+  background: radial-gradient(circle at 50% 38%, #ff8557, #e8590c);
+  box-shadow: 0 0 0 1px rgba(255, 179, 71, 0.5), 0 0 28px rgba(255, 107, 53, 0.65), 0 0 56px rgba(255, 107, 53, 0.3);
+  animation: publishFlamePulse 1.6s ease-in-out infinite;
+}
+@keyframes publishFlamePulse {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50%      { transform: scale(1.08) translateY(-3px); }
+}
+.publishing-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+.publishing-sub {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+/* ── Transition d'ouverture d'un post depuis le Hub ──
+   Retour tactile à l'appui sur la carte, puis l'éditeur monte et grandit. */
+.post-card:active {
+  transform: scale(0.975);
+  transition: transform 0.09s ease;
+}
+@keyframes peModalEnter {
+  from { opacity: 0; transform: translateY(22px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-box-xl.pe-modal-enter {
+  animation: peModalEnter 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .forge-progress-fill { animation: none; left: 0; width: 100%; opacity: 0.65; }
+  .publishing-ember,
+  .publishing-coals,
+  .publishing-flame { animation: none; }
+  .modal-box-xl.pe-modal-enter { animation: none; }
+  .post-card:active { transform: none; }
 }

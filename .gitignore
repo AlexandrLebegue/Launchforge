@@ -8,3 +8,5 @@ data/
 client/dist/
 client/node_modules/
 *.tsbuildinfo
+qa/*
+.mobile-audit/*
