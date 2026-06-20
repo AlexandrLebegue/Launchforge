@@ -5,6 +5,7 @@ export type AdminAction =
   | 'user.register'
   | 'user.login'
   | 'user.delete'
+  | 'user.profile_update'
   | 'user.oauth_link'
   | 'plan.created'
   | 'plan.deleted'

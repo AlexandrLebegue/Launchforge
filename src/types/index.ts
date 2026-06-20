@@ -207,6 +207,12 @@ export interface User {
   /** Tutoriel d'accueil en attente (posé à la création du compte, montré après
    *  le 1er projet puis consommé). Absent/false = déjà vu ou compte ancien. */
   tutorialPending?: boolean;
+  /** Le compte a un mot de passe local (faux pour un compte créé via Google
+   *  seul). Pilote l'UI du profil : changement de mot de passe, et exigence du
+   *  mot de passe actuel pour modifier l'email. */
+  hasPassword?: boolean;
+  /** Fournisseur OAuth rattaché (« google ») ou null pour un compte local. */
+  authProvider?: string | null;
 }
 
 // ── Abonnement & facturation ──────────────────────────────────────────────────

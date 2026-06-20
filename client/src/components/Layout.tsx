@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Flame, LayoutDashboard, Megaphone, CalendarDays, MessageSquare,
   TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut, HelpCircle,
@@ -17,6 +17,8 @@ interface Props {
   /** Appelé quand le tutoriel d'accueil est consommé — l'état App reflète alors
    *  tutorialPending=false (évite tout re-déclenchement au remontage de Layout). */
   onTutorialSeen: () => void;
+  /** Profil mis à jour depuis la page Profil (nom/email/jeton) — remonté à App. */
+  onUserUpdate: (user: User, token?: string) => void;
 }
 
 const navItems = [
@@ -215,7 +217,7 @@ const TUTORIALS: Tutorial[] = [
 /** Métadonnées seules (pour le menu) */
 const TUTORIAL_META: TutorialMeta[] = TUTORIALS.map(({ id, title, description, icon }) => ({ id, title, description, icon }));
 
-export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
+export default function Layout({ user, onLogout, onTutorialSeen, onUserUpdate }: Props) {
   const location  = useLocation();
   const navigate  = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -438,13 +440,18 @@ export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
 
         {/* Footer: user info + logout */}
         <div className="layout-sidebar-footer">
-          <div className="layout-user-card">
+          <NavLink
+            to="/profile"
+            className={({ isActive }) => `layout-user-card${isActive ? ' active' : ''}`}
+            onClick={closeSidebar}
+            title="Mon profil — informations du compte et données personnelles"
+          >
             <div className="layout-user-avatar">{avatarLetter}</div>
             <div className="layout-user-info">
               <div className="layout-user-name">{displayName}</div>
-              <div className="layout-user-role">Founder</div>
+              <div className="layout-user-role">Voir mon profil</div>
             </div>
-          </div>
+          </NavLink>
 
           <Link
             to="/billing"
@@ -495,7 +502,9 @@ export default function Layout({ user, onLogout, onTutorialSeen }: Props) {
 
       {/* ── Main content ── */}
       <main className="layout-main">
-        <Outlet />
+        {/* Contexte partagé avec les pages enfants (ex. Profil : utilisateur
+            courant + remontée des modifications de compte vers App). */}
+        <Outlet context={{ user, onUserUpdate }} />
       </main>
 
       {/* ── Tutoriels : menu de sélection + parcours guidé ── */}

@@ -61,6 +61,11 @@ export interface User {
   /** Tutoriel d'accueil en attente : posé à la création du compte, lancé après
    *  le 1er projet. Absent/false = déjà vu ou compte ancien. */
   tutorialPending?: boolean;
+  /** Le compte a un mot de passe local (faux pour un compte créé via Google
+   *  seul) — pilote l'affichage du profil (changement de mot de passe, etc.). */
+  hasPassword?: boolean;
+  /** Fournisseur OAuth rattaché (« google ») ou null pour un compte local. */
+  authProvider?: string | null;
 }
 
 export interface CompanyProfile {
@@ -171,6 +176,17 @@ export async function login(
 
 export async function getMe(): Promise<ApiResponse<User>> {
   return request('/auth/me');
+}
+
+/** RGPD art. 16 (rectification) : met à jour nom, email et/ou mot de passe.
+ *  Un changement d'email renvoie un nouveau jeton (à restocker côté client). */
+export async function updateProfile(data: {
+  name?: string;
+  email?: string;
+  currentPassword?: string;
+  newPassword?: string;
+}): Promise<ApiResponse<{ user: User; token?: string }>> {
+  return request('/auth/me', { method: 'PATCH', body: JSON.stringify(data) });
 }
 
 /** Consomme le drapeau « tutoriel d'accueil » côté serveur (montré une seule fois) */

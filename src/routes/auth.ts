@@ -24,6 +24,11 @@ const registerLimiter = authRateLimit({ scope: 'register', windowMs: 60 * 60_000
 const forgotLimiter   = authRateLimit({ scope: 'forgot',   windowMs: 15 * 60_000, max: 5 });
 const resetLimiter    = authRateLimit({ scope: 'reset',    windowMs: 15 * 60_000, max: 10 });
 const deleteLimiter   = authRateLimit({ scope: 'delete',   windowMs: 15 * 60_000, max: 5 });
+const profileLimiter  = authRateLimit({ scope: 'profile',  windowMs: 15 * 60_000, max: 30 });
+
+// Validation d'email volontairement simple (présence d'un « x@y.z ») — la
+// confiance vient de l'usage, pas d'une regex exhaustive.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 router.post('/register', registerLimiter, (req: Request, res: Response) => {
   try {
@@ -318,6 +323,82 @@ router.delete('/account', deleteLimiter, requireAuth, async (req: Request, res: 
 router.post('/tutorial-seen', requireAuth, (req: Request, res: Response) => {
   storage.clearTutorialPending(req.user!.userId);
   res.json({ success: true, data: { tutorialPending: false } });
+});
+
+// ── PATCH /api/auth/me — RGPD art. 16 (rectification) ───────────────────────
+// Met à jour le profil : nom, email, et/ou mot de passe. Les changements
+// sensibles (email, mot de passe) exigent le mot de passe actuel quand le compte
+// en possède un (les comptes Google seuls n'en ont pas — la session JWT fait foi
+// et leur permet d'en définir un). Un changement d'email réémet un JWT : le
+// jeton porte l'email dans ses claims, l'ancien deviendrait incohérent.
+router.patch('/me', profileLimiter, requireAuth, (req: Request, res: Response) => {
+  const { name, email, currentPassword, newPassword } = req.body as {
+    name?: string; email?: string; currentPassword?: string; newPassword?: string;
+  };
+
+  const me = storage.getUserById(req.user!.userId);
+  if (!me) return res.status(404).json({ success: false, error: 'Compte introuvable.' });
+  // Ligne avec le hash (getUserById ne l'expose pas) pour vérifier le mot de passe
+  const account = storage.getUserByEmail(me.email);
+  const hasPassword = Boolean(account && account.password);
+
+  const updates: { name?: string; email?: string } = {};
+  let emailChanged = false;
+
+  // Le mot de passe actuel n'est demandé/vérifié qu'une fois, mutualisé entre le
+  // changement d'email et de mot de passe.
+  const verifyCurrent = (): boolean =>
+    !hasPassword || (typeof currentPassword === 'string' && verifyPassword(currentPassword, account!.password));
+
+  // ── Nom (libre) ──
+  if (typeof name === 'string' && name.trim() !== me.name) {
+    updates.name = name.trim().slice(0, 120);
+  }
+
+  // ── Email ──
+  if (typeof email === 'string' && email.trim().toLowerCase() !== me.email.toLowerCase()) {
+    const normalized = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(normalized)) {
+      return res.status(400).json({ success: false, error: 'Adresse email invalide.' });
+    }
+    const taken = storage.getUserByEmail(normalized);
+    if (taken && taken.id !== me.id) {
+      return res.status(409).json({ success: false, error: 'Cette adresse email est déjà utilisée.' });
+    }
+    if (!verifyCurrent()) {
+      return res.status(401).json({ success: false, error: 'Mot de passe actuel incorrect.' });
+    }
+    updates.email = normalized;
+    emailChanged = true;
+  }
+
+  // ── Mot de passe ──
+  if (typeof newPassword === 'string' && newPassword.length > 0) {
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, error: 'Le mot de passe doit faire au moins 6 caractères.' });
+    }
+    if (!verifyCurrent()) {
+      return res.status(401).json({ success: false, error: 'Mot de passe actuel incorrect.' });
+    }
+    storage.updateUserPassword(me.id, hashPassword(newPassword));
+  }
+
+  if (updates.name !== undefined || updates.email !== undefined) {
+    storage.updateUserProfile(me.id, updates);
+  }
+
+  const updated = storage.getUserById(me.id)!;
+  logEvent(me.id, 'user.profile_update', me.id, {
+    fields: [
+      ...(updates.name !== undefined ? ['name'] : []),
+      ...(emailChanged ? ['email'] : []),
+      ...(typeof newPassword === 'string' && newPassword.length > 0 ? ['password'] : []),
+    ],
+  });
+
+  const data: { user: User; token?: string } = { user: updated };
+  if (emailChanged) data.token = signToken({ userId: me.id, email: updated.email });
+  res.json({ success: true, data });
 });
 
 router.get('/me', requireAuth, (req: Request, res: Response) => {

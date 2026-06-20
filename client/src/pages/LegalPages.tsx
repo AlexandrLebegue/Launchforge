@@ -8,7 +8,7 @@
 import { Link } from 'react-router-dom';
 
 const CONTACT_EMAIL = 'alexandrelebegue12@gmail.com';
-const LAST_UPDATE = '11 juin 2026';
+const LAST_UPDATE = '20 juin 2026';
 
 function LegalShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -111,17 +111,29 @@ export function PrivacyPage() {
       <p>
         LaunchForge n'utilise <strong>aucun cookie tiers ni traceur publicitaire</strong>.
         Seul un jeton de session est conservé dans le stockage local de votre navigateur
-        pour vous garder connecté ; il disparaît à la déconnexion.
+        pour vous garder connecté (stockage strictement nécessaire au service) ; il disparaît
+        à la déconnexion. Un bandeau d'information vous le signale à la première visite — aucun
+        consentement n'est requis pour ce stockage essentiel, et rien d'autre n'est déposé.
       </p>
 
       <h2>Vos droits</h2>
       <p>
         Vous disposez des droits d'accès, de rectification, d'effacement, de portabilité et
-        d'opposition sur vos données. <strong>L'effacement (art. 17) et la portabilité
-        (art. 20) sont en libre-service</strong> : vue Configuration → « Vos données (RGPD) » —
-        téléchargez l'intégralité de vos données en JSON, ou supprimez définitivement votre
-        compte et tout ce qui s'y rattache (y compris les comptes connectés via Composio),
-        avec effet immédiat. Pour les autres demandes, écrivez à{' '}
+        d'opposition sur vos données. <strong>La rectification (art. 16), l'effacement
+        (art. 17) et la portabilité (art. 20) sont en libre-service</strong> :
+      </p>
+      <ul>
+        <li><strong>Rectification</strong> : page <em>Mon profil</em> (clic sur votre carte
+          utilisateur, en bas de la barre latérale) — modifiez votre nom, votre email et votre
+          mot de passe.</li>
+        <li><strong>Portabilité</strong> : <em>Mon profil</em> ou Configuration → « Vos
+          données » — téléchargez l'intégralité de vos données en JSON.</li>
+        <li><strong>Effacement</strong> : au même endroit — supprimez définitivement votre
+          compte et tout ce qui s'y rattache (y compris les comptes connectés via Composio),
+          avec effet immédiat.</li>
+      </ul>
+      <p>
+        Pour les autres demandes, écrivez à{' '}
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> — réponse sous 30 jours.
         Vous pouvez aussi saisir la CNIL (cnil.fr).
       </p>

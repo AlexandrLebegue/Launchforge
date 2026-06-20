@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
 import { getMe, User, setToken } from './api/client';
 import Layout from './components/Layout';
+import ProfilePage from './pages/ProfilePage';
+import CookieConsent from './components/CookieConsent';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -60,19 +62,28 @@ export default function App() {
     setUser((u) => (u ? { ...u, tutorialPending: false } : u));
   }, []);
 
+  // Profil mis à jour (page Profil) : reflète le nouvel utilisateur et, si l'email
+  // a changé, restocke le jeton réémis (ses claims portent l'email). Stable.
+  const handleUserUpdate = useCallback((updated: User, token?: string) => {
+    if (token) setToken(token);
+    setUser(updated);
+  }, []);
+
   if (loading) {
     return <div className="loading">Chargement…</div>;
   }
 
   return (
+    <>
     <Routes>
       <Route
         path="/"
-        element={user ? <Layout user={user} onLogout={handleLogout} onTutorialSeen={handleTutorialSeen} /> : <LandingPage />}
+        element={user ? <Layout user={user} onLogout={handleLogout} onTutorialSeen={handleTutorialSeen} onUserUpdate={handleUserUpdate} /> : <LandingPage />}
       >
         {user && (
           <>
             <Route index element={<DashboardPage />} />
+            <Route path="profile" element={<ProfilePage />} />
             <Route path="new" element={<CreatePlanPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="config" element={<ConfigPage />} />
@@ -105,5 +116,7 @@ export default function App() {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <CookieConsent />
+    </>
   );
 }

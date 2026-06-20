@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
   MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot, Globe,
@@ -6,12 +7,12 @@ import {
 } from 'lucide-react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
-  exportMyData, deleteAccount, setToken,
   setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
   setMarpTheme, customizeMarpTheme, themePreviewUrl,
   getKnowledgeSources, addKnowledgeSource, deleteKnowledgeSource, setKnowledgeSyncInterval,
   ConfigStatus, OwnAppField, KnowledgeSource,
 } from '../api/client';
+import AccountDataSection from '../components/AccountDataSection';
 
 const SYNC_INTERVALS = [
   { value: 0,    label: 'Désactivée' },
@@ -86,40 +87,6 @@ export default function ConfigPage() {
   const [botToken,  setBotToken]  = useState('');
   const [botSaving, setBotSaving] = useState(false);
   const [botError,  setBotError]  = useState('');
-  // RGPD : export des données + suppression du compte
-  const [exporting,    setExporting]    = useState(false);
-  const [deleteOpen,   setDeleteOpen]   = useState(false);
-  const [deletePwd,    setDeletePwd]    = useState('');
-  const [deleting,     setDeleting]     = useState(false);
-  const [deleteError,  setDeleteError]  = useState('');
-
-  const handleExport = async () => {
-    setExporting(true);
-    const blob = await exportMyData();
-    setExporting(false);
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'launchforge-mes-donnees.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!deletePwd) { setDeleteError('Saisissez votre mot de passe.'); return; }
-    if (!window.confirm('Suppression DÉFINITIVE : compte, projets, posts, contacts, connaissances, médias et connexions. Aucune récupération possible. Continuer ?')) return;
-    setDeleting(true);
-    setDeleteError('');
-    const res = await deleteAccount(deletePwd);
-    setDeleting(false);
-    if (res.success) {
-      setToken(null);
-      window.location.href = '/';
-    } else {
-      setDeleteError(res.error || 'Suppression impossible.');
-    }
-  };
 
   // Connexion de comptes : lien OAuth généré + erreurs, par toolkit
   const [connectLinks,  setConnectLinks]  = useState<Record<string, string>>({});
@@ -825,48 +792,11 @@ export default function ConfigPage() {
               <h2 className="settings-group-title">Vos données</h2>
               <p className="settings-group-sub">Portabilité et effacement (RGPD, articles 20 et 17) — en libre-service.</p>
             </div>
+            <Link to="/profile" className="btn btn-ghost btn-sm">Mon profil ↗</Link>
           </div>
 
           <div className="settings-panel">
-            <div className="settings-body">
-              <button className="btn btn-ghost" onClick={handleExport} disabled={exporting} style={{ alignSelf: 'flex-start' }}>
-                {exporting ? '⏳ Préparation…' : 'Télécharger toutes mes données (JSON)'}
-              </button>
-
-              <div className="danger-zone">
-                <div className="danger-zone-title">Zone dangereuse</div>
-                {!deleteOpen ? (
-                  <button className="btn btn-ghost btn-danger" onClick={() => setDeleteOpen(true)}>
-                    Supprimer mon compte et toutes mes données
-                  </button>
-                ) : (
-                  <>
-                    <p className="form-hint" style={{ marginBottom: 8 }}>
-                      Suppression <strong>définitive et immédiate</strong> : compte, projets, posts,
-                      contacts, base de connaissances, médias hébergés, liaisons Telegram et comptes
-                      connectés Composio. Confirmez avec votre mot de passe.
-                    </p>
-                    <div className="ai-assist-row">
-                      <input
-                        type="password"
-                        className="form-input"
-                        value={deletePwd}
-                        onChange={(e) => setDeletePwd(e.target.value)}
-                        placeholder="Votre mot de passe"
-                        autoComplete="current-password"
-                      />
-                      <button className="btn btn-danger-solid" onClick={handleDeleteAccount} disabled={deleting}>
-                        {deleting ? '⏳ Suppression…' : 'Supprimer définitivement'}
-                      </button>
-                      <button className="btn btn-ghost" onClick={() => { setDeleteOpen(false); setDeletePwd(''); setDeleteError(''); }}>
-                        Annuler
-                      </button>
-                    </div>
-                    {deleteError && <div className="chat-error" style={{ marginTop: 8 }}>{deleteError}</div>}
-                  </>
-                )}
-              </div>
-            </div>
+            <AccountDataSection />
           </div>
         </section>
         )}

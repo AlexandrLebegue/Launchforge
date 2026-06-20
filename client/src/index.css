@@ -446,6 +446,18 @@ input, textarea, select {
   margin-bottom: 6px;
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
+  /* Carte cliquable (lien vers le profil) : on neutralise le style d'ancre */
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.layout-user-card:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+.layout-user-card.active {
+  border-color: var(--color-primary);
 }
 
 .layout-user-avatar {
@@ -6113,6 +6125,135 @@ video.md-media { background: #000; }
   font-weight: 700;
 }
 .btn-danger-solid:hover:not(:disabled) { background: #ef4444; }
+
+/* ============================================================
+   PAGE PROFIL — identité, mot de passe, données (RGPD)
+   ============================================================ */
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.profile-hero-avatar {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: var(--shadow-glow-sm);
+}
+.profile-hero-info { min-width: 0; }
+.profile-hero-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.profile-hero-email {
+  font-size: 0.86rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.profile-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+}
+.profile-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.7rem;
+  color: var(--color-primary);
+  background: rgba(255, 107, 53, 0.1);
+  border: 1px solid rgba(255, 107, 53, 0.25);
+}
+.profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.profile-saved {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #34d399;
+}
+.profile-page .settings-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ============================================================
+   BANDEAU COOKIES — stockage essentiel uniquement (ePrivacy/RGPD)
+   ============================================================ */
+.cookie-consent {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: min(680px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-solid);
+  box-shadow: var(--shadow-card);
+  animation: cookieSlideUp 0.3s ease;
+}
+@keyframes cookieSlideUp {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.cookie-consent-icon {
+  flex-shrink: 0;
+  color: var(--color-primary);
+  display: flex;
+}
+.cookie-consent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+.cookie-consent-text strong { color: var(--color-text); }
+.cookie-consent-text a { color: var(--color-primary); }
+.cookie-consent-text a:hover { text-decoration: underline; }
+.cookie-consent-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .cookie-consent {
+    flex-wrap: wrap;
+    bottom: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    width: 100vw;
+  }
+  .cookie-consent-btn { width: 100%; }
+}
 
 /* ============================================================
    LANDING v2 — boucle de la forge, captures réelles, honnêteté

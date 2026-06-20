@@ -44,11 +44,21 @@ export class Storage {
 
   getUserById(id: string): User | undefined {
     const row = getDb()
-      .prepare(`SELECT id, email, name, createdAt, tutorialPending FROM users WHERE id = ?`)
+      .prepare(`SELECT id, email, name, createdAt, tutorialPending, password, authProvider FROM users WHERE id = ?`)
       .get(id) as any;
     if (!row) return undefined;
-    // SQLite stocke le booléen en INTEGER (0/1) → conversion explicite
-    return { ...row, tutorialPending: !!row.tutorialPending };
+    // Construction explicite : le hash du mot de passe est lu pour calculer
+    // `hasPassword` mais ne doit JAMAIS sortir d'ici (pas de spread de `row`).
+    // SQLite stocke le booléen en INTEGER (0/1) → conversion explicite.
+    return {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      createdAt: row.createdAt,
+      tutorialPending: !!row.tutorialPending,
+      hasPassword: Boolean(row.password && row.password.length > 0),
+      authProvider: row.authProvider ?? null,
+    };
   }
 
   /** Marque le tutoriel d'accueil comme vu (ne se reproposera plus) */
@@ -198,6 +208,19 @@ export class Storage {
 
   updateUserPassword(userId: string, hashedPassword: string): void {
     getDb().prepare(`UPDATE users SET password = ? WHERE id = ?`).run(hashedPassword, userId);
+  }
+
+  /** RGPD art. 16 (rectification) : met à jour nom et/ou email du compte.
+   *  Seuls les champs fournis sont touchés ; l'unicité de l'email est vérifiée
+   *  en amont par la route (contrainte applicative, casse insensible). */
+  updateUserProfile(userId: string, fields: { name?: string; email?: string }): void {
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (fields.name !== undefined)  { sets.push('name = ?');  vals.push(fields.name); }
+    if (fields.email !== undefined) { sets.push('email = ?'); vals.push(fields.email); }
+    if (sets.length === 0) return;
+    vals.push(userId);
+    getDb().prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
   }
 
   // ── RGPD : portabilité (art. 20) et effacement (art. 17) ─────────────────
