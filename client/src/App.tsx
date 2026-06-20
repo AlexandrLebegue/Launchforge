@@ -24,6 +24,7 @@ import KnowledgePage from './pages/KnowledgePage';
 import TeamsPage from './pages/TeamsPage';
 import BillingPage from './pages/BillingPage';
 import AdminPage from './pages/AdminPage';
+import TestNotebookPage from './pages/TestNotebookPage'; // TEMP — cahier de test partagé, à retirer
 import { isAdminEmail } from './utils/admin';
 
 export default function App() {
@@ -112,6 +113,8 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage onLogin={(u) => setUser(u)} />} />
       <Route path="/oauth/callback" element={<OAuthCallbackPage onLogin={(u) => setUser(u)} />} />
+      {/* TEMP — cahier de test partagé, PUBLIC (accessible sans connexion), à retirer */}
+      <Route path="/cahier-de-test" element={<TestNotebookPage />} />
       <Route path="/legal" element={<LegalNoticePage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

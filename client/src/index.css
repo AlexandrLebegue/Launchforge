@@ -3472,6 +3472,12 @@ h1, h2, h3, .layout-sidebar-logo, .stat-card-value, .stat-value {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.18);
 }
+.form-input:disabled,
+.form-input[readonly] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  color: var(--color-text-subtle);
+}
 
 /* Sidebar verre dépoli */
 .layout-sidebar {

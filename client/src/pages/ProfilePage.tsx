@@ -150,12 +150,13 @@ export default function ProfilePage() {
                 />
               </label>
               <label className="form-label-block">
-                Adresse email
+                Adresse email <span className="form-hint-inline">(non modifiable)</span>
                 <input
                   className="form-input"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  disabled
+                  readOnly
                   placeholder="vous@exemple.com"
                   autoComplete="email"
                 />
