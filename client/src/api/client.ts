@@ -212,8 +212,8 @@ export async function exportMyData(): Promise<Blob | null> {
 }
 
 /** RGPD : suppression définitive du compte et de toutes les données */
-export async function deleteAccount(password: string): Promise<ApiResponse<{ deleted: boolean }>> {
-  return request('/auth/account', { method: 'DELETE', body: JSON.stringify({ password }) });
+export async function deleteAccount(): Promise<ApiResponse<{ deleted: boolean }>> {
+  return request('/auth/account', { method: 'DELETE' });
 }
 
 /** Demande de réinitialisation — réponse toujours générique côté serveur */

@@ -281,18 +281,11 @@ router.get('/export', requireAuth, (req: Request, res: Response) => {
 // ── DELETE /api/auth/account — RGPD art. 17 (droit à l'effacement) ──────────
 // Suppression DÉFINITIVE de tout : compte, projets, posts, contacts,
 // connaissances, médias locaux, liaisons Telegram, comptes Composio (identité
-// propre uniquement). Re-authentification par mot de passe exigée.
+// propre uniquement). La session JWT authentifie la demande ; la confirmation
+// se fait côté client (pop-up oui/non).
 router.delete('/account', deleteLimiter, requireAuth, async (req: Request, res: Response) => {
-  const { password } = req.body as { password?: string };
-  if (!password || typeof password !== 'string') {
-    return res.status(400).json({ success: false, error: 'Confirmez votre mot de passe pour supprimer le compte.' });
-  }
   const me = storage.getUserById(req.user!.userId);
   if (!me) return res.status(404).json({ success: false, error: 'Compte introuvable.' });
-  const withPassword = storage.getUserByEmail(me.email);
-  if (!withPassword || !verifyPassword(password, withPassword.password)) {
-    return res.status(401).json({ success: false, error: 'Mot de passe incorrect.' });
-  }
 
   // 1. Services externes, best-effort (l'effacement local n'attend pas leur succès)
   try {

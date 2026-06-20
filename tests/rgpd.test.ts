@@ -87,10 +87,8 @@ describe('Export des données (portabilité)', () => {
 });
 
 describe('Suppression du compte (effacement)', () => {
-  it('exige le bon mot de passe', async () => {
-    expect((await request(app).delete('/api/auth/account').set(auth()).send({})).status).toBe(400);
-    expect((await request(app).delete('/api/auth/account').set(auth())
-      .send({ password: 'mauvais-mdp' })).status).toBe(401);
+  it('exige une session authentifiée', async () => {
+    expect((await request(app).delete('/api/auth/account')).status).toBe(401);
     // Rien n'a été supprimé
     expect(storage.getUserById(userId)).toBeDefined();
   });
@@ -98,8 +96,7 @@ describe('Suppression du compte (effacement)', () => {
   it('efface tout : compte, données, médias — sans toucher aux autres utilisateurs', async () => {
     expect(fs.existsSync(path.join(uploadsDir(), mediaFileName))).toBe(true);
 
-    const res = await request(app).delete('/api/auth/account').set(auth())
-      .send({ password: 'password123' });
+    const res = await request(app).delete('/api/auth/account').set(auth());
     expect(res.status).toBe(200);
     expect(res.body.data.deleted).toBe(true);
 
