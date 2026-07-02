@@ -93,52 +93,52 @@ const COPY: Record<Lang, {
   fr: {
     nav: { loop: 'La boucle', product: 'Le produit', pricing: 'Tarifs', how: 'Comment ça marche', faq: 'FAQ', login: 'Se connecter', start: 'Commencer' },
     hero: {
-      before: 'Forgez la ', em: 'traction', after: 'de votre startup',
-      sub: 'LaunchForge transforme votre plan de lancement en posts rédigés, adaptés et publiés sur LinkedIn, X, Instagram et YouTube — puis mesure ce qui marche et apprend de vos résultats. Vous gardez la main à chaque étape.',
+      before: 'Votre copilote IA ', em: 'business & marketing', after: '',
+      sub: 'LaunchForge rédige et publie votre marketing, détecte les prospects intéressés, suit votre pipeline de vente et rédige les relances — de vos contenus à vos clients. Vous gardez la main à chaque étape, depuis l\'app ou Telegram.',
       cta: 'Commencer gratuitement →', cta2: 'Voir le produit',
       noCard: 'Pas besoin de carte de crédit pour commencer',
       truths: ['15 jours en accès complet, sans carte', 'Offre gratuite pour toujours', 'Pilotable depuis Telegram'],
     },
     mock: {
-      bar: 'LAUNCHFORGE — VOTRE AGENT TRAVAILLE',
+      bar: 'LAUNCHFORGE — VOTRE COPILOTE TRAVAILLE',
       calTitle: 'Votre mois de contenu',
-      feedTitle: "L'agent en action",
+      feedTitle: 'Le copilote en action',
       feed: [
         { strong: 'Post LinkedIn rédigé', rest: ' — votre ton de marque', badge: 'jeu. 09:00' },
-        { strong: 'Décliné', rest: ' pour X et Instagram', badge: 'IA' },
-        { strong: 'Publié', rest: " à l'heure programmée", badge: 'auto' },
+        { strong: 'Publié', rest: ' et décliné sur X et Instagram', badge: 'auto' },
         { strong: 'Lead détecté', rest: ' dans les commentaires', badge: 'score 87' },
-        { strong: 'Métriques relevées', rest: " — l'IA en tire les leçons" },
+        { strong: 'Relance rédigée', rest: ' — prête à envoyer', badge: 'IA' },
+        { strong: 'Deal avancé', rest: ' → Proposition (5 000 €)' },
       ],
     },
     loop: {
       title: 'La boucle de la forge',
-      sub: 'Chaque cycle rend le suivant meilleur : ce que vos posts vous apprennent retourne dans la matière première de l\'IA.',
-      aria: 'Schéma : connaissances, rédaction IA, publication, métriques, enseignements — en boucle',
+      sub: 'Chaque cycle transforme un peu plus votre audience en clients : ce que vos posts et vos prospects vous apprennent retourne dans la matière première de l\'IA.',
+      aria: 'Schéma : connaissances, rédaction IA, publication, leads & métriques, enseignements — en boucle',
       returnLabel: 'les enseignements retournent à la forge',
       steps: [
         { title: 'Connaissances', desc: 'Votre entreprise, votre ton, vos offres — décrits une fois.' },
         { title: 'Rédaction IA', desc: 'Posts, visuels et déclinaisons par plateforme.' },
         { title: 'Publication', desc: 'Automatique ou validée par vous, à l\'heure dite.' },
-        { title: 'Métriques', desc: 'Vues, likes, leads — relevés sur vos comptes.' },
-        { title: 'Enseignements', desc: 'L\'analyse IA réinjecte ce qui marche dans la base.' },
+        { title: 'Leads & métriques', desc: 'Vues, likes, et surtout les prospects intéressés repérés sur vos comptes et votre boîte mail.' },
+        { title: 'Enseignements', desc: 'L\'analyse IA réinjecte ce qui marche — et qui convertit — dans la base.' },
       ],
     },
     features: {
       title: 'Tout l\'atelier, sous un même toit',
       hub: {
-        core: { title: 'Forge IA', sub: 'Un seul cerveau, tout l\'atelier' },
-        aria: 'Schéma : une IA centrale relie l\'onboarding, la publication, les séries, les métriques, les leads et le pilotage par chat.',
-        nodes: ['Onboarding', 'Publication', 'Séries', 'Métriques', 'Leads', 'Chat & Telegram'],
+        core: { title: 'Copilote IA', sub: 'Un seul cerveau, du marketing à la vente' },
+        aria: 'Schéma : un copilote IA central relie l\'onboarding, la publication, les métriques, les leads, le pipeline de vente et l\'assistant par chat.',
+        nodes: ['Onboarding', 'Publication', 'Métriques', 'Leads & relances', 'Pipeline de vente', 'Assistant & Telegram'],
       },
       items: [
-        { title: 'Onboarding par IA', desc: 'Un chat vous interviewe, recherche votre entreprise sur le web, lit vos documents — et en tire un plan de lancement tactique, semaine par semaine.' },
+        { title: 'Assistant business & marketing', desc: 'Un copilote IA qui connaît votre projet, votre offre et votre pipeline. Il rédige et publie vos posts, relance vos prospects et fait avancer vos deals — en français, depuis l\'app ou Telegram.' },
+        { title: 'Onboarding par IA', desc: 'Un chat vous interviewe, recherche votre entreprise sur le web, lit vos documents — et en tire un plan de croissance adapté à votre stade : trouver vos premiers clients, ou vendre plus.' },
         { title: 'Publication multi-plateformes', desc: 'Un post, plusieurs plateformes : le texte est adapté aux codes de chacune par l\'IA, publié automatiquement à l\'heure dite via vos comptes connectés.' },
-        { title: 'Séries récurrentes', desc: 'Un post hebdomadaire réécrit à chaque occurrence par l\'IA — qui relit ce qu\'elle a déjà publié pour ne jamais se répéter. Testable avant activation.' },
+        { title: 'Détection & relance de leads', desc: 'L\'IA lit les réactions de vos posts et votre boîte mail, repère les prospects intéressés, les score de 0 à 100 et rédige la relance personnalisée.' },
+        { title: 'Pipeline de vente & CRM', desc: 'Suivez vos deals par étape, du premier contact au gagné — avec montants et chiffre d\'affaires. Importez votre CRM HubSpot en un clic : contacts et deals rejoignent votre pipeline.' },
         { title: 'Métriques & analyse', desc: 'Vues, likes, commentaires relevés automatiquement depuis vos comptes. Post-mortem IA de chaque post et comparaison du même contenu entre plateformes.' },
-        { title: 'Détection de leads', desc: 'L\'IA lit les réactions de vos posts et votre boîte mail, repère les personnes intéressées, les score de 0 à 100 et rédige la relance.' },
-        { title: 'Pilotage par chat', desc: 'Tout se commande en français, depuis l\'app ou Telegram : « publie ce post sur X et Instagram », « simule ma série », « bilan de la semaine ».' },
-        { title: 'Import de vos anciens posts', desc: 'Rapatriez en un clic vos posts déjà publiés sur YouTube, Instagram, TikTok, Facebook, X… Ils rejoignent le Hub avec leurs métriques : l\'IA part de ce qui a déjà marché pour affûter vos prochains posts.' },
+        { title: 'Import de vos anciens posts', desc: 'Rapatriez en un clic vos posts déjà publiés sur YouTube, Instagram, TikTok, Facebook, X… Ils rejoignent le Hub avec leurs métriques : l\'IA part de ce qui a déjà marché.' },
       ],
     },
     product: {
@@ -156,6 +156,12 @@ const COPY: Record<Lang, {
           desc: 'L\'IA génère des semaines de posts cohérents depuis votre plan de lancement. Vous relisez, ajustez, et le worker publie à l\'heure programmée — synchronisé avec votre Google Calendar.',
           points: ['Calendrier généré par l\'IA', 'Publication automatique opt-in', 'Synchro Google Calendar'],
           alt: 'Calendrier éditorial mensuel de LaunchForge avec posts programmés',
+        },
+        {
+          title: 'Vos prospects et deals, du premier contact au chiffre d\'affaires',
+          desc: 'Chaque prospect est scoré de 0 à 100 par l\'IA et suivi dans un pipeline par étape — de la qualification au deal gagné. CA gagné, pipeline ouvert, taux de conversion et ticket moyen se calculent tout seuls. Et l\'IA rédige la relance de chaque contact.',
+          points: ['Score d\'intérêt IA (0–100) par contact', 'Pipeline par étape avec montants & CA', 'Relances rédigées par l\'IA + import HubSpot'],
+          alt: 'CRM LaunchForge : pipeline de vente scoré par l\'IA, cartes de CA gagné, pipeline ouvert et taux de conversion',
         },
         {
           title: 'Mesurez, comparez, apprenez',
@@ -183,11 +189,11 @@ const COPY: Record<Lang, {
       },
     },
     how: {
-      title: 'Trois étapes, et la forge tourne',
+      title: 'Trois étapes, et votre copilote travaille',
       steps: [
-        { title: 'Décrivez votre entreprise', desc: 'Un chat d\'onboarding qui fait les recherches à votre place, connecte vos réseaux et peut importer vos posts existants — entreprise établie ou simple idée.' },
-        { title: 'Recevez plan et calendrier', desc: 'Plan de lancement semaine par semaine et premiers posts rédigés, datés, prêts à relire.' },
-        { title: 'Publiez et apprenez', desc: 'Publication automatique ou validée, métriques relevées, leads détectés — et l\'IA s\'améliore avec vos résultats.' },
+        { title: 'Décrivez votre business', desc: 'Un chat d\'onboarding fait les recherches à votre place, connecte vos réseaux et votre boîte mail, et cerne votre objectif : trouver vos premiers clients ou vendre plus.' },
+        { title: 'Recevez votre plan de croissance', desc: 'Plan semaine par semaine, premiers posts rédigés et datés — et si vous avez HubSpot, votre pipeline importé d\'un clic.' },
+        { title: 'Publiez, détectez, vendez', desc: 'Publication automatique ou validée, prospects détectés et scorés, relances rédigées, deals suivis dans votre pipeline — et l\'IA s\'améliore avec vos résultats.' },
       ],
     },
     pricing: {
@@ -204,7 +210,8 @@ const COPY: Record<Lang, {
             '1 projet',
             '30 générations de contenu IA / mois',
             '2 images IA / mois',
-            'Plan de lancement IA, rédaction manuelle & calendrier',
+            'Plan de croissance IA, rédaction manuelle & calendrier',
+            'Pipeline de vente & import HubSpot',
             'Import de vos anciens posts',
           ],
         },
@@ -215,7 +222,7 @@ const COPY: Record<Lang, {
           features: [
             'Publication multi-plateformes & auto-publication',
             'Analytics complets + post-mortem IA',
-            'Détection de leads & CRM',
+            'Détection & relance de leads par IA',
             'Séries récurrentes & pilotage Telegram',
             '1000 générations + 50 images IA / mois (usage équitable)',
             'Support prioritaire',
@@ -226,7 +233,7 @@ const COPY: Record<Lang, {
     faq: {
       title: 'Questions directes, réponses directes',
       items: [
-        { q: 'Combien ça coûte ?', a: 'Deux offres. Braise est gratuite pour toujours : 1 projet, 30 contenus IA et 2 images IA par mois, le plan de lancement et la rédaction manuelle. Brasier débloque la publication multi-plateformes, les analytics, la détection de leads, les séries récurrentes et Telegram — avec un usage IA généreux — pour 12,90 €/mois en annuel (ou 15,90 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet à Brasier, sans carte bancaire — puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
+        { q: 'Combien ça coûte ?', a: 'Deux offres. Braise est gratuite pour toujours : 1 projet, 30 contenus IA et 2 images IA par mois, le plan de croissance, le pipeline de vente et la rédaction manuelle. Brasier débloque la publication multi-plateformes, les analytics, la détection et la relance de leads par IA, les séries récurrentes et Telegram — avec un usage IA généreux — pour 12,90 €/mois en annuel (ou 15,90 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet à Brasier, sans carte bancaire — puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
         { q: 'L\'IA peut-elle publier sans mon accord ?', a: 'Non. La publication automatique est un réglage opt-in, post par post. Par défaut, tout contenu attend votre validation — dans l\'app ou directement depuis Telegram.' },
         { q: 'Comment mes comptes sociaux sont-ils connectés ?', a: 'Par OAuth via Composio : vous autorisez chaque plateforme dans une fenêtre officielle (LinkedIn, Google…), et vous pouvez révoquer chaque connexion en un clic depuis la Configuration. LaunchForge ne voit jamais vos mots de passe.' },
         { q: 'Et mes données ?', a: 'Export complet en JSON et suppression définitive du compte en libre-service (RGPD art. 17 et 20), depuis la vue Configuration. Pas de cookies tiers, pas de revente de données.' },
@@ -238,58 +245,58 @@ const COPY: Record<Lang, {
       body: 'LaunchForge est un produit jeune. Plutôt que d\'inventer des témoignages cinq étoiles, on préfère vous montrer le vrai produit — et vous laisser juger. L\'offre Braise est gratuite pour toujours, l\'inscription ouvre 15 jours d\'accès complet sans carte bancaire, et vos données s\'exportent ou s\'effacent en deux clics, comme l\'exige le RGPD.',
       cta: 'Essayer et se faire son avis →',
     },
-    footer: { tagline: 'Conçu pour les fondateurs qui exécutent.' },
+    footer: { tagline: 'Conçu pour les fondateurs qui veulent des clients, pas juste des vues.' },
   },
 
   en: {
     nav: { loop: 'The loop', product: 'The product', pricing: 'Pricing', how: 'How it works', faq: 'FAQ', login: 'Sign in', start: 'Get started' },
     hero: {
-      before: 'Forge your startup\'s ', em: 'traction', after: '',
-      sub: 'LaunchForge turns your launch plan into posts that are written, adapted and published on LinkedIn, X, Instagram and YouTube — then measures what works and learns from your results. You stay in control at every step.',
+      before: 'Your AI ', em: 'business & marketing', after: ' copilot',
+      sub: 'LaunchForge writes and publishes your marketing, spots interested prospects, tracks your sales pipeline and drafts the follow-ups — from your content to your customers. You stay in control at every step, from the app or Telegram.',
       cta: 'Start for free →', cta2: 'See the product',
       noCard: 'No credit card required to start',
       truths: ['15 days of full access, no card', 'Free plan, forever', 'Drive it from Telegram'],
     },
     mock: {
-      bar: 'LAUNCHFORGE — YOUR AGENT AT WORK',
+      bar: 'LAUNCHFORGE — YOUR COPILOT AT WORK',
       calTitle: 'Your month of content',
-      feedTitle: 'The agent in action',
+      feedTitle: 'The copilot in action',
       feed: [
         { strong: 'LinkedIn post written', rest: ' — in your brand voice', badge: 'Thu 09:00' },
-        { strong: 'Adapted', rest: ' for X and Instagram', badge: 'AI' },
-        { strong: 'Published', rest: ' right on schedule', badge: 'auto' },
+        { strong: 'Published', rest: ' and adapted for X and Instagram', badge: 'auto' },
         { strong: 'Lead detected', rest: ' in the comments', badge: 'score 87' },
-        { strong: 'Metrics collected', rest: ' — the AI learns from them' },
+        { strong: 'Follow-up drafted', rest: ' — ready to send', badge: 'AI' },
+        { strong: 'Deal advanced', rest: ' → Proposal (€5,000)' },
       ],
     },
     loop: {
       title: 'The forge loop',
-      sub: 'Every cycle makes the next one better: what your posts teach you goes back into the AI\'s raw material.',
-      aria: 'Diagram: knowledge, AI writing, publishing, metrics, learnings — in a loop',
+      sub: 'Every cycle turns a bit more of your audience into customers: what your posts and your prospects teach you goes back into the AI\'s raw material.',
+      aria: 'Diagram: knowledge, AI writing, publishing, leads & metrics, learnings — in a loop',
       returnLabel: 'learnings return to the forge',
       steps: [
         { title: 'Knowledge', desc: 'Your company, your voice, your offers — described once.' },
         { title: 'AI writing', desc: 'Posts, visuals and per-platform adaptations.' },
         { title: 'Publishing', desc: 'Automatic or approved by you, right on time.' },
-        { title: 'Metrics', desc: 'Views, likes, leads — collected from your accounts.' },
-        { title: 'Learnings', desc: 'AI analysis feeds what works back into the base.' },
+        { title: 'Leads & metrics', desc: 'Views, likes — and above all the interested prospects spotted on your accounts and inbox.' },
+        { title: 'Learnings', desc: 'AI analysis feeds what works — and what converts — back into the base.' },
       ],
     },
     features: {
       title: 'The whole workshop, under one roof',
       hub: {
-        core: { title: 'AI Forge', sub: 'One brain, the whole workshop' },
-        aria: 'Diagram: a central AI connects onboarding, publishing, series, metrics, leads and chat-first control.',
-        nodes: ['Onboarding', 'Publishing', 'Series', 'Metrics', 'Leads', 'Chat & Telegram'],
+        core: { title: 'AI copilot', sub: 'One brain, from marketing to sales' },
+        aria: 'Diagram: a central AI copilot connects onboarding, publishing, metrics, leads, the sales pipeline and chat-first control.',
+        nodes: ['Onboarding', 'Publishing', 'Metrics', 'Leads & follow-ups', 'Sales pipeline', 'Assistant & Telegram'],
       },
       items: [
-        { title: 'AI onboarding', desc: 'A chat interviews you, researches your company on the web, reads your documents — and produces a tactical, week-by-week launch plan.' },
+        { title: 'Business & marketing assistant', desc: 'An AI copilot that knows your project, your offer and your pipeline. It writes and publishes your posts, follows up with prospects and moves your deals forward — in plain language, from the app or Telegram.' },
+        { title: 'AI onboarding', desc: 'A chat interviews you, researches your company on the web, reads your documents — and produces a growth plan tuned to your stage: win your first customers, or sell more.' },
         { title: 'Multi-platform publishing', desc: 'One post, several platforms: the AI adapts the copy to each network\'s codes and publishes automatically through your connected accounts.' },
-        { title: 'Recurring series', desc: 'A weekly post rewritten by the AI on every occurrence — it re-reads what it already published so it never repeats itself. Test it before turning it on.' },
+        { title: 'Lead detection & follow-up', desc: 'The AI reads your posts\' reactions and your inbox, spots interested prospects, scores them 0–100 and drafts the personalized follow-up.' },
+        { title: 'Sales pipeline & CRM', desc: 'Track your deals by stage, from first touch to won — with amounts and revenue. Import your HubSpot CRM in one click: contacts and deals land in your pipeline.' },
         { title: 'Metrics & analysis', desc: 'Views, likes and comments collected automatically from your accounts. AI post-mortems and same-content comparison across platforms.' },
-        { title: 'Lead detection', desc: 'The AI reads your posts\' reactions and your inbox, spots interested people, scores them 0–100 and drafts the follow-up.' },
-        { title: 'Chat-first control', desc: 'Everything works in plain language, from the app or Telegram: "publish this on X and Instagram", "simulate my series", "this week\'s report".' },
-        { title: 'Import your past posts', desc: 'Pull in your already-published posts from YouTube, Instagram, TikTok, Facebook, X… in one click. They land in the Hub with their metrics: the AI starts from what already worked to sharpen your next posts.' },
+        { title: 'Import your past posts', desc: 'Pull in your already-published posts from YouTube, Instagram, TikTok, Facebook, X… in one click. They land in the Hub with their metrics: the AI starts from what already worked.' },
       ],
     },
     product: {
@@ -307,6 +314,12 @@ const COPY: Record<Lang, {
           desc: 'The AI generates weeks of coherent posts from your launch plan. You review, tweak, and the worker publishes on schedule — synced with your Google Calendar.',
           points: ['AI-generated calendar', 'Opt-in auto-publishing', 'Google Calendar sync'],
           alt: 'LaunchForge monthly editorial calendar with scheduled posts',
+        },
+        {
+          title: 'Your prospects and deals, from first touch to revenue',
+          desc: 'Every prospect is scored 0–100 by the AI and tracked in a stage-based pipeline — from qualification to won deal. Won revenue, open pipeline, conversion rate and average ticket are computed for you. And the AI drafts each contact\'s follow-up.',
+          points: ['AI interest score (0–100) per contact', 'Stage pipeline with amounts & revenue', 'AI-drafted follow-ups + HubSpot import'],
+          alt: 'LaunchForge CRM: AI-scored sales pipeline, won-revenue cards, open pipeline and conversion rate',
         },
         {
           title: 'Measure, compare, learn',
@@ -334,11 +347,11 @@ const COPY: Record<Lang, {
       },
     },
     how: {
-      title: 'Three steps, and the forge runs',
+      title: 'Three steps, and your copilot works',
       steps: [
-        { title: 'Describe your company', desc: 'An onboarding chat that does the research for you, connects your social accounts and can import your existing posts — existing business or just an idea.' },
-        { title: 'Get a plan and a calendar', desc: 'A week-by-week launch plan and your first posts written, dated, ready to review.' },
-        { title: 'Publish and learn', desc: 'Automatic or approved publishing, metrics collected, leads detected — and the AI improves with your results.' },
+        { title: 'Describe your business', desc: 'An onboarding chat does the research for you, connects your social accounts and inbox, and pins down your goal: win your first customers or sell more.' },
+        { title: 'Get your growth plan', desc: 'A week-by-week plan, your first posts written and dated — and if you use HubSpot, your pipeline imported in one click.' },
+        { title: 'Publish, detect, sell', desc: 'Automatic or approved publishing, prospects detected and scored, follow-ups drafted, deals tracked in your pipeline — and the AI improves with your results.' },
       ],
     },
     pricing: {
@@ -355,7 +368,8 @@ const COPY: Record<Lang, {
             '1 project',
             '30 AI content generations / month',
             '2 AI images / month',
-            'AI launch plan, manual writing & calendar',
+            'AI growth plan, manual writing & calendar',
+            'Sales pipeline & HubSpot import',
             'Import your past posts',
           ],
         },
@@ -366,7 +380,7 @@ const COPY: Record<Lang, {
           features: [
             'Multi-platform publishing & auto-publishing',
             'Full analytics + AI post-mortems',
-            'Lead detection & CRM',
+            'AI lead detection & follow-ups',
             'Recurring series & Telegram control',
             '1000 generations + 50 images / month (fair use)',
             'Priority support',
@@ -377,7 +391,7 @@ const COPY: Record<Lang, {
     faq: {
       title: 'Straight questions, straight answers',
       items: [
-        { q: 'How much does it cost?', a: 'Two plans. Braise is free forever: 1 project, 30 AI contents and 2 AI images per month, the launch plan and manual writing. Brasier unlocks multi-platform publishing, analytics, lead detection, recurring series and Telegram — with generous AI usage — for €12.90/month billed annually (or €15.90 monthly). Every sign-up starts with 15 days of full Brasier access, no credit card — then automatically switches to Braise. 14-day money-back guarantee.' },
+        { q: 'How much does it cost?', a: 'Two plans. Braise is free forever: 1 project, 30 AI contents and 2 AI images per month, the growth plan, the sales pipeline and manual writing. Brasier unlocks multi-platform publishing, analytics, AI lead detection & follow-ups, recurring series and Telegram — with generous AI usage — for €12.90/month billed annually (or €15.90 monthly). Every sign-up starts with 15 days of full Brasier access, no credit card — then automatically switches to Braise. 14-day money-back guarantee.' },
         { q: 'Can the AI publish without my approval?', a: 'No. Auto-publishing is an opt-in setting, per post. By default, every piece of content waits for your approval — in the app or straight from Telegram.' },
         { q: 'How are my social accounts connected?', a: 'Through OAuth via Composio: you authorize each platform in its official window (LinkedIn, Google…), and you can revoke any connection in one click from Settings. LaunchForge never sees your passwords.' },
         { q: 'What about my data?', a: 'Full JSON export and permanent account deletion, self-service (GDPR art. 17 & 20), from the Settings view. No third-party cookies, no data resale.' },
@@ -389,7 +403,7 @@ const COPY: Record<Lang, {
       body: 'LaunchForge is a young product. Rather than inventing five-star testimonials, we\'d rather show you the real thing — and let you judge. The Braise plan is free forever, signing up opens 15 days of full access with no credit card, and your data can be exported or wiped in two clicks, as the GDPR requires.',
       cta: 'Try it and make up your own mind →',
     },
-    footer: { tagline: 'Built for founders who ship.' },
+    footer: { tagline: 'Built for founders who want customers, not just views.' },
   },
 };
 
@@ -474,7 +488,7 @@ function HeroMock({ c }: { c: (typeof COPY)['fr']['mock'] }) {
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SHOT_IMAGES = ['/landing/editeur.png', '/landing/calendrier.png', '/landing/performances.png'];
+const SHOT_IMAGES = ['/landing/editeur.png', '/landing/calendrier.png', '/landing/crm.png', '/landing/performances.png'];
 
 // Réseaux pris en charge — capacités (drapeaux non traduits, libellés via COPY).
 //  publish: yes | media (média requis) | page (Page seulement) | sub (subreddit requis)
