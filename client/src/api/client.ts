@@ -1924,6 +1924,8 @@ export interface BillingStatus {
   /** Offre payante souscrite (null si jamais abonné) */
   plan: PaidPlan | null;
   founder: boolean;
+  /** Offre simulée par un compte fondateur (null = plus par défaut) */
+  founderTierOverride: PlanTier | null;
   trial: { active: boolean; endsAt: string | null; daysLeft: number };
   subscription: { interval: 'month' | 'year' | null; currentPeriodEnd: string | null; cancelAt: string | null };
   refundEligible: boolean;
@@ -1959,6 +1961,11 @@ export async function startCheckout(interval: 'month' | 'year', plan: PaidPlan =
 /** Ouvre le portail client Stripe (gérer/résilier) */
 export async function openBillingPortal(): Promise<ApiResponse<{ url: string }>> {
   return request('/billing/portal', { method: 'POST' });
+}
+
+/** Fondateur : simule une offre ('braise'|'brasier'|'plus', null = plus par défaut) */
+export async function setFounderTier(tier: PlanTier | null): Promise<ApiResponse<BillingStatus>> {
+  return request('/billing/founder-tier', { method: 'POST', body: JSON.stringify({ tier }) });
 }
 
 /** Remboursement self-service (garantie 14 jours) */

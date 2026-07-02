@@ -3,8 +3,8 @@ import Loader from '../components/Loader';
 import { useSearchParams } from 'react-router-dom';
 import { Flame, Check, Zap, CreditCard, Loader2, Sparkles, ShieldCheck, AlertCircle, BrainCircuit } from 'lucide-react';
 import {
-  getBillingStatus, startCheckout, openBillingPortal, requestRefund,
-  BillingStatus, PaidPlan, invalidateOverview,
+  getBillingStatus, startCheckout, openBillingPortal, requestRefund, setFounderTier,
+  BillingStatus, PaidPlan, PlanTier, invalidateOverview,
 } from '../api/client';
 
 // Palette « braise » (cohérente avec la landing)
@@ -149,6 +149,19 @@ export default function BillingPage() {
     setNotice({ kind: 'err', text: res.error || 'Portail indisponible.' });
   };
 
+  // Fondateur : bascule d'offre simulée (liste déroulante de la carte de statut)
+  const changeFounderTier = async (value: string) => {
+    const tier = (value === 'braise' || value === 'brasier' || value === 'plus') ? (value as PlanTier) : null;
+    const res = await setFounderTier(tier);
+    if (res.success && res.data) {
+      setStatus((prev) => prev ? { ...prev, ...res.data } : prev);
+      invalidateOverview();
+      setNotice({ kind: 'ok', text: `Offre simulée : ${tier === 'braise' ? 'Braise' : tier === 'brasier' ? 'Brasier' : 'Brasier PLUS'} — vous naviguez maintenant avec les droits, quotas et le modèle IA de cette offre.` });
+    } else {
+      setNotice({ kind: 'err', text: res.error || 'Changement impossible.' });
+    }
+  };
+
   const goRefund = async () => {
     if (!window.confirm('Demander le remboursement de votre dernier paiement et résilier votre abonnement ?')) return;
     setBusy('refund');
@@ -259,6 +272,24 @@ export default function BillingPage() {
           )}
           {status.founder && (
             <span style={{ fontSize: 13, padding: '3px 10px', borderRadius: 99, background: 'rgba(255,255,255,0.12)' }}>Compte fondateur</span>
+          )}
+          {status.founder && (
+            <label style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <span style={{ opacity: 0.75 }}>Simuler l'offre :</span>
+              <select
+                value={status.founderTierOverride ?? 'plus'}
+                onChange={(e) => changeFounderTier(e.target.value)}
+                title="Naviguer avec les droits, quotas et le modèle IA de l'offre choisie (compte fondateur)"
+                style={{
+                  background: 'rgba(0,0,0,0.35)', color: 'inherit', border: '1px solid rgba(255,255,255,0.25)',
+                  borderRadius: 8, padding: '5px 8px', fontSize: 13, cursor: 'pointer',
+                }}
+              >
+                <option value="braise">Braise (gratuit)</option>
+                <option value="brasier">Brasier</option>
+                <option value="plus">Brasier PLUS (défaut)</option>
+              </select>
+            </label>
           )}
         </div>
         {status.trial.active && (

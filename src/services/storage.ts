@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, Company, ContactEmail, TelegramLink, Reminder, CronJob, CronRun, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary, SubscriptionRecord, SubscriptionStatus, UsageKind } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, Company, ContactEmail, TelegramLink, Reminder, CronJob, CronRun, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary, SubscriptionRecord, SubscriptionStatus, UsageKind, PlanTier } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -99,6 +99,18 @@ export class Storage {
       trialEndsAt:          row.trialEndsAt ?? null,
       firstPaidAt:          row.firstPaidAt ?? null,
     };
+  }
+
+  /** Offre simulée d'un compte fondateur (null = plus par défaut) */
+  getFounderTierOverride(userId: string): PlanTier | null {
+    const row = getDb().prepare(`SELECT founderTierOverride FROM users WHERE id = ?`).get(userId) as { founderTierOverride: string | null } | undefined;
+    const v = row?.founderTierOverride;
+    return v === 'braise' || v === 'brasier' || v === 'plus' ? v : null;
+  }
+
+  /** Pose (ou efface avec null) l'offre simulée d'un compte fondateur */
+  setFounderTierOverride(userId: string, tier: PlanTier | null): void {
+    getDb().prepare(`UPDATE users SET founderTierOverride = ? WHERE id = ?`).run(tier, userId);
   }
 
   /** Mémorise l'identifiant client Stripe (1re session de paiement) */

@@ -10,7 +10,7 @@ import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { logEvent } from '../services/adminLogger';
-import { getEntitlementsView } from '../services/entitlements';
+import { getEntitlementsView, isFounder } from '../services/entitlements';
 import {
   isBillingConfigured,
   isPlusConfigured,
@@ -31,6 +31,23 @@ router.get('/status', requireAuth, (req: Request, res: Response) => {
     success: true,
     data: { ...view, billingConfigured: isBillingConfigured(), plusConfigured: isPlusConfigured() },
   });
+});
+
+// ── POST /api/billing/founder-tier — offre simulée (comptes fondateurs) ───────
+// Le fondateur choisit le tier avec lequel il navigue ('braise'|'brasier'|'plus',
+// null = plus par défaut) — pour tester verrous, quotas et modèle IA de chaque offre.
+router.post('/founder-tier', requireAuth, (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  if (!isFounder(userId)) {
+    return res.status(403).json({ success: false, error: 'Réservé aux comptes fondateurs.' });
+  }
+  const raw = (req.body as { tier?: unknown }).tier;
+  const tier = raw === 'braise' || raw === 'brasier' || raw === 'plus' ? raw : null;
+  if (raw != null && tier === null) {
+    return res.status(400).json({ success: false, error: 'Offre inconnue.' });
+  }
+  storage.setFounderTierOverride(userId, tier);
+  res.json({ success: true, data: getEntitlementsView(userId) });
 });
 
 // ── POST /api/billing/checkout — démarre le paiement (renvoie l'URL Stripe) ───

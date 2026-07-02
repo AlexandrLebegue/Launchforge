@@ -170,7 +170,9 @@ export function trialActive(sub: SubscriptionRecord): boolean {
 
 /** Tier EFFECTIF de l'utilisateur (réel, indépendant de l'enforcement) */
 export function getEffectiveTier(userId: string): PlanTier {
-  if (isFounder(userId)) return 'plus';
+  // Fondateur : 'plus' par défaut, mais il peut simuler n'importe quelle offre
+  // depuis la page Abonnement (test des verrous, quotas et du modèle IA).
+  if (isFounder(userId)) return storage.getFounderTierOverride(userId) ?? 'plus';
   const sub = storage.getSubscription(userId);
   if (!sub) return 'braise';
   if (hasPaidAccess(sub)) return sub.plan === 'plus' ? 'plus' : 'brasier';
@@ -301,6 +303,9 @@ export function getEntitlementsView(userId: string) {
     status: sub.status,
     plan: sub.plan,
     founder,
+    // Offre simulée par le fondateur (null = plus par défaut) — pilote la liste
+    // déroulante de la page Abonnement.
+    founderTierOverride: founder ? storage.getFounderTierOverride(userId) : null,
     features: FEATURES[tier],
     trial: { active: isTrialing, endsAt: sub.trialEndsAt, daysLeft: trialDaysLeft },
     subscription: {

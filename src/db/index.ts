@@ -724,6 +724,11 @@ function runMigrations(database: Database.Database): void {
   if (!userCols.some((c) => c.name === 'subscriptionPlan')) {
     database.exec(`ALTER TABLE users ADD COLUMN subscriptionPlan TEXT`);
   }
+  // Comptes fondateurs : offre simulée à la demande ('braise'|'brasier'|'plus',
+  // null = plus par défaut) — permet de tester chaque tier depuis la page Abonnement.
+  if (!userCols.some((c) => c.name === 'founderTierOverride')) {
+    database.exec(`ALTER TABLE users ADD COLUMN founderTierOverride TEXT`);
+  }
   // Fin de la période payée en cours (ISO) — accès maintenu jusque-là même après
   // résiliation programmée (cancel_at_period_end)
   if (!userCols.some((c) => c.name === 'subscriptionCurrentPeriodEnd')) {
