@@ -49,7 +49,9 @@ services:
 
       # ── IA — OpenRouter (requis) ──────────────────────────────
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/auto}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-deepseek/deepseek-v4-flash}
+      # Modèle premium servi à l'offre Brasier PLUS (et à l'essai)
+      OPENROUTER_MODEL_PLUS: ${OPENROUTER_MODEL_PLUS:-anthropic/claude-opus-4.8}
       IMAGE_MODEL: ${IMAGE_MODEL:-}
 
       # ── URL publique (liens emails, reset mdp) ────────────────
@@ -64,6 +66,10 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:-}
       STRIPE_PRICE_ANNUAL: ${STRIPE_PRICE_ANNUAL:-}
+      # Offre Brasier PLUS (IA premium Claude Opus) — sans ces prix, la carte
+      # PLUS affiche « bientôt disponible ».
+      STRIPE_PRICE_PLUS_MONTHLY: ${STRIPE_PRICE_PLUS_MONTHLY:-}
+      STRIPE_PRICE_PLUS_ANNUAL: ${STRIPE_PRICE_PLUS_ANNUAL:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       # 'false' = ne bride personne (lancement souple). Défaut : true.
       BILLING_ENFORCE_LIMITS: ${BILLING_ENFORCE_LIMITS:-true}
