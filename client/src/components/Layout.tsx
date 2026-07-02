@@ -3,7 +3,7 @@ import { Outlet, Link, NavLink, useLocation, useNavigate } from 'react-router-do
 import {
   Flame, LayoutDashboard, Megaphone, CalendarDays, MessageSquare,
   TrendingUp, BookOpen, ClipboardCheck, Settings, LogOut, HelpCircle,
-  Compass, PenLine, Users, Shield, Gem,
+  Compass, PenLine, Users, Shield, Gem, Target, Bot, BrainCircuit, X,
 } from 'lucide-react';
 import { User, setToken, getOverview, activatePlan, markTutorialSeen, ProjectSummary, getBillingStatus, BillingStatus } from '../api/client';
 import { isAdminEmail } from '../utils/admin';
@@ -26,7 +26,9 @@ const navItems = [
   { to: '/content',     icon: <Megaphone size={17} />,       label: 'Hub de contenu',  tour: 'content'     },
   { to: '/calendar',    icon: <CalendarDays size={17} />,    label: 'Calendrier',      tour: 'calendar'    },
   { to: '/assistant',   icon: <MessageSquare size={17} />,   label: 'Assistant',       tour: 'assistant'   },
+  { to: '/automations', icon: <Bot size={17} />,             label: 'Automatisations', tour: 'automations' },
   { to: '/performance', icon: <TrendingUp size={17} />,      label: 'Performances',    tour: 'performance' },
+  { to: '/crm',         icon: <Target size={17} />,          label: 'CRM',             tour: 'crm'         },
   { to: '/knowledge',   icon: <BookOpen size={17} />,        label: 'Connaissances',   tour: 'knowledge'   },
   { to: '/approvals',   icon: <ClipboardCheck size={17} />,  label: 'Validations',     tour: 'approvals'   },
   { to: '/teams',       icon: <Users size={17} />,           label: 'Équipes',         tour: 'teams'       },
@@ -225,6 +227,10 @@ export default function Layout({ user, onLogout, onTutorialSeen, onUserUpdate }:
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [switching, setSwitching] = useState<string | null>(null);
   const [billing, setBilling] = useState<BillingStatus | null>(null);
+  // Pub Brasier PLUS (Claude Opus) — masquable, mémorisé par navigateur
+  const [plusPromoDismissed, setPlusPromoDismissed] = useState(
+    () => localStorage.getItem('lf_plus_promo_dismissed') === '1',
+  );
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -502,6 +508,31 @@ export default function Layout({ user, onLogout, onTutorialSeen, onUserUpdate }:
 
       {/* ── Main content ── */}
       <main className="layout-main">
+        {/* Pub Brasier PLUS : visible tant que l'utilisateur n'a pas l'IA premium */}
+        {billing && billing.tier !== 'plus' && !plusPromoDismissed && !location.pathname.startsWith('/billing') && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            margin: '12px 16px 0', padding: '10px 14px', borderRadius: 12, fontSize: 13.5,
+            background: 'linear-gradient(90deg, rgba(167,139,250,0.16), rgba(167,139,250,0.06))',
+            border: '1px solid rgba(167,139,250,0.45)',
+          }}>
+            <BrainCircuit size={17} style={{ color: '#a78bfa', flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 220 }}>
+              <strong>Nouveau — Brasier PLUS</strong> : votre assistant, vos posts et vos e-mails de vente
+              propulsés par <strong>Claude Opus 4.8</strong>, l'IA d'Anthropic à l'état de l'art.
+            </span>
+            <Link to="/billing" className="btn btn-sm" style={{ background: '#a78bfa', color: '#1a1030', fontWeight: 700, borderRadius: 8, padding: '5px 12px', textDecoration: 'none' }}>
+              Découvrir ⚡
+            </Link>
+            <button
+              onClick={() => { localStorage.setItem('lf_plus_promo_dismissed', '1'); setPlusPromoDismissed(true); }}
+              title="Masquer"
+              style={{ background: 'none', border: 0, color: 'inherit', opacity: 0.55, cursor: 'pointer', padding: 4, display: 'flex' }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
         {/* Contexte partagé avec les pages enfants (ex. Profil : utilisateur
             courant + remontée des modifications de compte vers App). */}
         <Outlet context={{ user, onUserUpdate }} />

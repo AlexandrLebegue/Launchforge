@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import Loader from '../components/Loader';
 import { useNavigate } from 'react-router-dom';
 import {
   Trophy, TrendingUp, Sparkles, MessageSquareText, History, ChevronDown,
   CheckCircle2, AlertTriangle, Target, ListChecks, FileText, MessageCircle, RefreshCw,
+  Building2, Users, UserPlus, Wallet, Percent, Flame, Handshake,
 } from 'lucide-react';
 import {
   ComposedChart, Line, Bar, BarChart, Area, AreaChart, XAxis, YAxis, CartesianGrid,
@@ -11,7 +13,9 @@ import {
 } from 'recharts';
 import {
   getPerformance, getCampaignReport, getCampaignReports, getPosts, getComments, refreshComments, analyzeComments,
+  getContacts,
   PerformanceSeries, Post, CampaignReportItem, CommentStats, CommentAnalysis,
+  Contact, ContactType, DealStage, DEAL_STAGES, STAGE_LABELS,
 } from '../api/client';
 import { platformLabel, engagementRate } from './ContentHubPage';
 import Markdown from '../components/Markdown';
@@ -49,6 +53,20 @@ const PLATFORM_COLORS: Record<string, string> = {
   producthunt:  '#da552f',
   hackernews:   '#ff6600',
   indiehackers: '#5b8af0',
+};
+
+/** Couleurs des étapes du pipeline (alignées sur le CRM / ContactsPanel). */
+const STAGE_COLORS: Record<DealStage, string> = {
+  new: '#97a0b5', qualified: '#60a5fa', discussion: '#a78bfa',
+  proposal: '#fbbf24', won: '#34d399', lost: '#f87171',
+};
+
+/** Couleurs des types de contact (portefeuille). */
+const TYPE_COLORS: Record<ContactType, string> = {
+  prospect: '#60a5fa', client: '#34d399', partner: '#a78bfa',
+};
+const TYPE_LABELS: Record<ContactType, string> = {
+  prospect: 'Prospects', client: 'Clients', partner: 'Partenaires',
 };
 
 
@@ -341,7 +359,10 @@ function NetworkPieChart({ data }: { data: [string, PlatformStat][] }) {
   );
 }
 
+type PerfTab = 'social' | 'business';
+
 export default function PerformancePage() {
+  const [tab, setTab] = useState<PerfTab>('social');
   const [series, setSeries] = useState<PerformanceSeries | null>(null);
   const [posts,  setPosts]  = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -354,8 +375,6 @@ export default function PerformancePage() {
       setLoading(false);
     });
   }, []);
-
-  if (loading) return <div className="loading">⏳ Chargement des performances…</div>;
 
   const published = posts.filter((p) => p.status === 'published');
   const weekly = (series?.weekly ?? []).map((w) => ({ ...w, label: fmtWeek(w.week) }));
@@ -403,11 +422,28 @@ export default function PerformancePage() {
       <div className="dashboard-header" data-tour="perf-header">
         <div>
           <h1>Performances</h1>
-          <p>Vos chiffres dans le temps, l'analyse IA, et ce qu'il faut en faire — pour le projet actif.</p>
+          <p>
+            {tab === 'social'
+              ? "Vos chiffres dans le temps, l'analyse IA, et ce qu'il faut en faire — pour le projet actif."
+              : 'Votre activité commerciale — prospects, deals et chiffre d’affaires du CRM, pour le projet actif.'}
+          </p>
         </div>
       </div>
 
-      {!hasData ? (
+      <div className="hub-tabs">
+        <button className={`hub-tab${tab === 'social' ? ' active' : ''}`} onClick={() => setTab('social')}>
+          Réseaux sociaux
+        </button>
+        <button className={`hub-tab${tab === 'business' ? ' active' : ''}`} onClick={() => setTab('business')}>
+          Entreprise
+        </button>
+      </div>
+
+      {tab === 'business' ? (
+        <BusinessPerformance />
+      ) : loading ? (
+        <Loader text="Chargement des performances…" />
+      ) : !hasData ? (
         <div className="plan-empty">
           <span className="plan-empty-icon"><TrendingUp size={40} /></span>
           <h2>Pas encore de données</h2>
@@ -937,5 +973,357 @@ function CampaignReportCard() {
         </div>
       )}
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Onglet « Entreprise » — performance commerciale calculée à partir du CRM
+// ═══════════════════════════════════════════════════════════════════════════
+
+const fmtEur = (n: number) => `${Math.round(n).toLocaleString('fr-FR')} €`;
+const fmtEurShort = (n: number) =>
+  n >= 1000 ? `${(n / 1000).toFixed(1).replace('.0', '')}k €` : `${Math.round(n)} €`;
+
+/** Grand KPI animé (même langage visuel que la progression réseaux sociaux). */
+function BizKpi({ label, value, fmt, color, Icon, sub }: {
+  label: string;
+  value: number | null;
+  fmt: (n: number) => string;
+  color: string;
+  Icon: typeof Trophy;
+  sub?: string;
+}) {
+  const anim = useCountUp(value);
+  const display = value === null ? '—' : fmt(anim ?? value);
+  return (
+    <div className="card" style={{ padding: '20px 22px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Icon size={16} color={color} style={{ flexShrink: 0 }} />
+        <span style={{ fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.text }}>
+          {label}
+        </span>
+      </div>
+      <div style={{
+        fontSize: '2.55rem', fontWeight: 800, color, lineHeight: 1,
+        letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums',
+        textShadow: value === null ? 'none' : `0 0 26px ${color}33`,
+      }}>
+        {display}
+      </div>
+      {sub && <div style={{ fontSize: '0.74rem', color: C.text, marginTop: 9, opacity: 0.85 }}>{sub}</div>}
+    </div>
+  );
+}
+
+type StageDatum = { stage: DealStage; label: string; count: number; value: number; fill: string };
+
+/** Barres horizontales par étape du pipeline (calquées sur PlatformBarChart). */
+function BizPipeline({ data }: { data: StageDatum[] }) {
+  const height = Math.max(160, data.length * 46 + 16);
+  const renderLabel = (props: any) => {
+    const { x, y, width, height: h, index } = props;
+    const d = data[index];
+    const text = d.value > 0 ? `${d.count} · ${fmtEurShort(d.value)}` : `${d.count}`;
+    const inside = width > 96;
+    return (
+      <text
+        x={inside ? x + width - 10 : x + width + 10}
+        y={y + h / 2}
+        fill={inside ? '#fff' : C.text}
+        textAnchor={inside ? 'end' : 'start'}
+        dominantBaseline="central"
+        fontSize={12}
+        fontWeight={600}
+      >
+        {text}
+      </text>
+    );
+  };
+  return (
+    <div className="card">
+      <div className="card-header">Pipeline de vente par étape</div>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 78, left: 4, bottom: 4 }} barCategoryGap="26%">
+          <CartesianGrid stroke={C.grid} horizontal={false} />
+          <XAxis type="number" hide />
+          <YAxis
+            type="category"
+            dataKey="label"
+            width={100}
+            tick={{ fill: '#c0b8b0', fontSize: 12, fontWeight: 600 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            labelStyle={{ color: '#fff' }}
+            cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+            formatter={(_v, _n, item: any) => {
+              const d = item?.payload as StageDatum;
+              return [`${d.count} contact${d.count > 1 ? 's' : ''}${d.value > 0 ? ` · ${fmtEur(d.value)}` : ''}`, ''];
+            }}
+          />
+          <Bar dataKey="count" radius={[0, 5, 5, 0]} maxBarSize={30} animationDuration={900} animationEasing="ease-out" label={renderLabel}>
+            {data.map((entry, i) => (
+              <Cell key={i} fill={entry.fill} fillOpacity={0.88} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <p className="form-hint">Répartition actuelle de vos contacts dans le pipeline (nombre · valeur cumulée).</p>
+    </div>
+  );
+}
+
+type TypeDatum = { type: ContactType; label: string; value: number; fill: string };
+
+/** Donut de répartition du portefeuille (prospects / clients / partenaires). */
+function BizDonut({ data, total }: { data: TypeDatum[]; total: number }) {
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const active = activeIdx !== null ? data[activeIdx] : null;
+  return (
+    <div className="card">
+      <div className="card-header">Répartition du portefeuille</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap' }}>
+        <div style={{ flex: '0 0 200px', position: 'relative' }}>
+          <ResponsiveContainer width={200} height={200}>
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                innerRadius={56}
+                outerRadius={90}
+                dataKey="value"
+                nameKey="label"
+                onMouseEnter={(_, i) => setActiveIdx(i)}
+                onMouseLeave={() => setActiveIdx(null)}
+                strokeWidth={0}
+                paddingAngle={2}
+              >
+                {data.map((entry, i) => (
+                  <Cell key={i} fill={entry.fill} fillOpacity={activeIdx === null || activeIdx === i ? 1 : 0.28} />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: active ? active.fill : '#fff', lineHeight: 1 }}>
+              {active ? active.value : total}
+            </div>
+            <div style={{ fontSize: '0.6rem', color: C.text, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {active ? active.label : 'contacts'}
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          {data.map((entry, i) => (
+            <div
+              key={i}
+              onMouseEnter={() => setActiveIdx(i)}
+              onMouseLeave={() => setActiveIdx(null)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 6,
+                background: activeIdx === i ? 'rgba(255,255,255,0.05)' : 'transparent', transition: 'background 0.15s',
+              }}
+            >
+              <div style={{ width: 9, height: 9, borderRadius: '50%', background: entry.fill, flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: '0.83rem', color: activeIdx === i ? '#fff' : '#c0b8b0' }}>{entry.label}</span>
+              <span style={{ fontSize: '0.83rem', fontWeight: 700, color: entry.fill, minWidth: 40, textAlign: 'right' }}>
+                {total > 0 ? ((entry.value / total) * 100).toFixed(0) : 0} %
+              </span>
+              <span style={{ fontSize: '0.73rem', color: C.text, minWidth: 24, textAlign: 'right' }}>{entry.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Histogramme d'acquisition mensuelle des contacts (6 derniers mois). */
+function BizMonthly({ data }: { data: { label: string; count: number }[] }) {
+  return (
+    <div className="card">
+      <div className="card-header">Acquisition de contacts</div>
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+          <CartesianGrid stroke={C.grid} vertical={false} />
+          <XAxis dataKey="label" tick={{ fill: C.text, fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis allowDecimals={false} tick={{ fill: C.text, fontSize: 11 }} axisLine={false} tickLine={false} />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            labelStyle={{ color: '#fff' }}
+            cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+            formatter={(v: any) => [`${v} nouveau${v > 1 ? 'x' : ''}`, 'Contacts']}
+          />
+          <Bar dataKey="count" name="Nouveaux contacts" fill={C.impressions} fillOpacity={0.8} radius={[3, 3, 0, 0]} maxBarSize={46} animationDuration={900} />
+        </BarChart>
+      </ResponsiveContainer>
+      <p className="form-hint">Nouveaux contacts ajoutés par mois — un aperçu du rythme d'acquisition.</p>
+    </div>
+  );
+}
+
+function BusinessPerformance() {
+  const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    getContacts().then((res) => setContacts(res.success && res.data ? res.data : []));
+  }, []);
+
+  if (contacts === null) return <Loader text="Chargement de votre activité commerciale…" />;
+
+  if (contacts.length === 0) {
+    return (
+      <div className="plan-empty">
+        <span className="plan-empty-icon"><Building2 size={40} /></span>
+        <h2>Pas encore d'activité commerciale</h2>
+        <p>
+          Ajoutez des contacts, scannez votre boîte mail ou importez votre CRM depuis l'onglet <strong>CRM</strong> —
+          vos indicateurs de vente s'afficheront ici.
+        </p>
+        <button className="btn btn-primary" onClick={() => navigate('/crm')}>Ouvrir le CRM</button>
+      </div>
+    );
+  }
+
+  // ── Agrégats commerciaux ────────────────────────────────────────────────
+  const DAY = 86_400_000;
+  const now = Date.now();
+
+  const won = contacts.filter((c) => c.stage === 'won');
+  const lost = contacts.filter((c) => c.stage === 'lost');
+  const wonCount = won.length;
+  const wonRevenue = won.reduce((s, c) => s + (c.amount ?? 0), 0);
+  const closed = wonCount + lost.length;
+  const conversion = closed > 0 ? (wonCount / closed) * 100 : null;
+  const avgTicket = wonCount > 0 ? wonRevenue / wonCount : null;
+
+  const openStages: DealStage[] = ['qualified', 'discussion', 'proposal'];
+  const openPipeline = contacts.filter((c) => openStages.includes(c.stage)).reduce((s, c) => s + (c.amount ?? 0), 0);
+
+  const prospects = contacts.filter((c) => c.type === 'prospect');
+  const clients = contacts.filter((c) => c.type === 'client' || c.stage === 'won');
+  const hot = contacts.filter((c) => (c.interestScore ?? 0) >= 70).length;
+
+  // Taux d'atteinte : part des contacts devenus clients (« clients atteints »).
+  const reachRate = (clients.length / contacts.length) * 100;
+
+  // Nouveaux prospects (30 j) et évolution vs les 30 j précédents.
+  const createdAgo = (c: Contact) => now - new Date(c.createdAt).getTime();
+  const newLast30 = contacts.filter((c) => createdAgo(c) <= 30 * DAY).length;
+  const newPrev30 = contacts.filter((c) => createdAgo(c) > 30 * DAY && createdAgo(c) <= 60 * DAY).length;
+
+  // Pipeline par étape (ordre du funnel).
+  const stageData: StageDatum[] = DEAL_STAGES.map((s) => {
+    const cs = contacts.filter((c) => c.stage === s);
+    return { stage: s, label: STAGE_LABELS[s], count: cs.length, value: cs.reduce((a, c) => a + (c.amount ?? 0), 0), fill: STAGE_COLORS[s] };
+  });
+
+  // Répartition par type de contact.
+  const typeData: TypeDatum[] = (['prospect', 'client', 'partner'] as ContactType[])
+    .map((t) => ({ type: t, label: TYPE_LABELS[t], value: contacts.filter((c) => c.type === t).length, fill: TYPE_COLORS[t] }))
+    .filter((d) => d.value > 0);
+
+  // Acquisition mensuelle (6 derniers mois).
+  const anchor = new Date();
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const m = new Date(anchor.getFullYear(), anchor.getMonth() - (5 - i), 1);
+    return { key: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`, label: m.toLocaleDateString('fr-FR', { month: 'short' }), count: 0 };
+  });
+  const monthIdx = new Map(months.map((m, i) => [m.key, i]));
+  for (const c of contacts) {
+    const d = new Date(c.createdAt);
+    const i = monthIdx.get(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    if (i !== undefined) months[i].count += 1;
+  }
+
+  // Meilleurs deals (chiffrés).
+  const topDeals = contacts.filter((c) => c.amount != null).sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0)).slice(0, 6);
+
+  const newSub = newPrev30 > 0
+    ? `${newLast30} sur 30 j · ${newLast30 >= newPrev30 ? '+' : ''}${(newLast30 - newPrev30)} vs 30 j préc.`
+    : `${newLast30} sur les 30 derniers jours`;
+
+  return (
+    <div className="analytics-wrap animate-fadeIn">
+      {/* ── KPIs principaux ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 16 }}>
+        <BizKpi label="Prospects potentiels" value={prospects.length} fmt={(n) => Math.round(n).toLocaleString('fr-FR')}
+          color={TYPE_COLORS.prospect} Icon={UserPlus} sub={newSub} />
+        <BizKpi label="Deals gagnés" value={wonCount} fmt={(n) => Math.round(n).toLocaleString('fr-FR')}
+          color="#34d399" Icon={Trophy} sub={`${clients.length} client${clients.length > 1 ? 's' : ''} au total`} />
+        <BizKpi label="CA gagné" value={wonRevenue} fmt={fmtEurShort}
+          color={C.impressions} Icon={Wallet} sub={avgTicket !== null ? `ticket moyen ${fmtEurShort(avgTicket)}` : 'aucun deal chiffré'} />
+        <BizKpi label="Taux de conversion" value={conversion} fmt={(n) => `${n.toFixed(0)} %`}
+          color="#fbbf24" Icon={Percent} sub={closed > 0 ? `${wonCount}/${closed} deals clôturés` : 'aucun deal clôturé'} />
+      </div>
+
+      {/* ── Indicateurs secondaires ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 175px), 1fr))', gap: 14 }}>
+        <div className="stat-card">
+          <div className="stat-card-icon"><Wallet size={18} /></div>
+          <div className="stat-card-value">{fmtEurShort(openPipeline)}</div>
+          <div className="stat-card-label">Pipeline ouvert</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon"><Users size={18} /></div>
+          <div className="stat-card-value">{reachRate.toFixed(0)} %</div>
+          <div className="stat-card-label">Clients atteints</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon"><Handshake size={18} /></div>
+          <div className="stat-card-value">{avgTicket !== null ? fmtEurShort(avgTicket) : '—'}</div>
+          <div className="stat-card-label">Ticket moyen</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-icon"><Flame size={18} /></div>
+          <div className="stat-card-value">{hot}</div>
+          <div className="stat-card-label">Leads chauds</div>
+        </div>
+      </div>
+
+      {/* ── Pipeline par étape ── */}
+      <BizPipeline data={stageData} />
+
+      {/* ── Portefeuille + acquisition côte à côte ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 16, alignItems: 'stretch' }}>
+        <BizDonut data={typeData} total={contacts.length} />
+        <BizMonthly data={months} />
+      </div>
+
+      {/* ── Meilleurs deals ── */}
+      {topDeals.length > 0 && (
+        <div className="card">
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Trophy size={16} color="#34d399" /> Meilleurs deals
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {topDeals.map((c) => (
+              <div
+                key={c.id}
+                onClick={() => navigate('/crm')}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: `1px solid ${C.grid}`, cursor: 'pointer' }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                  {c.company && <div style={{ fontSize: '0.78rem', color: C.text }}>{c.company}</div>}
+                </div>
+                <span style={{
+                  fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+                  color: STAGE_COLORS[c.stage], border: `1px solid ${STAGE_COLORS[c.stage]}55`, borderRadius: 5, padding: '2px 7px', flexShrink: 0,
+                }}>
+                  {STAGE_LABELS[c.stage]}
+                </span>
+                <span style={{ fontWeight: 700, color: '#34d399', minWidth: 88, textAlign: 'right', flexShrink: 0 }}>{fmtEur(c.amount!)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="form-hint" style={{ marginTop: 10 }}>Cliquez sur un deal pour l'ouvrir dans le CRM.</p>
+        </div>
+      )}
+    </div>
   );
 }

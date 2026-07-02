@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import Loader from '../components/Loader';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarClock, PenLine, CheckCircle2, ClipboardCheck, Rocket, Download } from 'lucide-react';
-import { getOverview, getPlan, invalidateOverview, Overview, LaunchPlan } from '../api/client';
+import { CalendarClock, PenLine, CheckCircle2, ClipboardCheck, Rocket, Download, TrendingUp } from 'lucide-react';
+import { getOverview, getPlan, getContacts, invalidateOverview, Overview, LaunchPlan } from '../api/client';
 import ImportHistoryModal from '../components/ImportHistoryModal';
 
 /**
@@ -15,6 +16,7 @@ export default function DashboardPage() {
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [wonRevenue, setWonRevenue] = useState(0);
   const navigate = useNavigate();
 
   const load = useCallback(async (refresh = false) => {
@@ -27,6 +29,11 @@ export default function DashboardPage() {
       if (res.data.project) {
         const planRes = await getPlan(res.data.project.id);
         if (planRes.success && planRes.data) setPlan(planRes.data);
+        // CA gagné = somme des deals « gagnés » du pipeline CRM
+        const contactsRes = await getContacts();
+        if (contactsRes.success && contactsRes.data) {
+          setWonRevenue(contactsRes.data.filter((c) => c.stage === 'won').reduce((s, c) => s + (c.amount ?? 0), 0));
+        }
       }
     } else {
       setError(res.error || 'Impossible de charger votre projet');
@@ -36,7 +43,7 @@ export default function DashboardPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  if (loading) return <div className="loading">⏳ Chargement de votre projet…</div>;
+  if (loading) return <Loader text="Chargement de votre projet…" />;
 
   const project = overview?.project ?? null;
 
@@ -62,6 +69,13 @@ export default function DashboardPage() {
 
   const { posts, approvals } = overview!;
   const input = plan?.input;
+  // Mode « croissance / vente » vs « lancement » — pilote les libellés du plan
+  // affiché (l'objectif primaire prime ; sinon on déduit du stade commercial).
+  const growthMode =
+    input?.primaryObjective === 'grow-revenue' ||
+    input?.primaryObjective === 'both' ||
+    (!input?.primaryObjective &&
+      (input?.traction === 'first-customers' || input?.traction === 'early-revenue' || input?.traction === 'scaling'));
 
   return (
     <div className="animate-fadeIn">
@@ -159,6 +173,16 @@ export default function DashboardPage() {
           <div className="stat-card-value" style={approvals > 0 ? { color: '#f59e0b' } : undefined}>{approvals}</div>
           <div className="stat-card-label">À valider</div>
         </div>
+        <div
+          className="stat-card animate-fadeInUp stagger-5 stat-card-clickable"
+          onClick={() => navigate('/crm')}
+          role="button" tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && navigate('/crm')}
+        >
+          <span className="stat-card-icon"><TrendingUp size={20} /></span>
+          <div className="stat-card-value" style={wonRevenue > 0 ? { color: '#34d399' } : undefined}>{Math.round(wonRevenue).toLocaleString('fr-FR')} €</div>
+          <div className="stat-card-label">CA gagné</div>
+        </div>
       </div>
 
       {/* Prochaine publication + Objectifs côte à côte ; la description passe
@@ -190,6 +214,11 @@ export default function DashboardPage() {
         {input && input.goals?.length > 0 && (
           <div className="plan-section card animate-fadeInUp stagger-3">
             <div className="card-header">Objectifs</div>
+            {input.revenueGoal && (
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>
+                🎯 {input.revenueGoal}
+              </div>
+            )}
             <ul className="weekly-actions-list">
               {input.goals.map((g, i) => <li key={i}>{g}</li>)}
             </ul>
@@ -197,10 +226,10 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── Phases de lancement (pleine largeur, sous la vue d'ensemble) ── */}
+      {/* ── Phases du plan (pleine largeur, sous la vue d'ensemble) ── */}
       {input && (plan?.launch_sequencing || []).length > 0 && (
         <div className="card animate-fadeInUp stagger-5">
-          <div className="card-header">Phases de lancement</div>
+          <div className="card-header">{growthMode ? 'Phases de croissance' : 'Phases de lancement'}</div>
           {plan!.launch_sequencing.map((ls, i) => (
             <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < plan!.launch_sequencing.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
@@ -210,6 +239,25 @@ export default function DashboardPage() {
               </div>
               <ul className="weekly-actions-list">
                 {(ls.activities || []).slice(0, 3).map((a, j) => <li key={j}>{a}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Stratégie d'acquisition & de vente : déjà générée par l'IA, on la
+          surface ici car c'est le cœur du « décrocher des ventes ». ── */}
+      {input && (plan?.outreach_strategy || []).length > 0 && (
+        <div className="card animate-fadeInUp stagger-5">
+          <div className="card-header">{growthMode ? "Stratégie d'acquisition & de vente" : "Stratégie d'approche"}</div>
+          {plan!.outreach_strategy.map((os, i) => (
+            <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < plan!.outreach_strategy.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: '0.9rem' }}>{os.phase}</strong>
+                {os.target && <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>cible : {os.target}</span>}
+              </div>
+              <ul className="weekly-actions-list">
+                {(os.tactics || []).slice(0, 4).map((t, j) => <li key={j}>{t}</li>)}
               </ul>
             </div>
           ))}

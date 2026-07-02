@@ -7,10 +7,11 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
-import { isAIConfigured, getModel } from '../services/aiClient';
+import { isAIConfigured, modelForUser } from '../services/aiClient';
 import { isComposioConfigured } from '../services/mcpClient';
 import { composioUserIdFor, createConnectLink, disconnectToolkit, NeedsOwnAppError } from '../services/composioConnect';
 import { isTelegramConfigured, setUserBot, removeUserBot } from '../services/telegramBot';
+import { verifyApolloKey } from '../services/apollo';
 import { availableThemes, generateCustomTheme, CUSTOM_THEMES, BUILTIN_THEMES } from '../services/decks';
 import { assertFeature, assertWithinUsage, recordUsage, Feature } from '../services/entitlements';
 import { handleQuota } from '../middleware/quota';
@@ -32,6 +33,7 @@ const FEATURED_TOOLKITS = [
   { slug: 'instagram',      name: 'Instagram',       capability: 'Publication Instagram' },
   { slug: 'facebook',       name: 'Facebook',        capability: 'Publication Facebook' },
   { slug: 'gmail',          name: 'Gmail',           capability: 'Scan boîte mail + envoi d\'emails' },
+  { slug: 'outlook',        name: 'Outlook',         capability: 'Scan boîte mail + envoi d\'emails + synchro agenda' },
   { slug: 'googlecalendar', name: 'Google Calendar', capability: 'Synchro de vos posts dans l\'agenda' },
   { slug: 'reddit',         name: 'Reddit',          capability: 'Publication Reddit' },
   { slug: 'youtube',        name: 'YouTube',         capability: 'Publication YouTube' },
@@ -39,6 +41,7 @@ const FEATURED_TOOLKITS = [
   { slug: 'discord',        name: 'Discord',         capability: 'Messages Discord' },
   { slug: 'slack',          name: 'Slack',           capability: 'Messages Slack' },
   { slug: 'github',         name: 'GitHub',          capability: 'Publication GitHub (releases, discussions)' },
+  { slug: 'hubspot',        name: 'HubSpot',         capability: 'Base de connaissances (société, produits, deals, emails)' },
 ];
 
 // Cache court PAR identité Composio : l'appel REST est externe, et chaque
@@ -95,7 +98,8 @@ router.get('/status', async (req: Request, res: Response) => {
     data: {
       ai: {
         configured: isAIConfigured(),
-        model: isAIConfigured() ? getModel() : null,
+        // Modèle effectif du demandeur (premium Claude Opus pour l'offre PLUS)
+        model: isAIConfigured() ? modelForUser(req.user!.userId) : null,
       },
       composio: {
         configured: isComposioConfigured() && Boolean(process.env.COMPOSIO_API_KEY),
@@ -107,6 +111,9 @@ router.get('/status', async (req: Request, res: Response) => {
           ...t,
           connected: connected.has(t.slug),
         })),
+        // Agenda choisi pour la synchro des posts quand plusieurs sont connectés
+        // (null = automatique : le seul agenda connecté est utilisé).
+        preferredCalendar: storage.getPreferredCalendar(ctx.ownerUserId),
       },
       marp: {
         theme: storage.getMarpTheme(req.user!.userId).theme,
@@ -126,6 +133,10 @@ router.get('/status', async (req: Request, res: Response) => {
         linked: storage.getTelegramLinksByUserId(req.user!.userId).length > 0,
         ownBot: Boolean(storage.getTelegramBot(req.user!.userId)),
         botUsername: storage.getTelegramBot(req.user!.userId)?.botName ?? null,
+      },
+      apollo: {
+        // Clé personnelle de l'utilisateur (jamais renvoyée) — enrichissement de contacts
+        configured: Boolean(storage.getApolloApiKey(req.user!.userId)),
       },
       publishMode,
     },
@@ -199,6 +210,24 @@ router.post('/disconnect', async (req: Request, res: Response) => {
   }
 });
 
+// ── PATCH /api/config/calendar ────────────────────────────────────────────────
+// Agenda à utiliser pour la synchro des posts quand PLUSIEURS sont connectés
+// (googlecalendar / outlook). 'auto' = laisser LaunchForge décider (le seul
+// connecté). Réglage du propriétaire du projet (comme la gestion des comptes).
+router.patch('/calendar', (req: Request, res: Response) => {
+  const { calendar } = req.body as { calendar?: string };
+  if (!calendar || !['googlecalendar', 'outlook', 'auto'].includes(calendar)) {
+    return res.status(400).json({ success: false, error: 'calendar must be googlecalendar, outlook or auto' });
+  }
+  const ctx = storage.resolveActiveProject(req.user!.userId);
+  if (ctx.ownerUserId !== req.user!.userId) {
+    return res.status(403).json({ success: false, error: 'Les comptes de ce projet sont gérés par son propriétaire.' });
+  }
+  const value = calendar === 'auto' ? null : calendar;
+  storage.setPreferredCalendar(req.user!.userId, value);
+  res.json({ success: true, data: { preferredCalendar: value } });
+});
+
 // ── POST /api/config/active-platforms ─────────────────────────────────────────
 // Consigne dans la base de connaissances du projet actif les plateformes
 // sociales actuellement CONNECTÉES (détectées côté serveur, pas de confiance au
@@ -241,6 +270,31 @@ router.patch('/telegram-bot', async (req: Request, res: Response) => {
 router.delete('/telegram-bot', (req: Request, res: Response) => {
   removeUserBot(req.user!.userId);
   res.json({ success: true, data: { ownBot: false } });
+});
+
+// ── Clé API Apollo.io personnelle ────────────────────────────────────────────
+// L'utilisateur fournit SA clé (apollo.io › Settings › API keys) : les crédits
+// d'enrichissement consommés sont les siens. Stockée chiffrée, jamais renvoyée.
+router.patch('/apollo-key', async (req: Request, res: Response) => {
+  const { key } = req.body as { key?: string };
+  if (!key || typeof key !== 'string' || !/^[\w-]{10,100}$/.test(key.trim())) {
+    return res.status(400).json({ success: false, error: 'Clé invalide — copiez-la depuis apollo.io › Settings › API keys' });
+  }
+  if (gate(req, res, 'leads')) return;
+  try {
+    if (!(await verifyApolloKey(key.trim()))) {
+      return res.status(400).json({ success: false, error: 'Clé refusée par Apollo — vérifiez qu\'elle est active et copiée en entier' });
+    }
+    storage.setApolloApiKey(req.user!.userId, key.trim());
+    res.json({ success: true, data: { configured: true } });
+  } catch {
+    res.status(502).json({ success: false, error: 'Impossible de vérifier la clé auprès d\'Apollo — réessayez' });
+  }
+});
+
+router.delete('/apollo-key', (req: Request, res: Response) => {
+  storage.setApolloApiKey(req.user!.userId, null);
+  res.json({ success: true, data: { configured: false } });
 });
 
 // ── Thème Marp des présentations ─────────────────────────────────────────────

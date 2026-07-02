@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import Loader from '../components/Loader';
 import { useSearchParams } from 'react-router-dom';
 import { Users, Copy, Trash2 } from 'lucide-react';
 import {
@@ -169,7 +170,7 @@ export default function TeamsPage() {
     else setError(res.error || 'Suppression impossible.');
   };
 
-  if (loading) return <div className="loading">⏳ Chargement des équipes…</div>;
+  if (loading) return <Loader text="Chargement des équipes…" />;
 
   const isOwner = detail?.role === 'owner';
 

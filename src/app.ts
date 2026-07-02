@@ -14,14 +14,17 @@ import knowledgeRoutes from './routes/knowledge';
 import knowledgeSyncRoutes from './routes/knowledgeSync';
 import contentRoutes from './routes/content';
 import contactRoutes from './routes/contacts';
+import companyRoutes from './routes/companies';
 import telegramRoutes from './routes/telegram';
 import configRoutes from './routes/config';
 import overviewRoutes from './routes/overview';
 import assistantRoutes from './routes/assistant';
+import cronRoutes from './routes/cron';
 import deckRoutes from './routes/decks';
 import teamRoutes from './routes/teams';
 import adminRoutes from './routes/admin';
 import billingRoutes, { billingWebhookHandler } from './routes/billing';
+import webhookRoutes from './routes/webhooks';
 import { rateLimit } from './middleware/rateLimit';
 
 const app = express();
@@ -54,14 +57,18 @@ app.use('/api/knowledge', knowledgeSyncRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/contacts', contactRoutes);
+app.use('/api/companies', companyRoutes);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/overview', overviewRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/cron', cronRoutes);
 app.use('/api/decks', deckRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/billing', billingRoutes);
+// Callbacks externes (Apollo…) — sans JWT, signature vérifiée par route
+app.use('/api/webhooks', webhookRoutes);
 
 // Médias générés (GIF/MP4 des decks, visuels) — purge automatique à 90 jours.
 // Le dossier est résolu à chaque requête : UPLOADS_DIR peut être posé après l'import.

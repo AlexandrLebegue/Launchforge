@@ -214,6 +214,42 @@ function runMigrations(database: Database.Database): void {
       FOREIGN KEY (userId) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS companies (
+      id          TEXT PRIMARY KEY,
+      userId      TEXT NOT NULL,
+      planId      TEXT,
+      name        TEXT NOT NULL,
+      domain      TEXT,
+      sector      TEXT,
+      size        TEXT,
+      siren       TEXT,
+      legalName   TEXT,
+      naf         TEXT,
+      address     TEXT,
+      revenue     TEXT,
+      description TEXT,
+      salesAngles TEXT,
+      objections  TEXT,
+      intel       TEXT,
+      notes       TEXT,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contact_emails (
+      id         TEXT PRIMARY KEY,
+      userId     TEXT NOT NULL,
+      contactId  TEXT NOT NULL,
+      direction  TEXT NOT NULL,
+      subject    TEXT,
+      snippet    TEXT,
+      sentAt     TEXT NOT NULL,
+      externalId TEXT,
+      createdAt  TEXT NOT NULL,
+      FOREIGN KEY (contactId) REFERENCES contacts(id)
+    );
+
     CREATE TABLE IF NOT EXISTS telegram_links (
       chatId    TEXT PRIMARY KEY,
       userId    TEXT NOT NULL,
@@ -291,8 +327,55 @@ function runMigrations(database: Database.Database): void {
   if (!contactCols.some((c) => c.name === 'planId')) {
     database.exec(`ALTER TABLE contacts ADD COLUMN planId TEXT`);
   }
+  // CRM : étape du pipeline de vente + montant du deal + id externe (dédup imports)
+  if (!contactCols.some((c) => c.name === 'stage')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN stage TEXT NOT NULL DEFAULT 'new'`);
+  }
+  if (!contactCols.some((c) => c.name === 'amount')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN amount REAL`);
+  }
+  if (!contactCols.some((c) => c.name === 'externalId')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN externalId TEXT`);
+  }
+  // CRM v2 : date de clôture estimée + prochaine action + échéance
+  if (!contactCols.some((c) => c.name === 'expectedCloseDate')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN expectedCloseDate TEXT`);
+  }
+  if (!contactCols.some((c) => c.name === 'nextAction')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN nextAction TEXT`);
+  }
+  if (!contactCols.some((c) => c.name === 'nextActionAt')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN nextActionAt TEXT`);
+  }
+  // CRM orienté comptes : rattachement d'un contact à une entreprise
+  if (!contactCols.some((c) => c.name === 'companyId')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN companyId TEXT`);
+  }
+  // Échanges saisis à la main (distinct de lastInteraction, rempli auto par les emails)
+  if (!contactCols.some((c) => c.name === 'manualLog')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN manualLog TEXT`);
+  }
+  // Enrichissement Apollo.io : poste + profil LinkedIn + téléphone de la personne
+  if (!contactCols.some((c) => c.name === 'title')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN title TEXT`);
+  }
+  if (!contactCols.some((c) => c.name === 'linkedinUrl')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN linkedinUrl TEXT`);
+  }
+  if (!contactCols.some((c) => c.name === 'phone')) {
+    database.exec(`ALTER TABLE contacts ADD COLUMN phone TEXT`);
+  }
   if (!agentCols.some((c) => c.name === 'planId')) {
     database.exec(`ALTER TABLE agents ADD COLUMN planId TEXT`);
+  }
+
+  // Fiche entreprise structurée : identité légale (SIRENE) + brief découpé
+  // (description / angles de vente / objections au lieu d'un seul blob intel)
+  const companyCols = database.pragma('table_info(companies)') as { name: string }[];
+  for (const col of ['siren', 'legalName', 'naf', 'address', 'revenue', 'salesAngles', 'objections']) {
+    if (!companyCols.some((c) => c.name === col)) {
+      database.exec(`ALTER TABLE companies ADD COLUMN ${col} TEXT`);
+    }
   }
 
   // Backfill : les données créées avant l'isolation par projet sont rattachées
@@ -335,6 +418,10 @@ function runMigrations(database: Database.Database): void {
   }
   if (!userCols.some((c) => c.name === 'telegramBotName')) {
     database.exec(`ALTER TABLE users ADD COLUMN telegramBotName TEXT`);
+  }
+  // Clé API Apollo.io personnelle (enrichissement de contacts) — chiffrée
+  if (!userCols.some((c) => c.name === 'apolloApiKey')) {
+    database.exec(`ALTER TABLE users ADD COLUMN apolloApiKey TEXT`);
   }
   // Synchro automatique des métriques : intervalle par utilisateur (minutes,
   // 0 = désactivée) + horodatage de dernière synchro par post
@@ -386,6 +473,11 @@ function runMigrations(database: Database.Database): void {
   }
   if (!userCols.some((c) => c.name === 'marpCustomCss')) {
     database.exec(`ALTER TABLE users ADD COLUMN marpCustomCss TEXT`);
+  }
+  // Agenda préféré pour la synchro des posts quand PLUSIEURS sont connectés
+  // (googlecalendar / outlook). NULL = automatique (le seul connecté).
+  if (!userCols.some((c) => c.name === 'preferredCalendar')) {
+    database.exec(`ALTER TABLE users ADD COLUMN preferredCalendar TEXT`);
   }
   // Rapport de campagne hebdomadaire (Telegram, le lundi)
   if (!userCols.some((c) => c.name === 'lastWeeklyReportAt')) {
@@ -591,6 +683,22 @@ function runMigrations(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_conversations_expiry ON conversations(updatedAt);
   `);
 
+  // ── Mémoire inter-sessions de l'assistant ──────────────────────────────────
+  // Une note durable et compacte PAR (utilisateur, projet) : ce que l'assistant
+  // a retenu de l'utilisateur au fil de ses conversations (préférences, objectifs,
+  // décisions, sujets récurrents). Réinjectée dans le prompt système à chaque tour
+  // — le copilote « se souvient » d'un fil à l'autre. planId = '' quand aucun
+  // projet (SQLite traite chaque NULL comme distinct, ce qui casserait la clé).
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS assistant_memory (
+      userId    TEXT NOT NULL,
+      planId    TEXT NOT NULL DEFAULT '',
+      content   TEXT NOT NULL DEFAULT '',
+      updatedAt TEXT NOT NULL,
+      PRIMARY KEY (userId, planId)
+    );
+  `);
+
   // ── Abonnement & facturation (offres « Braise » gratuite / « Brasier » payante) ─
   // Modèle freemium : tout compte démarre par un essai « reverse trial » de 15
   // jours en accès complet (trialEndsAt), puis retombe sur l'offre Braise
@@ -610,6 +718,11 @@ function runMigrations(database: Database.Database): void {
   // 'month' | 'year' — sert à l'affichage et n'est pas la source de vérité du prix
   if (!userCols.some((c) => c.name === 'subscriptionInterval')) {
     database.exec(`ALTER TABLE users ADD COLUMN subscriptionInterval TEXT`);
+  }
+  // Offre payante souscrite : 'brasier' | 'plus' (IA premium Claude Opus).
+  // Déduite du prix Stripe par le webhook ; null = jamais abonné.
+  if (!userCols.some((c) => c.name === 'subscriptionPlan')) {
+    database.exec(`ALTER TABLE users ADD COLUMN subscriptionPlan TEXT`);
   }
   // Fin de la période payée en cours (ISO) — accès maintenu jusque-là même après
   // résiliation programmée (cancel_at_period_end)
@@ -650,4 +763,65 @@ function runMigrations(database: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_usage_events_count ON usage_events(userId, kind, month);
   `);
+
+  // ── Automatisations (cron jobs IA) ─────────────────────────────────────────
+  // Une tâche IA récurrente par projet : un objectif en langage naturel exécuté
+  // toutes les `intervalMinutes` par la boucle agentique (mêmes outils que
+  // l'assistant : web, connaissances, posts, emails, agenda…). Le worker
+  // (cronRunner.ts) traite les jobs dont `nextRunAt` est passé. `cron_runs`
+  // conserve l'historique des exécutions (résultat + statut + outils utilisés).
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS cron_jobs (
+      id              TEXT PRIMARY KEY,
+      userId          TEXT NOT NULL,
+      planId          TEXT,
+      title           TEXT NOT NULL,
+      objective       TEXT NOT NULL,
+      frequency       TEXT NOT NULL DEFAULT 'daily',
+      timeOfDay       TEXT,
+      weekday         INTEGER,
+      dayOfMonth      INTEGER,
+      intervalMinutes INTEGER NOT NULL,
+      enabled         INTEGER NOT NULL DEFAULT 1,
+      nextRunAt       TEXT NOT NULL,
+      lastRunAt       TEXT,
+      lastStatus      TEXT,
+      lastResult      TEXT,
+      createdAt       TEXT NOT NULL,
+      updatedAt       TEXT NOT NULL,
+      FOREIGN KEY (userId) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cron_jobs_user_plan ON cron_jobs(userId, planId);
+    CREATE INDEX IF NOT EXISTS idx_cron_jobs_due       ON cron_jobs(enabled, nextRunAt);
+
+    CREATE TABLE IF NOT EXISTS cron_runs (
+      id          TEXT PRIMARY KEY,
+      cronJobId   TEXT NOT NULL,
+      userId      TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      result      TEXT,
+      actions     TEXT,
+      startedAt   TEXT NOT NULL,
+      completedAt TEXT,
+      FOREIGN KEY (cronJobId) REFERENCES cron_jobs(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(cronJobId, startedAt DESC);
+  `);
+
+  // Additive : « heure de la journée + périodicité » (bases créées avant l'ajout).
+  const cronCols = database.pragma('table_info(cron_jobs)') as { name: string }[];
+  if (!cronCols.some((c) => c.name === 'frequency')) {
+    database.exec(`ALTER TABLE cron_jobs ADD COLUMN frequency TEXT NOT NULL DEFAULT 'daily'`);
+    // Backfill de la périodicité depuis l'ancienne cadence en minutes.
+    database.exec(`UPDATE cron_jobs SET frequency = CASE
+      WHEN intervalMinutes <= 60    THEN 'hourly'
+      WHEN intervalMinutes <= 180   THEN 'every_3h'
+      WHEN intervalMinutes <= 360   THEN 'every_6h'
+      WHEN intervalMinutes <= 1440  THEN 'daily'
+      WHEN intervalMinutes <= 10080 THEN 'weekly'
+      ELSE 'monthly' END`);
+  }
+  if (!cronCols.some((c) => c.name === 'timeOfDay'))  database.exec(`ALTER TABLE cron_jobs ADD COLUMN timeOfDay TEXT`);
+  if (!cronCols.some((c) => c.name === 'weekday'))    database.exec(`ALTER TABLE cron_jobs ADD COLUMN weekday INTEGER`);
+  if (!cronCols.some((c) => c.name === 'dayOfMonth')) database.exec(`ALTER TABLE cron_jobs ADD COLUMN dayOfMonth INTEGER`);
 }

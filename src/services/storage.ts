@@ -13,7 +13,7 @@
 import { randomUUID } from 'crypto';
 import { getDb } from '../db';
 import { encryptSecret, decryptSecret } from './secrets';
-import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, TelegramLink, Reminder, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary, SubscriptionRecord, SubscriptionStatus, UsageKind } from '../types';
+import { LaunchPlan, Feedback, User, Agent, AgentRun, OnboardingSession, Post, PostComment, CommentItem, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, Contact, Company, ContactEmail, TelegramLink, Reminder, CronJob, CronRun, ProjectSummary, Overview, Team, TeamSummary, TeamMemberInfo, TeamInvite, TeamRole, Conversation, ConversationMessage, ConversationSummary, SubscriptionRecord, SubscriptionStatus, UsageKind } from '../types';
 
 export class Storage {
   // ──────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ export class Storage {
   getSubscription(userId: string): SubscriptionRecord | null {
     const row = getDb()
       .prepare(
-        `SELECT subscriptionStatus, stripeCustomerId, stripeSubscriptionId,
+        `SELECT subscriptionStatus, subscriptionPlan, stripeCustomerId, stripeSubscriptionId,
                 subscriptionInterval, subscriptionCurrentPeriodEnd,
                 subscriptionCancelAt, trialEndsAt, firstPaidAt
          FROM users WHERE id = ?`
@@ -90,6 +90,7 @@ export class Storage {
     if (!row) return null;
     return {
       status:               (row.subscriptionStatus ?? 'none') as SubscriptionStatus,
+      plan:                 row.subscriptionPlan ?? null,
       stripeCustomerId:     row.stripeCustomerId ?? null,
       stripeSubscriptionId: row.stripeSubscriptionId ?? null,
       interval:             row.subscriptionInterval ?? null,
@@ -115,6 +116,7 @@ export class Storage {
   updateSubscription(userId: string, patch: Partial<SubscriptionRecord>): void {
     const map: Record<string, string> = {
       status:               'subscriptionStatus',
+      plan:                 'subscriptionPlan',
       stripeCustomerId:     'stripeCustomerId',
       stripeSubscriptionId: 'stripeSubscriptionId',
       interval:             'subscriptionInterval',
@@ -242,7 +244,9 @@ export class Storage {
       campaignReports: all(`SELECT * FROM campaign_reports WHERE userId = ?`),
       onboardingSessions: all(`SELECT * FROM onboarding_sessions WHERE userId = ?`),
       conversations: all(`SELECT * FROM conversations WHERE userId = ?`),
+      assistantMemory: all(`SELECT * FROM assistant_memory WHERE userId = ?`),
       reminders: all(`SELECT * FROM reminders WHERE userId = ?`),
+      cronJobs: all(`SELECT * FROM cron_jobs WHERE userId = ?`),
       telegramLinks: all(`SELECT chatId, createdAt FROM telegram_links WHERE userId = ?`),
       metricHistory: all(`SELECT * FROM metric_history WHERE userId = ?`),
       feedback: all(`SELECT * FROM feedback WHERE userId = ?`),
@@ -264,7 +268,7 @@ export class Storage {
     db.transaction(() => {
       db.prepare(`DELETE FROM agent_runs WHERE agentId IN (SELECT id FROM agents WHERE userId = ?)`).run(userId);
       for (const table of ['agents', 'feedback', 'metric_history', 'posts', 'knowledge', 'knowledge_sources', 'contacts',
-                           'telegram_links', 'reminders', 'decks', 'campaign_reports', 'onboarding_sessions', 'conversations', 'usage_events', 'plans']) {
+                           'telegram_links', 'reminders', 'cron_runs', 'cron_jobs', 'decks', 'campaign_reports', 'onboarding_sessions', 'conversations', 'assistant_memory', 'usage_events', 'plans']) {
         db.prepare(`DELETE FROM ${table} WHERE userId = ?`).run(userId);
       }
       // Équipes possédées : on supprime l'équipe, ses invitations et ses membres
@@ -410,6 +414,19 @@ export class Storage {
     return { token: decryptSecret(row.telegramBotToken), botName: row.telegramBotName ?? null };
   }
 
+  /** Enregistre (chiffrée) ou supprime (null) la clé API Apollo.io personnelle */
+  setApolloApiKey(userId: string, key: string | null): void {
+    getDb()
+      .prepare(`UPDATE users SET apolloApiKey = ? WHERE id = ?`)
+      .run(key ? encryptSecret(key) : null, userId);
+  }
+
+  getApolloApiKey(userId: string): string | null {
+    const row = getDb().prepare(`SELECT apolloApiKey FROM users WHERE id = ?`).get(userId) as any;
+    if (!row?.apolloApiKey) return null;
+    return decryptSecret(row.apolloApiKey) || null;
+  }
+
   /** Tous les bots personnels (démarrage des pollers au boot) */
   getAllTelegramBots(): { userId: string; token: string }[] {
     const rows = getDb()
@@ -498,6 +515,17 @@ export class Storage {
   getMetricsSyncMinutes(userId: string): number {
     const row = getDb().prepare(`SELECT metricsSyncMinutes FROM users WHERE id = ?`).get(userId) as any;
     return row?.metricsSyncMinutes ?? 0;
+  }
+
+  /** Agenda préféré pour la synchro des posts ('googlecalendar' | 'outlook'),
+   *  ou null = automatique (le seul agenda connecté est utilisé). */
+  setPreferredCalendar(userId: string, calendar: string | null): void {
+    getDb().prepare(`UPDATE users SET preferredCalendar = ? WHERE id = ?`).run(calendar, userId);
+  }
+
+  getPreferredCalendar(userId: string): string | null {
+    const row = getDb().prepare(`SELECT preferredCalendar FROM users WHERE id = ?`).get(userId) as any;
+    return row?.preferredCalendar ?? null;
   }
 
   // ── Mise à jour automatique de la base de connaissances ───────────────────
@@ -1117,6 +1145,62 @@ export class Storage {
       .run(cutoffIso).changes;
   }
 
+  /**
+   * Recherche plein-texte (LIKE) dans les fils de l'utilisateur — pour la
+   * remémoration inter-sessions (« de quoi a-t-on parlé à propos de X ? »).
+   * Renvoie un extrait autour de la première occurrence de chaque fil trouvé.
+   */
+  searchConversations(userId: string, query: string, limit = 5): { id: string; title: string; updatedAt: string; snippet: string }[] {
+    const term = query.trim();
+    if (term.length < 2) return [];
+    const like = `%${term.replace(/[\\%_]/g, ' ')}%`;
+    const rows = getDb()
+      .prepare(
+        `SELECT id, title, messages, updatedAt FROM conversations
+           WHERE userId = ? AND messages LIKE ? COLLATE NOCASE
+           ORDER BY updatedAt DESC LIMIT ?`
+      )
+      .all(userId, like, limit) as { id: string; title: string; messages: string; updatedAt: string }[];
+
+    const needle = term.toLowerCase();
+    return rows.map((row) => {
+      let messages: ConversationMessage[] = [];
+      try { messages = JSON.parse(row.messages); } catch { /* blob corrompu */ }
+      const hit = messages.find((m) => m.text?.toLowerCase().includes(needle));
+      let snippet = '';
+      if (hit) {
+        const text = hit.text.replace(/\s+/g, ' ');
+        const at = text.toLowerCase().indexOf(needle);
+        const start = Math.max(0, at - 80);
+        snippet = `${start > 0 ? '…' : ''}${text.slice(start, at + needle.length + 120)}…`;
+      }
+      return { id: row.id, title: row.title || 'Conversation', updatedAt: row.updatedAt, snippet };
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Mémoire inter-sessions de l'assistant (note durable par projet)
+  // ──────────────────────────────────────────────────────────────
+
+  /** Mémoire durable de l'assistant pour (utilisateur, projet) — null si vide */
+  getAssistantMemory(userId: string, planId: string | null): { content: string; updatedAt: string } | null {
+    const row = getDb()
+      .prepare(`SELECT content, updatedAt FROM assistant_memory WHERE userId = ? AND planId = ?`)
+      .get(userId, planId ?? '') as { content: string; updatedAt: string } | undefined;
+    return row && row.content ? row : null;
+  }
+
+  /** Écrit (upsert) la mémoire durable de l'assistant pour (utilisateur, projet) */
+  saveAssistantMemory(userId: string, planId: string | null, content: string): void {
+    getDb()
+      .prepare(
+        `INSERT INTO assistant_memory (userId, planId, content, updatedAt)
+         VALUES (@userId, @planId, @content, @now)
+         ON CONFLICT(userId, planId) DO UPDATE SET content = excluded.content, updatedAt = excluded.updatedAt`
+      )
+      .run({ userId, planId: planId ?? '', content, now: new Date().toISOString() });
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Posts (Content Hub)
   // ──────────────────────────────────────────────────────────────
@@ -1372,21 +1456,25 @@ export class Storage {
     getDb()
       .prepare(
         `INSERT INTO contacts
-           (id, userId, planId, name, email, company, type, source, interestScore,
-            interestSummary, notes, lastInteraction, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (id, userId, planId, name, email, company, companyId, type, stage, amount, externalId,
+            expectedCloseDate, nextAction, nextActionAt,
+            source, title, linkedinUrl, phone, interestScore, interestSummary, notes, lastInteraction, manualLog, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        contact.id, contact.userId, contact.planId, contact.name, contact.email, contact.company,
-        contact.type, contact.source, contact.interestScore, contact.interestSummary,
-        contact.notes, contact.lastInteraction, contact.createdAt, contact.updatedAt
+        contact.id, contact.userId, contact.planId, contact.name, contact.email, contact.company, contact.companyId,
+        contact.type, contact.stage, contact.amount, contact.externalId,
+        contact.expectedCloseDate, contact.nextAction, contact.nextActionAt,
+        contact.source, contact.title, contact.linkedinUrl, contact.phone, contact.interestScore, contact.interestSummary,
+        contact.notes, contact.lastInteraction, contact.manualLog, contact.createdAt, contact.updatedAt
       );
   }
 
   updateContact(id: string, patch: Partial<Contact>): void {
     const allowed: (keyof Contact)[] = [
-      'name', 'email', 'company', 'type', 'source',
-      'interestScore', 'interestSummary', 'notes', 'lastInteraction',
+      'name', 'email', 'company', 'companyId', 'type', 'stage', 'amount',
+      'expectedCloseDate', 'nextAction', 'nextActionAt', 'source', 'title', 'linkedinUrl', 'phone',
+      'interestScore', 'interestSummary', 'notes', 'lastInteraction', 'manualLog',
     ];
     const fields: string[] = [];
     const vals: any[] = [];
@@ -1425,8 +1513,99 @@ export class Storage {
       .all(userId, planId) as Contact[];
   }
 
+  /** Dédup des imports externes (HubSpot…) : un enregistrement source par projet */
+  getContactByExternalId(userId: string, planId: string | null, externalId: string): Contact | undefined {
+    return getDb()
+      .prepare(`SELECT * FROM contacts WHERE userId = ? AND planId IS ? AND externalId = ?`)
+      .get(userId, planId, externalId) as Contact | undefined;
+  }
+
   deleteContact(id: string): void {
+    getDb().prepare(`DELETE FROM contact_emails WHERE contactId = ?`).run(id);
     getDb().prepare(`DELETE FROM contacts WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Comptes (entreprises) & emails des contacts — CRM orienté comptes
+  // ──────────────────────────────────────────────────────────────
+
+  saveCompany(company: Company): void {
+    getDb()
+      .prepare(
+        `INSERT INTO companies (id, userId, planId, name, domain, sector, size, siren, legalName, naf, address, revenue, description, salesAngles, objections, intel, notes, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        company.id, company.userId, company.planId, company.name, company.domain, company.sector,
+        company.size, company.siren, company.legalName, company.naf, company.address, company.revenue,
+        company.description, company.salesAngles, company.objections, company.intel, company.notes,
+        company.createdAt, company.updatedAt
+      );
+  }
+
+  updateCompany(id: string, patch: Partial<Company>): void {
+    const allowed: (keyof Company)[] = [
+      'name', 'domain', 'sector', 'size', 'siren', 'legalName', 'naf', 'address', 'revenue',
+      'description', 'salesAngles', 'objections', 'intel', 'notes',
+    ];
+    const fields: string[] = [];
+    const vals: any[] = [];
+    for (const key of allowed) {
+      if (patch[key] !== undefined) { fields.push(`${key} = ?`); vals.push(patch[key]); }
+    }
+    if (fields.length === 0) return;
+    fields.push('updatedAt = ?');
+    vals.push(new Date().toISOString(), id);
+    getDb().prepare(`UPDATE companies SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  getCompanyById(id: string): Company | undefined {
+    return getDb().prepare(`SELECT * FROM companies WHERE id = ?`).get(id) as Company | undefined;
+  }
+
+  getCompaniesByPlan(userId: string, planId: string | null): Company[] {
+    return getDb()
+      .prepare(`SELECT * FROM companies WHERE userId = ? AND planId IS ? ORDER BY updatedAt DESC`)
+      .all(userId, planId) as Company[];
+  }
+
+  /** Trouve un compte par nom (insensible à la casse) dans le projet. */
+  getCompanyByName(userId: string, planId: string | null, name: string): Company | undefined {
+    return getDb()
+      .prepare(`SELECT * FROM companies WHERE userId = ? AND planId IS ? AND LOWER(name) = LOWER(?)`)
+      .get(userId, planId, name) as Company | undefined;
+  }
+
+  deleteCompany(id: string): void {
+    getDb().prepare(`UPDATE contacts SET companyId = NULL WHERE companyId = ?`).run(id);
+    getDb().prepare(`DELETE FROM companies WHERE id = ?`).run(id);
+  }
+
+  getContactsByCompany(companyId: string): Contact[] {
+    return getDb()
+      .prepare(`SELECT * FROM contacts WHERE companyId = ? ORDER BY amount DESC, updatedAt DESC`)
+      .all(companyId) as Contact[];
+  }
+
+  saveContactEmail(email: ContactEmail): void {
+    getDb()
+      .prepare(
+        `INSERT INTO contact_emails (id, userId, contactId, direction, subject, snippet, sentAt, externalId, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(email.id, email.userId, email.contactId, email.direction, email.subject, email.snippet, email.sentAt, email.externalId, email.createdAt);
+  }
+
+  getEmailsByContact(contactId: string): ContactEmail[] {
+    return getDb()
+      .prepare(`SELECT * FROM contact_emails WHERE contactId = ? ORDER BY sentAt DESC`)
+      .all(contactId) as ContactEmail[];
+  }
+
+  getContactEmailByExternalId(contactId: string, externalId: string): ContactEmail | undefined {
+    return getDb()
+      .prepare(`SELECT * FROM contact_emails WHERE contactId = ? AND externalId = ?`)
+      .get(contactId, externalId) as ContactEmail | undefined;
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -1472,6 +1651,71 @@ export class Storage {
 
   markReminderSent(id: string): void {
     getDb().prepare(`UPDATE reminders SET sent = 1 WHERE id = ?`).run(id);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Automatisations (cron jobs IA)
+  // ──────────────────────────────────────────────────────────────
+
+  saveCronJob(job: CronJob): void {
+    getDb().prepare(`
+      INSERT INTO cron_jobs (id, userId, planId, title, objective, frequency, timeOfDay, weekday, dayOfMonth, intervalMinutes, enabled, nextRunAt, lastRunAt, lastStatus, lastResult, createdAt, updatedAt)
+      VALUES (@id, @userId, @planId, @title, @objective, @frequency, @timeOfDay, @weekday, @dayOfMonth, @intervalMinutes, @enabled, @nextRunAt, @lastRunAt, @lastStatus, @lastResult, @createdAt, @updatedAt)
+    `).run(job);
+  }
+
+  getCronJobById(id: string): CronJob | undefined {
+    return getDb().prepare(`SELECT * FROM cron_jobs WHERE id = ?`).get(id) as CronJob | undefined;
+  }
+
+  /** Automatisations d'un projet (les plus récentes d'abord). */
+  getCronJobsByPlan(userId: string, planId: string | null): CronJob[] {
+    return getDb()
+      .prepare(`SELECT * FROM cron_jobs WHERE userId = ? AND (planId IS ? OR planId = ?) ORDER BY createdAt DESC`)
+      .all(userId, planId, planId) as CronJob[];
+  }
+
+  updateCronJob(id: string, patch: Partial<CronJob>): void {
+    const allowed: (keyof CronJob)[] = ['title', 'objective', 'frequency', 'timeOfDay', 'weekday', 'dayOfMonth', 'intervalMinutes', 'enabled', 'nextRunAt', 'lastRunAt', 'lastStatus', 'lastResult', 'updatedAt'];
+    const keys = allowed.filter((k) => k in patch);
+    if (keys.length === 0) return;
+    const setClause = keys.map((k) => `${k} = @${k}`).join(', ');
+    getDb().prepare(`UPDATE cron_jobs SET ${setClause} WHERE id = @id`).run({ id, ...patch } as Record<string, unknown>);
+  }
+
+  deleteCronJob(id: string): void {
+    getDb().transaction(() => {
+      getDb().prepare(`DELETE FROM cron_runs WHERE cronJobId = ?`).run(id);
+      getDb().prepare(`DELETE FROM cron_jobs WHERE id = ?`).run(id);
+    })();
+  }
+
+  /** Automatisations actives dont l'échéance est passée (traitées par le worker). */
+  getDueCronJobs(nowIso: string): CronJob[] {
+    return getDb()
+      .prepare(`SELECT * FROM cron_jobs WHERE enabled = 1 AND nextRunAt <= ? ORDER BY nextRunAt ASC LIMIT 20`)
+      .all(nowIso) as CronJob[];
+  }
+
+  saveCronRun(run: CronRun): void {
+    getDb().prepare(`
+      INSERT INTO cron_runs (id, cronJobId, userId, status, result, actions, startedAt, completedAt)
+      VALUES (@id, @cronJobId, @userId, @status, @result, @actions, @startedAt, @completedAt)
+    `).run(run);
+  }
+
+  updateCronRun(id: string, patch: Partial<CronRun>): void {
+    const allowed: (keyof CronRun)[] = ['status', 'result', 'actions', 'completedAt'];
+    const keys = allowed.filter((k) => k in patch);
+    if (keys.length === 0) return;
+    const setClause = keys.map((k) => `${k} = @${k}`).join(', ');
+    getDb().prepare(`UPDATE cron_runs SET ${setClause} WHERE id = @id`).run({ id, ...patch } as Record<string, unknown>);
+  }
+
+  getCronRunsByJob(cronJobId: string, limit = 20): CronRun[] {
+    return getDb()
+      .prepare(`SELECT * FROM cron_runs WHERE cronJobId = ? ORDER BY startedAt DESC LIMIT ?`)
+      .all(cronJobId, limit) as CronRun[];
   }
 
   // ──────────────────────────────────────────────────────────────

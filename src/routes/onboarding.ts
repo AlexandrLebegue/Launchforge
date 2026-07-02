@@ -13,7 +13,7 @@ import {
 const router = Router();
 
 const WELCOME_MESSAGE =
-  "👋 Bonjour ! Je suis l'assistant LaunchForge. Je vais préparer votre plan de promotion — et faire un maximum de recherches à votre place.\n\n" +
+  "👋 Bonjour ! Je suis l'assistant LaunchForge. Je vais préparer votre plan pour décrocher plus de clients et faire grandir votre chiffre d'affaires — en faisant un maximum de recherches à votre place.\n\n" +
   'Pour commencer : votre entreprise (ou produit) existe-t-elle déjà ? Si oui, donnez-moi son nom ou son site web et je pars en recherche. ' +
   'Sinon, décrivez-moi votre idée en une phrase. Vous pouvez aussi joindre un document (pitch, business plan, page de présentation).\n\n' +
   '_(I also speak English — just write in your language.)_';
@@ -129,7 +129,7 @@ router.post('/:id/message', requireAuth, async (req: Request, res: Response) => 
   session.messages.push({ role: 'user', text: userText });
 
   try {
-    const turn = await runOnboardingTurn(session.messages, docs);
+    const turn = await runOnboardingTurn(session.messages, docs, undefined, req.user!.userId);
     applyTurn(session, turn);
 
     const response: ApiResponse<OnboardingSession> = { success: true, data: session };
@@ -178,7 +178,7 @@ router.post('/:id/message/stream', requireAuth, async (req: Request, res: Respon
   };
 
   try {
-    const turn = await runOnboardingTurn(session.messages, docs, send);
+    const turn = await runOnboardingTurn(session.messages, docs, send, req.user!.userId);
     applyTurn(session, turn);
     send({ type: 'done', session });
   } catch (err) {

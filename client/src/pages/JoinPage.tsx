@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
+import Loader from '../components/Loader';
 import { Flame } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { register, login, setToken, joinTeam, getInvitePreview, User, InvitePreview } from '../api/client';
@@ -60,7 +61,7 @@ export default function JoinPage({ user, onAuthed }: Props) {
     onAuthed(res.data.user);
   };
 
-  if (loading) return <div className="loading">⏳ Chargement de l'invitation…</div>;
+  if (loading) return <Loader text="Chargement de l'invitation…" />;
 
   // Invitation absente / invalide / expirée
   if (!code || !preview || !preview.valid) {
@@ -78,7 +79,7 @@ export default function JoinPage({ user, onAuthed }: Props) {
 
   // Connecté : l'effet rejoint et redirige — court message transitoire
   if (user) {
-    return <div className="loading">⏳ Ajout à l'équipe « {preview.teamName} »…</div>;
+    return <Loader text={`Ajout à l'équipe « ${preview.teamName} »…`} />;
   }
 
   // Déconnecté : création de compte (ou connexion) pour rejoindre

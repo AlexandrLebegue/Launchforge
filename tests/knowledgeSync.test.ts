@@ -9,6 +9,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
 import { initEngine } from '../src/db';
 import app from '../src/app';
+import { fetchHubSpotKnowledge } from '../src/services/knowledgeSync';
 
 const auth = (t: string) => ({ Authorization: `Bearer ${t}` });
 
@@ -171,6 +172,55 @@ describe('Application des propositions', () => {
   it('refuse une liste vide', async () => {
     const res = await request(app).post('/api/knowledge/sync/apply').set(auth(owner.token)).send({ suggestions: [] });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('Source HubSpot (liée au compte Composio, sans URL)', () => {
+  beforeAll(async () => {
+    await createPlan(owner.token, 'Projet HubSpot'); // auto-activé pour owner (base de sources vierge)
+  });
+
+  it('ajoute une source HubSpot sans URL', async () => {
+    const res = await request(app).post('/api/knowledge/sources').set(auth(owner.token))
+      .send({ type: 'hubspot' });
+    expect(res.status).toBe(201);
+    expect(res.body.data.type).toBe('hubspot');
+    expect(res.body.data.url).toBe('hubspot');
+    expect(res.body.data.label).toBe('HubSpot');
+  });
+
+  it('déduplique HubSpot (une seule source par projet)', async () => {
+    await request(app).post('/api/knowledge/sources').set(auth(owner.token)).send({ type: 'hubspot' });
+    const list = await request(app).get('/api/knowledge/sources').set(auth(owner.token));
+    expect(list.body.data.filter((s: any) => s.type === 'hubspot')).toHaveLength(1);
+  });
+});
+
+describe('fetchHubSpotKnowledge — lecture Composio directe (execute injecté)', () => {
+  it('assemble des sections étiquetées par catégorie, en sautant les lectures vides', async () => {
+    const fakeExecute = async (_uid: string, slug: string) => {
+      if (slug === 'HUBSPOT_HUBSPOT_LIST_COMPANIES') {
+        return { results: [{ properties: { name: 'Acme', description: 'Outil SaaS', industry: 'Tech', hs_object_id: '1' } }] };
+      }
+      if (slug === 'HUBSPOT_HUBSPOT_HUBSPOT_LIST_PRODUCTS_WITH_PAGING') {
+        return { results: [{ properties: { name: 'Pro', price: '99' } }] };
+      }
+      return { results: [] }; // deals / emails / retours : rien à intégrer
+    };
+    const fetched = await fetchHubSpotKnowledge(owner.id, fakeExecute);
+    expect(fetched.type).toBe('hubspot');
+    expect(fetched.label).toBe('HubSpot');
+    expect(fetched.text).toContain('Société (catégorie : company)');
+    expect(fetched.text).toContain('Acme');
+    expect(fetched.text).toContain('Produits & offres');
+    expect(fetched.text).toContain('Pro');
+    expect(fetched.text).not.toContain('hs_object_id'); // clés techniques exclues
+    expect(fetched.text).not.toContain('Deals / opportunités'); // bloc vide non rendu
+  });
+
+  it('échoue proprement quand aucune donnée n\'est lisible', async () => {
+    const failing = async () => { throw new Error('No connected account'); };
+    await expect(fetchHubSpotKnowledge(owner.id, failing)).rejects.toThrow(/HubSpot exploitable/);
   });
 });
 

@@ -210,6 +210,7 @@ Catégorie : ${card.category}
 Rédige le contenu correspondant pour ${template?.name ?? agent.platform}.`,
         },
       ],
+      userId: agent.userId,
       maxTokens: 1500,
     });
 

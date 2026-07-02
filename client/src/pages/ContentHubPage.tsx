@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, FormEvent } from 'react';
+import Loader from '../components/Loader';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarClock, CheckCircle2, Eye, TrendingUp, Megaphone, Sparkles, Wand2, MessageSquare, LayoutGrid, Table2, ArrowUpDown, Lock, ExternalLink, RefreshCw, BarChart3, Download } from 'lucide-react';
@@ -445,7 +446,7 @@ function PublishedPostView({ post, readOnly = false, onClose, onSaved }: {
                                      mediaUrl={mediaUrl} mediaIsVideo={mediaIsVideo} subreddit={post.subreddit ?? undefined} />
                   </div>
                 ) : embedLoading ? (
-                  <div className="pub-embed-loading">⏳ Vérification de l'affichage intégré…</div>
+                  <Loader text="Vérification de l'affichage intégré…" variant="inline" />
                 ) : showIframe ? (
                   <div className="pub-embed-frame">
                     <iframe
@@ -1801,7 +1802,7 @@ export default function ContentHubPage() {
     return result;
   }, [posts, statusFilter, platformFilter, search, sortBy, sortDir]);
 
-  if (loading) return <div className="loading">⏳ Chargement du hub de contenu…</div>;
+  if (loading) return <Loader text="Chargement du hub de contenu…" />;
 
   const readOnly = activeProject?.role === 'viewer';
 
@@ -2284,7 +2285,7 @@ function DecksPanel() {
       </div>
 
       {loading ? (
-        <div className="loading">⏳ Chargement…</div>
+        <Loader text="Chargement…" variant="inline" />
       ) : decks.length === 0 ? (
         <div className="posts-empty">
           <span style={{ fontSize: '2rem' }}></span>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import Loader from '../components/Loader';
 import { getPosts, syncAllToCalendar, getOverview, updatePost, Post } from '../api/client';
 import { PostEditor, STATUS_META, platformLabel } from './ContentHubPage';
 
@@ -236,7 +237,7 @@ export default function CalendarPage() {
     }
   };
 
-  if (loading) return <div className="loading">⏳ Chargement du calendrier…</div>;
+  if (loading) return <Loader text="Chargement du calendrier…" />;
 
   return (
     <div className="animate-fadeIn">

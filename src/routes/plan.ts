@@ -50,6 +50,13 @@ router.post('/', requireAuth, validatePlanInput, async (req: Request, res: Respo
         niche:          input.niche,
         goals:          input.goals,
         pricing:        input.pricing,
+        // Contexte commercial (optionnel) — oriente les fiches vers la vente.
+        buyer:            input.buyer,
+        primaryObjective: input.primaryObjective,
+        traction:         input.traction,
+        salesMotion:      input.salesMotion,
+        bottleneck:       input.bottleneck,
+        revenueGoal:      input.revenueGoal,
       });
     } catch { /* best-effort */ }
 

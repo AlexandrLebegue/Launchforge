@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, FormEvent, ChangeEvent, KeyboardEvent, Fragment } from 'react';
+import Loader from '../components/Loader';
 import { useNavigate } from 'react-router-dom';
-import { Flame, User, Paperclip, Send, Plug } from 'lucide-react';
+import { Flame, User, Paperclip, Send, Plug, Mail } from 'lucide-react';
 import Markdown from '../components/Markdown';
 import PlatformConnectTable from '../components/PlatformConnectTable';
 import {
@@ -43,9 +44,35 @@ const profileLabels: { key: keyof OnboardingProfile; label: string }[] = [
   { key: 'pricing',        label: 'Prix' },
 ];
 
+// Champs commerciaux (optionnels) — affichés seulement s'ils sont renseignés.
+const OBJECTIVE_LABELS: Record<string, string> = {
+  launch: 'Lancer / premiers clients',
+  'grow-revenue': 'Vendre plus / CA',
+  both: 'Lancer et vendre',
+};
+const TRACTION_LABELS: Record<string, string> = {
+  'pre-revenue': 'Pré-revenu',
+  'first-customers': 'Premiers clients',
+  'early-revenue': 'Revenu débutant',
+  scaling: "Passage à l'échelle",
+};
+const SALES_MOTION_LABELS: Record<string, string> = {
+  'self-serve': 'Libre-service',
+  'sales-led': 'Vente assistée',
+  hybrid: 'Hybride',
+};
+const gtmLabels: { key: keyof OnboardingProfile; label: string; map?: Record<string, string> }[] = [
+  { key: 'primaryObjective', label: 'Priorité',       map: OBJECTIVE_LABELS },
+  { key: 'traction',         label: 'Stade',          map: TRACTION_LABELS },
+  { key: 'buyer',            label: 'Acheteur' },
+  { key: 'salesMotion',      label: 'Mode de vente',  map: SALES_MOTION_LABELS },
+  { key: 'revenueGoal',      label: 'Objectif de CA' },
+  { key: 'bottleneck',       label: 'Frein principal' },
+];
+
 const SPLASH_STEPS = [
   { at: 0,   icon: '', text: 'Analyse de votre profil et de vos objectifs…' },
-  { at: 12,  icon: '', text: 'Construction du plan de lancement semaine par semaine…' },
+  { at: 12,  icon: '', text: 'Construction du plan de croissance semaine par semaine…' },
   { at: 45,  icon: '', text: 'Sélection des communautés et angles de contenu…' },
   { at: 75,  icon: '', text: 'Rédaction de vos premières idées de posts…' },
   { at: 110, icon: '', text: 'Datation des publications dans votre calendrier…' },
@@ -77,7 +104,7 @@ function GenerationSplash() {
           </div>
         </div>
       </div>
-      <h2 className="gen-splash-title">Génération de votre plan de promotion</h2>
+      <h2 className="gen-splash-title">Génération de votre plan de croissance</h2>
       <div className="gen-splash-step" key={stepIndex}>{step.icon} {step.text}</div>
       <div className="gen-splash-bar"><div style={{ width: `${pct}%` }} /></div>
       <p className="gen-splash-hint">
@@ -102,6 +129,9 @@ export default function CreatePlanPage() {
   const [streamActions, setStreamActions] = useState<string[]>([]);
   const [generating,  setGenerating]  = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  // Slugs des plateformes connectées (émis par PlatformConnectTable) — pilote
+  // l'affichage du raccourci « analyser mes clients depuis ma boîte mail ».
+  const [connectedSlugs, setConnectedSlugs] = useState<string[]>([]);
 
   const chatEnd = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -221,7 +251,12 @@ export default function CreatePlanPage() {
     });
   };
 
-  const handleGenerate = async () => {
+  // `destination` permet de router ailleurs qu'au Hub après génération — le
+  // raccourci « boîte mail » crée le projet puis ouvre directement le scan des
+  // leads (qui exige un projet actif, inexistant avant cette étape).
+  const handleGenerate = async (
+    destination?: (planId: string, drafts: number) => string,
+  ) => {
     if (!session?.profile) return;
     setGenerating(true);
     setError(null);
@@ -231,9 +266,16 @@ export default function CreatePlanPage() {
       description:    p.description,
       targetAudience: p.targetAudience,
       niche:          p.niche,
-      goals:          p.goals.length > 0 ? p.goals : ['launch successfully'],
+      goals:          p.goals.length > 0 ? p.goals : ['décrocher mes premiers clients'],
       pricing:        p.pricing,
       company:        p.company,
+      // Contexte commercial collecté à l'onboarding — oriente le plan vers la vente.
+      buyer:            p.buyer,
+      primaryObjective: p.primaryObjective,
+      traction:         p.traction,
+      salesMotion:      p.salesMotion,
+      bottleneck:       p.bottleneck,
+      revenueGoal:      p.revenueGoal,
       mode:           'ai',
     });
     if (res.success && res.data) {
@@ -243,8 +285,11 @@ export default function CreatePlanPage() {
       setGenerating(false);
       // Nouveau projet actif : la vue d'ensemble en cache est obsolète
       invalidateOverview();
-      // Direction le Hub : les brouillons générés par l'IA y attendent
-      navigate(`/content?drafts=${res.bootstrappedPosts ?? 0}&plan=${res.data.id}`);
+      // Par défaut, direction le Hub (brouillons IA en attente) ; sinon la
+      // destination fournie (ex. scan de la boîte mail).
+      navigate(destination
+        ? destination(res.data.id, res.bootstrappedPosts ?? 0)
+        : `/content?drafts=${res.bootstrappedPosts ?? 0}&plan=${res.data.id}`);
     } else {
       setGenerating(false);
       setError(res.error || 'La génération du plan a échoué — réessayez.');
@@ -263,7 +308,7 @@ export default function CreatePlanPage() {
     setLoading(false);
   };
 
-  if (loading) return <div className="loading">Chargement…</div>;
+  if (loading) return <Loader text="Chargement…" />;
 
   if (generating) return <GenerationSplash />;
 
@@ -271,10 +316,11 @@ export default function CreatePlanPage() {
 
   const completed = session?.status === 'completed';
   const profile = session?.profile;
+  const mailConnected = connectedSlugs.includes('gmail') || connectedSlugs.includes('outlook');
 
   return (
     <div className="chat-screen">
-      <div className="chat-page-title">Créer mon plan de promotion</div>
+      <div className="chat-page-title">Créer mon plan de croissance</div>
       <div className="chat-page-subtitle">
         L'assistant IA vous pose les bonnes questions et recherche lui-même les infos de votre entreprise
       </div>
@@ -334,20 +380,35 @@ export default function CreatePlanPage() {
                     {/* recordOnConnect=false : le projet n'existe pas encore ;
                         la consignation en base de connaissances se fait après
                         la génération du plan (handleGenerate → recordActivePlatforms). */}
-                    <PlatformConnectTable recordOnConnect={false} />
+                    <PlatformConnectTable recordOnConnect={false} onChange={setConnectedSlugs} />
                     <p className="form-hint-inline" style={{ marginTop: 12 }}>
                       Cette étape est facultative — vous pouvez générer votre plan dès maintenant et connecter vos comptes plus tard depuis la Configuration.
                     </p>
                   </div>
 
                   <div className="chat-generate-cta">
-                    <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
-                      {generating ? '⏳ Génération en cours…' : 'Générer mon plan de lancement'}
+                    <button className="btn btn-primary" onClick={() => handleGenerate()} disabled={generating}>
+                      {generating ? '⏳ Génération en cours…' : 'Générer mon plan de croissance'}
                     </button>
+                    {mailConnected && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleGenerate(() => '/crm?scan=inbox')}
+                        disabled={generating}
+                        title="Crée votre projet, puis lit votre boîte mail pour détecter et scorer vos clients et prospects"
+                      >
+                        <Mail size={16} /> Analyser mes clients depuis ma boîte mail
+                      </button>
+                    )}
                     <button className="btn" onClick={restart} disabled={generating}>
                       ↺ Recommencer
                     </button>
                   </div>
+                  {mailConnected && (
+                    <p className="form-hint-inline" style={{ marginTop: 8, textAlign: 'center' }}>
+                      Gmail/Outlook connecté : ce raccourci crée votre projet puis ouvre directement le scan de votre boîte mail.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -445,6 +506,17 @@ export default function CreatePlanPage() {
                   </div>
                 );
               })}
+              {gtmLabels.map(({ key, label, map }) => {
+                const raw = profile[key];
+                if (!raw) return null;
+                const text = Array.isArray(raw) ? raw.join(' · ') : String(raw);
+                return (
+                  <div key={key} className="chat-summary-field">
+                    <div className="chat-summary-label">{label}</div>
+                    <div className="chat-summary-value">{map ? (map[text] ?? text) : text}</div>
+                  </div>
+                );
+              })}
             </>
           ) : (
             <div className="chat-summary-empty">
@@ -496,7 +568,7 @@ function ManualFallbackForm() {
 
   return (
     <div className="manual-form-wrap">
-      <div className="chat-page-title">Créer mon plan de promotion</div>
+      <div className="chat-page-title">Créer mon plan de croissance</div>
       <div className="alert-warning">
         L'assistant IA n'est pas configuré sur ce serveur (variable <code>OPENROUTER_API_KEY</code> manquante).
         Remplissez le formulaire pour générer un plan basé sur nos modèles.

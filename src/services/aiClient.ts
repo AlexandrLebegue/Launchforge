@@ -4,11 +4,18 @@
  * Toutes les fonctionnalités IA du site passent par ici : onboarding,
  * génération de plans, assistant de contenu, agents, intégration Composio.
  *
+ * Routage par offre : les comptes « Brasier PLUS » (et l'essai) sont servis par
+ * le modèle premium (Claude Opus), les autres par le modèle standard. Les
+ * appelants passent `userId` dans ChatParams ; sans userId (tâches système),
+ * c'est le modèle standard qui est utilisé.
+ *
  * Env :
- *   OPENROUTER_API_KEY — requis pour activer l'IA
- *   OPENROUTER_MODEL   — optionnel (défaut : openrouter/auto, qui route
- *                        automatiquement vers un bon modèle)
+ *   OPENROUTER_API_KEY   — requis pour activer l'IA
+ *   OPENROUTER_MODEL     — modèle standard (défaut : deepseek/deepseek-v4-flash)
+ *   OPENROUTER_MODEL_PLUS — modèle premium (défaut : anthropic/claude-opus-4.8)
  */
+
+import { hasPremiumModel } from './entitlements';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -16,8 +23,19 @@ export function isAIConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
+/** Modèle standard (offres Braise et Brasier, tâches système) */
 export function getModel(): string {
-  return process.env.OPENROUTER_MODEL || 'openrouter/auto';
+  return process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash';
+}
+
+/** Modèle premium (offre Brasier PLUS et essai reverse trial) */
+export function getPlusModel(): string {
+  return process.env.OPENROUTER_MODEL_PLUS || 'anthropic/claude-opus-4.8';
+}
+
+/** Modèle effectif pour un utilisateur (standard sans userId) */
+export function modelForUser(userId?: string): string {
+  return userId && hasPremiumModel(userId) ? getPlusModel() : getModel();
 }
 
 // ── Types (format OpenAI) ─────────────────────────────────────────────────────
@@ -56,6 +74,10 @@ export interface ChatResult {
 
 export interface ChatParams {
   messages: ChatMessage[];
+  /** Route vers le modèle premium si l'utilisateur est en offre PLUS (ou essai) */
+  userId?: string;
+  /** Force un modèle précis (prioritaire sur le routage par offre) */
+  model?: string;
   tools?: ToolDef[];
   maxTokens?: number;
   /** Force une réponse JSON (json_object) */
@@ -69,7 +91,7 @@ export interface ChatParams {
 
 function buildBody(params: ChatParams, stream: boolean) {
   const body: any = {
-    model: getModel(),
+    model: params.model || modelForUser(params.userId),
     messages: params.messages,
     max_tokens: params.maxTokens ?? 2048,
     stream,

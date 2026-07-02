@@ -32,11 +32,15 @@ const REQUIRED_KEYS: (keyof AIPlanData)[] = [
   'launch_sequencing', 'validation_checklist', 'first_users_tactics',
 ];
 
-const SYSTEM_PROMPT = `You are a startup launch & promotion strategist. Generate a tactical, highly specific launch plan for the company described by the user.
+const SYSTEM_PROMPT = `You are a startup growth & sales strategist. Generate a tactical, highly specific plan to win customers and grow revenue for the company described by the user — adapted to whether they are still launching or already selling.
 
 Rules:
 - Be concrete: name actual communities (subreddits, Slack/Discord groups, newsletters), actual platforms, actual content titles. No generic advice like "post on social media".
 - Adapt everything to the company's niche, audience, stage and location. A local French business should get French-speaking channels and local tactics; a global SaaS gets Product Hunt / HN / niche communities.
+- Weight the plan by the company's primary objective, traction stage and sales motion. A pre-revenue idea needs launch & first-customer tactics; a business that already sells needs tactics that turn reach into leads and CLOSE more sales — lead magnets, outreach sequences, demo/call CTAs, follow-up cadences, reactivation. Make outreach_strategy and first_users_tactics reflect this (for a selling business, read first_users_tactics as "next-customers tactics").
+- If a bottleneck is given, make the plan attack it head-on (e.g. "traffic doesn't convert" → conversion & qualification tactics, not more reach).
+- launch_sequencing is the phased ROADMAP shown to the user. For an idea / pre-launch: pre-launch → launch day → post-launch. For a business that already sells: a growth roadmap whose phases follow the funnel (e.g. "Renforcer l'acquisition" → "Améliorer la conversion" → "Closer & relancer" → "Fidéliser & étendre"). Name the phases for the company's REAL stage — never label a selling business "pre-launch".
+- outreach_strategy is the acquisition & SALES playbook (also shown to the user): concrete ways to reach the buyer, qualify interest and close — cold/warm outreach, demo & call CTAs, follow-up sequences, partnerships, reactivation of cold leads. Set target to the actual buyer.
 - Write the plan content in the same language as the company description (French input → French plan).
 - 4 weeks in weekly_plan, each with 3-5 actions and 2-3 measurable KPIs.
 - Each other array needs at least 3 well-differentiated items.
@@ -62,6 +66,13 @@ function buildUserPrompt(input: PlanInput): string {
     `Goals: ${input.goals.join(', ')}`,
     `Pricing: ${input.pricing}`,
   ];
+  // Commercial context — steers the plan toward sales/revenue, not just reach.
+  if (input.buyer) lines.push(`Buyer (who pays/decides): ${input.buyer}`);
+  if (input.primaryObjective) lines.push(`Primary objective: ${input.primaryObjective}`);
+  if (input.traction) lines.push(`Traction stage: ${input.traction}`);
+  if (input.salesMotion) lines.push(`Sales motion: ${input.salesMotion}`);
+  if (input.revenueGoal) lines.push(`Revenue goal: ${input.revenueGoal}`);
+  if (input.bottleneck) lines.push(`Biggest bottleneck to more revenue: ${input.bottleneck}`);
   if (input.company) {
     const c = input.company;
     lines.push(
@@ -83,7 +94,7 @@ function isValidPlan(data: any): data is AIPlanData {
   return REQUIRED_KEYS.every((k) => Array.isArray(data?.[k]) && data[k].length > 0);
 }
 
-export async function generateAIPlan(input: PlanInput): Promise<AIPlanData> {
+export async function generateAIPlan(input: PlanInput, userId?: string): Promise<AIPlanData> {
   if (!isAIConfigured()) return generatePlan(input);
 
   try {
@@ -92,6 +103,7 @@ export async function generateAIPlan(input: PlanInput): Promise<AIPlanData> {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: buildUserPrompt(input) },
       ],
+      userId,
       maxTokens: 8192,
       jsonMode: true,
       timeoutMs: 180000,

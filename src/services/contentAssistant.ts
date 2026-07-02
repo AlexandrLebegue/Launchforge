@@ -173,6 +173,7 @@ export async function generateContent(params: GenerateParams): Promise<Generated
       { role: 'system', content: systemParts.join('\n\n') },
       { role: 'user', content: userPrompt },
     ],
+    userId: params.userId,
     maxTokens: 3000,
     jsonMode: true,
   });

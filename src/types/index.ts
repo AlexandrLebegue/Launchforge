@@ -1,4 +1,31 @@
-export interface PlanInput {
+/** Ce que l'utilisateur veut faire avancer en priorité, et où il en est. */
+export type PrimaryObjective = 'launch' | 'grow-revenue' | 'both';
+/** Stade commercial réel — pilote la pondération du plan (lancement vs vente). */
+export type Traction = 'pre-revenue' | 'first-customers' | 'early-revenue' | 'scaling';
+/** Manière dont l'entreprise vend : libre-service, vente assistée, ou les deux. */
+export type SalesMotion = 'self-serve' | 'sales-led' | 'hybrid';
+
+/**
+ * Contexte go-to-market / commercial collecté à l'onboarding. Tous optionnels :
+ * une idée pré-lancement n'a ni CA ni cycle de vente. Ce contexte oriente le
+ * plan, la base de connaissances et les relances de l'assistant vers la VENTE.
+ */
+export interface GoToMarket {
+  /** Priorité du moment : lancer, vendre plus, ou les deux. */
+  primaryObjective?: PrimaryObjective;
+  /** Où en est le revenu (pré-revenu → en passage à l'échelle). */
+  traction?: Traction;
+  /** Mouvement de vente dominant. */
+  salesMotion?: SalesMotion;
+  /** Qui décide / signe le chèque (l'acheteur), distinct de qui utilise. */
+  buyer?: string;
+  /** Le frein n°1 à la croissance (pas assez de trafic, le trafic ne convertit pas, leads qui refroidissent, churn…). */
+  bottleneck?: string;
+  /** Prochain palier de revenu visé (ex. « passer de 2k€ à 10k€ MRR en 3 mois »). */
+  revenueGoal?: string;
+}
+
+export interface PlanInput extends GoToMarket {
   productName: string;
   description: string;
   targetAudience: string;
@@ -36,7 +63,7 @@ export interface OnboardingChatMessage {
   actions?: string[];
 }
 
-export interface OnboardingProfile {
+export interface OnboardingProfile extends GoToMarket {
   company: CompanyProfile;
   productName: string;
   description: string;
@@ -216,16 +243,21 @@ export interface User {
 }
 
 // ── Abonnement & facturation ──────────────────────────────────────────────────
-// Deux offres : « Braise » (gratuite, limitée) et « Brasier » (payante, tout
-// illimité). L'accès Brasier vient soit d'un abonnement Stripe actif, soit de
-// l'essai « reverse trial » de 15 jours non expiré (cf. services/entitlements).
+// Trois offres : « Braise » (gratuite, limitée), « Brasier » (payante, tout
+// illimité) et « Brasier PLUS » (payante, IA premium Claude Opus). L'accès payant
+// vient soit d'un abonnement Stripe actif, soit de l'essai « reverse trial » de
+// 15 jours non expiré (cf. services/entitlements).
 
-export type PlanTier = 'braise' | 'brasier';
+export type PlanTier = 'braise' | 'brasier' | 'plus';
+/** Offre payante souscrite via Stripe (le tier effectif en découle) */
+export type PaidPlan = 'brasier' | 'plus';
 export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | 'canceled';
 
 /** État d'abonnement brut, tel que stocké sur l'utilisateur */
 export interface SubscriptionRecord {
   status: SubscriptionStatus;
+  /** Offre souscrite ('brasier' | 'plus') — null tant qu'aucun abonnement */
+  plan: PaidPlan | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   interval: 'month' | 'year' | null;
@@ -470,7 +502,7 @@ export interface KnowledgeEntry {
 // L'utilisateur déclare des SOURCES (dépôt GitHub, site/page web) ; l'IA les
 // analyse et propose des fiches à créer/mettre à jour (validées par l'utilisateur).
 
-export type KnowledgeSourceType = 'github' | 'website';
+export type KnowledgeSourceType = 'github' | 'website' | 'hubspot';
 
 export interface KnowledgeSource {
   id: string;
@@ -504,6 +536,20 @@ export interface KnowledgeSuggestion {
 
 export type ContactType = 'prospect' | 'client' | 'partner';
 
+/** Étape du pipeline de vente (CRM). 'won'/'lost' = deal clos. */
+export type DealStage = 'new' | 'qualified' | 'discussion' | 'proposal' | 'won' | 'lost';
+
+export const DEAL_STAGES: DealStage[] = ['new', 'qualified', 'discussion', 'proposal', 'won', 'lost'];
+
+export const STAGE_LABELS: Record<DealStage, string> = {
+  new: 'Nouveau',
+  qualified: 'Qualifié',
+  discussion: 'En discussion',
+  proposal: 'Proposition',
+  won: 'Gagné',
+  lost: 'Perdu',
+};
+
 export interface Contact {
   id: string;
   userId: string;
@@ -512,16 +558,38 @@ export interface Contact {
   name: string;
   email: string | null;
   company: string | null;
+  /** Compte (entreprise) auquel ce contact est rattaché — CRM orienté comptes */
+  companyId: string | null;
   type: ContactType;
+  /** Étape dans le pipeline de vente. Défaut 'new'. */
+  stage: DealStage;
+  /** Montant du deal (devise du projet, EUR), null si non chiffré */
+  amount: number | null;
+  /** Id de l'enregistrement source externe (HubSpot…) — déduplication des imports */
+  externalId: string | null;
+  /** Date de clôture estimée du deal (ISO yyyy-mm-dd), null si non définie */
+  expectedCloseDate: string | null;
+  /** Prochaine action commerciale à mener (texte libre) */
+  nextAction: string | null;
+  /** Échéance de la prochaine action (ISO yyyy-mm-dd) — sert au badge « en retard » */
+  nextActionAt: string | null;
   /** D'où vient ce contact : 'commentaire LinkedIn', 'boîte mail', 'manuel'… */
   source: string | null;
+  /** Poste occupé (ex. « Head of Sales ») — saisi ou enrichi via Apollo */
+  title: string | null;
+  /** URL du profil LinkedIn — saisie ou enrichie via Apollo */
+  linkedinUrl: string | null;
+  /** Téléphone — saisi ou livré par le webhook Apollo (reveal_phone_number) */
+  phone: string | null;
   /** Score d'intérêt 0-100 estimé par l'IA (null = jamais analysé) */
   interestScore: number | null;
   /** Justification du score par l'IA */
   interestSummary: string | null;
   notes: string | null;
-  /** Derniers échanges (commentaires/messages collés ou extraits de la boîte mail) */
+  /** Derniers échanges — rempli AUTOMATIQUEMENT depuis les emails reçus (synchro) */
   lastInteraction: string | null;
+  /** Échanges saisis à la main (appels, réunions…) — jamais écrasé par la synchro */
+  manualLog: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -535,6 +603,57 @@ export interface LeadCandidate {
   score: number;
   summary: string;
   excerpt: string;
+}
+
+/** Compte / entreprise (CRM orienté comptes) — regroupe contacts, deals et intel. */
+export interface Company {
+  id: string;
+  userId: string;
+  planId: string | null;
+  name: string;
+  /** Domaine web (acme.io) — sert au logo (favicon) et à l'enrichissement */
+  domain: string | null;
+  sector: string | null;
+  size: string | null;
+  /** SIREN (9 chiffres) — récupéré via l'API SIRENE (recherche-entreprises) */
+  siren: string | null;
+  /** Raison sociale officielle (registre SIRENE) */
+  legalName: string | null;
+  /** Code NAF/APE de l'activité principale (ex. « 62.01Z ») */
+  naf: string | null;
+  /** Adresse du siège social */
+  address: string | null;
+  /** CA du dernier exercice publié à l'INPI (« 311,4 M€ (2024) ») — null si comptes confidentiels */
+  revenue: string | null;
+  /** Description courte de ce que fait l'entreprise */
+  description: string | null;
+  /** Angles de vente adaptés à notre offre (markdown, puces) — enrichissement IA */
+  salesAngles: string | null;
+  /** Objections probables et parades (markdown, puces) — enrichissement IA */
+  objections: string | null;
+  /** Brief d'intelligence commerciale : activité détaillée, actualités (markdown) */
+  intel: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type EmailDirection = 'sent' | 'received';
+
+/** Email échangé avec un contact (journalisé à l'envoi ou synchronisé depuis la boîte). */
+export interface ContactEmail {
+  id: string;
+  userId: string;
+  contactId: string;
+  direction: EmailDirection;
+  subject: string | null;
+  /** Extrait du corps (pas le corps intégral) */
+  snippet: string | null;
+  /** Date de l'email (ISO) */
+  sentAt: string;
+  /** Identifiant externe (messageId) pour la déduplication à la synchro */
+  externalId: string | null;
+  createdAt: string;
 }
 
 // ── Telegram ──────────────────────────────────────────────────────────────────
@@ -552,6 +671,86 @@ export interface Reminder {
   dueAt: string;
   sent: number;
   createdAt: string;
+}
+
+// ── Automatisations (cron jobs IA) ──────────────────────────────────────────
+/**
+ * Périodicité d'une automatisation. Deux familles :
+ *  - « intraday » (hourly/every_3h/every_6h) : se relance toutes les N heures ;
+ *  - « calendaire » (daily/weekly/monthly) : se relance à une HEURE précise de
+ *    la journée (timeOfDay, fuseau Europe/Paris), éventuellement un jour de la
+ *    semaine (weekly) ou du mois (monthly).
+ */
+export type CronFrequency = 'hourly' | 'every_3h' | 'every_6h' | 'daily' | 'weekly' | 'monthly';
+
+/** Cadences intraday → minutes (les calendaires sont ancrées à une heure). */
+export const CRON_FREQUENCY_MINUTES: Record<CronFrequency, number> = {
+  hourly: 60,
+  every_3h: 180,
+  every_6h: 360,
+  daily: 1440,
+  weekly: 10080,
+  monthly: 43200,
+};
+
+export const CRON_FREQUENCY_LABELS: Record<CronFrequency, string> = {
+  hourly: 'Toutes les heures',
+  every_3h: 'Toutes les 3 heures',
+  every_6h: 'Toutes les 6 heures',
+  daily: 'Chaque jour',
+  weekly: 'Chaque semaine',
+  monthly: 'Chaque mois',
+};
+
+/** True si la cadence se répète plusieurs fois par jour (pas d'heure fixe). */
+export function isIntradayFrequency(freq: CronFrequency): boolean {
+  return freq === 'hourly' || freq === 'every_3h' || freq === 'every_6h';
+}
+
+export type CronRunStatus = 'running' | 'ok' | 'error';
+
+/** Une tâche IA récurrente : un objectif exécuté par la boucle agentique. */
+export interface CronJob {
+  id: string;
+  userId: string;
+  /** Projet auquel l'automatisation appartient (contexte d'exécution). */
+  planId: string | null;
+  title: string;
+  /** Objectif en langage naturel — ce que l'IA doit accomplir à chaque exécution. */
+  objective: string;
+  /** Périodicité. */
+  frequency: CronFrequency;
+  /** Heure de déclenchement « HH:MM » (Europe/Paris) pour daily/weekly/monthly ; null en intraday. */
+  timeOfDay: string | null;
+  /** Jour de la semaine 1=lundi … 7=dimanche (weekly uniquement), sinon null. */
+  weekday: number | null;
+  /** Jour du mois 1–28 (monthly uniquement), sinon null. */
+  dayOfMonth: number | null;
+  /** Cadence en minutes — dérivée de la périodicité (affichage / intraday). */
+  intervalMinutes: number;
+  /** Active (1) ou en pause (0). */
+  enabled: number;
+  /** Prochaine exécution prévue (ISO). */
+  nextRunAt: string;
+  lastRunAt: string | null;
+  lastStatus: CronRunStatus | null;
+  /** Dernier résultat produit par l'IA (texte). */
+  lastResult: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Une exécution d'un cron job (historique). */
+export interface CronRun {
+  id: string;
+  cronJobId: string;
+  userId: string;
+  status: CronRunStatus;
+  result: string | null;
+  /** Libellés des outils utilisés pendant l'exécution (JSON array). */
+  actions: string | null;
+  startedAt: string;
+  completedAt: string | null;
 }
 
 export interface ApiResponse<T> {

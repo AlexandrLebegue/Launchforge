@@ -1,12 +1,13 @@
 /**
- * Entitlements — règles des offres « Braise » (gratuite) et « Brasier » (payante).
+ * Entitlements — règles des offres « Braise » (gratuite), « Brasier » (payante)
+ * et « Brasier PLUS » (payante, IA premium Claude Opus).
  *
- * Le tier EFFECTIF d'un utilisateur est « brasier » s'il bénéficie de l'accès
- * complet, c'est-à-dire :
- *   • c'est un compte fondateur (ADMIN_EMAILS), OU
- *   • il a un abonnement Stripe actif (ou résilié mais pas encore expiré), OU
- *   • son essai « reverse trial » de 15 jours n'est pas terminé.
- * Sinon il est « braise » (limité).
+ * Le tier EFFECTIF d'un utilisateur est :
+ *   • 'plus'    — compte fondateur (ADMIN_EMAILS), abonnement PLUS actif, ou
+ *                 essai « reverse trial » en cours (l'essai fait goûter le
+ *                 meilleur, Claude Opus inclus) ;
+ *   • 'brasier' — abonnement Brasier actif (ou résilié mais pas encore expiré) ;
+ *   • 'braise'  — sinon (limité).
  *
  * Les quotas portent sur le coût variable principal — la génération IA (texte
  * et images) — et sur le nombre de projets. L'analytics, la publication et la
@@ -23,9 +24,22 @@ import { PlanTier, SubscriptionRecord, UsageKind } from '../types';
 // ── Tarifs & paramètres (source de vérité, repris par le front) ───────────────
 export const PRICING = {
   currency: 'EUR',
-  monthly: 15.9,        // €/mois en mensuel
-  annualMonthly: 12.9,  // €/mois facturé annuellement
-  annualTotal: 154.8,   // €/an
+  brasier: {
+    monthly: 29,        // €/mois en mensuel
+    annualMonthly: 24,  // €/mois facturé annuellement
+    annualTotal: 288,   // €/an
+  },
+  plus: {
+    monthly: 59,        // €/mois en mensuel
+    annualMonthly: 49,  // €/mois facturé annuellement
+    annualTotal: 588,   // €/an
+  },
+} as const;
+
+// Libellés marketing des modèles IA par offre (l'ID technique vit dans aiClient)
+export const AI_MODEL_LABELS = {
+  standard: 'DeepSeek V4 Flash',
+  plus: 'Claude Opus 4.8',
 } as const;
 
 export const TRIAL_DAYS = 15;
@@ -55,22 +69,31 @@ export const LIMITS: Record<PlanTier, TierLimits> = {
     aiGenerationsPerMonth: 1000,
     aiImagesPerMonth: 50,
   },
+  // PLUS : mêmes principes, plafonds doublés — le modèle premium (Claude Opus,
+  // ≈0,05 €/génération) reste margé même au plafond à 59 €/mois.
+  plus: {
+    projects: UNLIMITED,
+    aiGenerationsPerMonth: 2000,
+    aiImagesPerMonth: 100,
+  },
 };
 
 // ── Fonctionnalités par offre (verrous au-delà des quotas) ────────────────────
-export type Feature = 'publish' | 'analytics' | 'leads' | 'recurring' | 'telegram';
+export type Feature = 'publish' | 'analytics' | 'leads' | 'recurring' | 'telegram' | 'automations';
 
 const FEATURES: Record<PlanTier, Record<Feature, boolean>> = {
-  braise:  { publish: false, analytics: false, leads: false, recurring: false, telegram: false },
-  brasier: { publish: true,  analytics: true,  leads: true,  recurring: true,  telegram: true  },
+  braise:  { publish: false, analytics: false, leads: false, recurring: false, telegram: false, automations: false },
+  brasier: { publish: true,  analytics: true,  leads: true,  recurring: true,  telegram: true,  automations: true  },
+  plus:    { publish: true,  analytics: true,  leads: true,  recurring: true,  telegram: true,  automations: true  },
 };
 
 const FEATURE_LABEL: Record<Feature, string> = {
-  publish:   'La publication et la connexion de comptes sociaux',
-  analytics: 'Les analyses et la synchronisation des métriques',
-  leads:     'La détection de leads',
-  recurring: 'Les séries récurrentes',
-  telegram:  'Le pilotage depuis Telegram',
+  publish:     'La publication et la connexion de comptes sociaux',
+  analytics:   'Les analyses et la synchronisation des métriques',
+  leads:       'La détection de leads',
+  recurring:   'Les séries récurrentes',
+  telegram:    'Le pilotage depuis Telegram',
+  automations: 'Les automatisations (cron jobs IA)',
 };
 
 /** Erreur de fonctionnalité verrouillée — traduite en HTTP 402 par le routeur */
@@ -147,15 +170,17 @@ export function trialActive(sub: SubscriptionRecord): boolean {
 
 /** Tier EFFECTIF de l'utilisateur (réel, indépendant de l'enforcement) */
 export function getEffectiveTier(userId: string): PlanTier {
-  if (isFounder(userId)) return 'brasier';
+  if (isFounder(userId)) return 'plus';
   const sub = storage.getSubscription(userId);
   if (!sub) return 'braise';
-  return hasPaidAccess(sub) || trialActive(sub) ? 'brasier' : 'braise';
+  if (hasPaidAccess(sub)) return sub.plan === 'plus' ? 'plus' : 'brasier';
+  // Reverse trial : accès complet au MEILLEUR (Claude Opus inclus) pendant 15 j
+  return trialActive(sub) ? 'plus' : 'braise';
 }
 
-/** Le tier qui s'applique pour les quotas (brasier si enforcement désactivé) */
+/** Le tier qui s'applique pour les quotas (tout débloqué si enforcement désactivé) */
 function effectiveTierForLimits(userId: string): PlanTier {
-  if (!enforcementEnabled()) return 'brasier';
+  if (!enforcementEnabled()) return 'plus';
   return getEffectiveTier(userId);
 }
 
@@ -170,9 +195,13 @@ export function assertWithinUsage(userId: string, kind: UsageKind, count = 1): v
   const used = storage.countUsage(userId, kind);
   if (used + count > limit) {
     const label = kind === 'ai_image' ? 'images IA' : 'générations IA';
+    const upsell = tier === 'braise'
+      ? 'Passez à Brasier pour un usage étendu.'
+      : 'Passez à Brasier PLUS pour des plafonds doublés.';
+    const tierLabel = tier === 'braise' ? 'Braise' : tier === 'brasier' ? 'Brasier' : 'Brasier PLUS';
     throw new QuotaError(
       kind, used, limit,
-      `Limite de l'offre Braise atteinte : ${limit} ${label} ce mois-ci. Passez à Brasier pour un usage illimité.`,
+      `Limite de l'offre ${tierLabel} atteinte : ${limit} ${label} ce mois-ci. ${tier === 'plus' ? 'Le compteur se réinitialise le mois prochain.' : upsell}`,
     );
   }
 }
@@ -208,7 +237,14 @@ export function assertCanCreateProject(userId: string): void {
  *  publieraient / synchroniseraient / généreraient encore, hors quota). Respecte
  *  l'interrupteur d'enforcement. */
 export function isBrasier(userId: string): boolean {
-  return effectiveTierForLimits(userId) === 'brasier';
+  return effectiveTierForLimits(userId) !== 'braise';
+}
+
+/** Vrai si l'utilisateur a droit au modèle IA premium (Claude Opus).
+ *  Se base sur le tier RÉEL (pas l'interrupteur d'enforcement) : désactiver
+ *  les limites ne doit pas router tout le monde vers le modèle cher. */
+export function hasPremiumModel(userId: string): boolean {
+  return getEffectiveTier(userId) === 'plus';
 }
 
 /** Vrai si l'offre effective de l'utilisateur inclut cette fonctionnalité */
@@ -243,7 +279,7 @@ const safeLimit = (n: number) => (n === UNLIMITED ? null : n); // null = illimit
 /** Vue complète de l'abonnement + usage pour le front (page Abonnement / badge) */
 export function getEntitlementsView(userId: string) {
   const sub = storage.getSubscription(userId) ?? {
-    status: 'none', stripeCustomerId: null, stripeSubscriptionId: null, interval: null,
+    status: 'none', plan: null, stripeCustomerId: null, stripeSubscriptionId: null, interval: null,
     currentPeriodEnd: null, cancelAt: null, trialEndsAt: null, firstPaidAt: null,
   } as SubscriptionRecord;
 
@@ -263,6 +299,7 @@ export function getEntitlementsView(userId: string) {
   return {
     tier,
     status: sub.status,
+    plan: sub.plan,
     founder,
     features: FEATURES[tier],
     trial: { active: isTrialing, endsAt: sub.trialEndsAt, daysLeft: trialDaysLeft },
@@ -275,6 +312,7 @@ export function getEntitlementsView(userId: string) {
     enforcement: enforcementEnabled(),
     usage,
     pricing: PRICING,
+    aiModels: AI_MODEL_LABELS,
     trialDays: TRIAL_DAYS,
     refundDays: REFUND_DAYS,
   };

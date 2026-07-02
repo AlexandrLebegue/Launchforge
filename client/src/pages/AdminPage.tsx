@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import Loader from '../components/Loader';
 import {
   Users, Activity, BarChart3, Search, ChevronRight,
   UserCheck, FileText, Zap, TrendingUp, Clock, RefreshCw,
@@ -98,7 +99,7 @@ function UserDrawer({ user, onClose }: { user: AdminUserSummary; onClose: () => 
         <div className="admin-section-label">Activité récente</div>
 
         {loading ? (
-          <div className="admin-loading">Chargement…</div>
+          <Loader text="Chargement…" variant="inline" />
         ) : events.length === 0 ? (
           <div className="admin-empty">Aucune activité enregistrée</div>
         ) : (
@@ -221,7 +222,7 @@ export default function AdminPage() {
       {tab === 'overview' && (
         <>
           {loadingStats && !stats ? (
-            <div className="admin-loading">Chargement…</div>
+            <Loader text="Chargement…" variant="inline" />
           ) : stats ? (
             <>
               <div className="dashboard-stats">
@@ -307,7 +308,7 @@ export default function AdminPage() {
           </div>
 
           {loadingUsers && users.length === 0 ? (
-            <div className="admin-loading">Chargement…</div>
+            <Loader text="Chargement…" variant="inline" />
           ) : (
             <div className="admin-table-wrap">
               <table className="admin-table">
@@ -362,7 +363,7 @@ export default function AdminPage() {
           </div>
 
           {loadingActivity && events.length === 0 ? (
-            <div className="admin-loading">Chargement…</div>
+            <Loader text="Chargement…" variant="inline" />
           ) : events.length === 0 ? (
             <div className="admin-empty">Aucune activité enregistrée. Les événements apparaîtront dès la première connexion d'un utilisateur.</div>
           ) : (

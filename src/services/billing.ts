@@ -18,7 +18,7 @@
 import Stripe from 'stripe';
 import { storage } from './storage';
 import { refundEligible, REFUND_DAYS } from './entitlements';
-import { SubscriptionStatus } from '../types';
+import { PaidPlan, SubscriptionStatus } from '../types';
 
 type StripeClient = InstanceType<typeof Stripe>;
 
@@ -31,10 +31,20 @@ function stripe(): StripeClient {
 }
 
 /** Identifiants de prix Stripe (créés dans le dashboard, posés en .env) */
-function priceId(interval: 'month' | 'year'): string {
-  const id = interval === 'year' ? process.env.STRIPE_PRICE_ANNUAL : process.env.STRIPE_PRICE_MONTHLY;
+function priceId(interval: 'month' | 'year', plan: PaidPlan): string {
+  const id = plan === 'plus'
+    ? (interval === 'year' ? process.env.STRIPE_PRICE_PLUS_ANNUAL : process.env.STRIPE_PRICE_PLUS_MONTHLY)
+    : (interval === 'year' ? process.env.STRIPE_PRICE_ANNUAL : process.env.STRIPE_PRICE_MONTHLY);
   if (!id) throw new Error('BILLING_NOT_CONFIGURED');
   return id;
+}
+
+/** Offre correspondant à un identifiant de prix Stripe (webhooks) */
+function planForPriceId(id: string | null | undefined): PaidPlan {
+  if (id && (id === process.env.STRIPE_PRICE_PLUS_MONTHLY || id === process.env.STRIPE_PRICE_PLUS_ANNUAL)) {
+    return 'plus';
+  }
+  return 'brasier';
 }
 
 /** Stripe configuré ET au moins un prix renseigné ? (affichage côté front) */
@@ -42,6 +52,14 @@ export function isBillingConfigured(): boolean {
   return Boolean(
     process.env.STRIPE_SECRET_KEY &&
     (process.env.STRIPE_PRICE_MONTHLY || process.env.STRIPE_PRICE_ANNUAL),
+  );
+}
+
+/** L'offre PLUS est-elle vendable ? (prix Stripe PLUS posés en .env) */
+export function isPlusConfigured(): boolean {
+  return Boolean(
+    process.env.STRIPE_SECRET_KEY &&
+    (process.env.STRIPE_PRICE_PLUS_MONTHLY || process.env.STRIPE_PRICE_PLUS_ANNUAL),
   );
 }
 
@@ -77,17 +95,18 @@ async function ensureCustomer(userId: string, email: string): Promise<string> {
   return customer.id;
 }
 
-/** Session Stripe Checkout pour souscrire à Brasier — renvoie l'URL hébergée */
+/** Session Stripe Checkout pour souscrire (Brasier ou PLUS) — URL hébergée */
 export async function createCheckoutSession(
   userId: string,
   email: string,
   interval: 'month' | 'year',
+  plan: PaidPlan = 'brasier',
 ): Promise<string> {
   const customer = await ensureCustomer(userId, email);
   const session = await stripe().checkout.sessions.create({
     mode: 'subscription',
     customer,
-    line_items: [{ price: priceId(interval), quantity: 1 }],
+    line_items: [{ price: priceId(interval, plan), quantity: 1 }],
     client_reference_id: userId,
     subscription_data: { metadata: { userId } },
     allow_promotion_codes: true,
@@ -97,6 +116,27 @@ export async function createCheckoutSession(
   });
   if (!session.url) throw new Error('Création de la session de paiement impossible');
   return session.url;
+}
+
+/** Change l'offre d'un abonnement Stripe EXISTANT (upgrade/downgrade, prorata).
+ *  Repasser par Checkout créerait un SECOND abonnement — on met à jour l'item
+ *  de l'abonnement en place, Stripe facture la différence au prorata. */
+export async function changeSubscriptionPlan(
+  userId: string,
+  interval: 'month' | 'year',
+  plan: PaidPlan,
+): Promise<void> {
+  const sub = storage.getSubscription(userId);
+  if (!sub?.stripeSubscriptionId) throw new Error('NO_SUBSCRIPTION');
+  const s = stripe();
+  const current: any = await s.subscriptions.retrieve(sub.stripeSubscriptionId);
+  const item = current.items?.data?.[0];
+  if (!item) throw new Error('NO_SUBSCRIPTION');
+  const updated = await s.subscriptions.update(sub.stripeSubscriptionId, {
+    items: [{ id: item.id, price: priceId(interval, plan) }],
+    proration_behavior: 'create_prorations',
+  });
+  applySubscription(userId, updated);
 }
 
 /** Session du portail client Stripe (gérer/résilier l'abonnement) */
@@ -125,6 +165,7 @@ function applySubscription(userId: string, sub: any): void {
     : (sub.cancel_at_period_end ? periodEnd : null);
   storage.updateSubscription(userId, {
     status: mapStatus(sub.status),
+    plan: planForPriceId(item?.price?.id),
     stripeSubscriptionId: sub.id,
     interval,
     currentPeriodEnd: periodEnd,

@@ -7,19 +7,31 @@ Stripe, et la politique de remboursement. Il accompagne le code :
 
 ---
 
-## 1. Le modèle : deux offres
+## 1. Le modèle : trois offres
 
-| | **Braise** (gratuite) | **Brasier** (payante) |
-|---|---|---|
-| Prix | 0 € pour toujours | **12,90 €/mois en annuel** (154,80 €/an) · **15,90 €/mois** en mensuel |
-| Projets | 1 | illimités |
-| Générations de contenu IA | 30 / mois | 1000 / mois (usage équitable) |
-| Images IA | 2 / mois | 50 / mois (usage équitable) |
-| Publication, analytics, leads, séries, Telegram | ❌ (réservés à Brasier) | ✅ |
-| Plan IA, rédaction manuelle, calendrier, export RGPD | ✅ | ✅ |
+| | **Braise** (gratuite) | **Brasier** (payante) | **Brasier PLUS** (payante, IA premium) |
+|---|---|---|---|
+| Prix | 0 € pour toujours | **24 €/mois en annuel** (288 €/an) · **29 €/mois** en mensuel | **49 €/mois en annuel** (588 €/an) · **59 €/mois** en mensuel |
+| Modèle IA | standard (DeepSeek V4 Flash) | standard (DeepSeek V4 Flash) | **Claude Opus 4.8** (Anthropic) sur les actions utilisateur |
+| Projets | 1 | illimités | illimités |
+| Générations de contenu IA | 30 / mois | 1000 / mois (usage équitable) | 2000 / mois (usage équitable) |
+| Images IA | 2 / mois | 50 / mois (usage équitable) | 100 / mois (usage équitable) |
+| Publication, analytics, leads, séries, Telegram | ❌ (réservés aux offres payantes) | ✅ | ✅ |
+| Plan IA, rédaction manuelle, calendrier, export RGPD | ✅ | ✅ | ✅ |
+| Support | communauté | prioritaire | prioritaire renforcé |
 
-**Pourquoi des plafonds Brasier plutôt qu'« illimité » ?** Coûts réels : ~0,015 €/génération texte (OpenRouter), 0,04 €/image (seedream-4.5), + Composio **30 €/mois fixe** (amorti sur tous les payants). À 12,90 €, l'infra fixe (≈36 €/mois) est couverte dès ~3 abonnés ; les plafonds 1000/50 sont calés très au-dessus d'un usage réel (le modèle texte par défaut est bon marché) et servent surtout de garde-fou anti-abus/scripting, sans jamais gêner un vrai utilisateur.
-| Support | communauté | prioritaire |
+**Pourquoi des plafonds plutôt qu'« illimité » ?** Coûts réels : ~0,001 €/génération
+texte standard (DeepSeek V4 Flash via OpenRouter), **~0,05 €/génération premium**
+(Claude Opus 4.8 : 5 $/25 $ par MTok), 0,04 €/image (seedream-4.5), + Composio
+**30 €/mois fixe** (amorti sur tous les payants). À 24 €, l'infra fixe est couverte
+dès ~2 abonnés ; à 49 €, un compte PLUS au plafond (2000 générations Opus ≈ 30-40 €
+d'inférence avant caching) reste margé. Les plafonds servent surtout de garde-fou
+anti-abus/scripting, sans jamais gêner un vrai utilisateur.
+
+**Routage du modèle** (`src/services/aiClient.ts`) : `OPENROUTER_MODEL` (défaut
+`deepseek/deepseek-v4-flash`) pour tout le monde, `OPENROUTER_MODEL_PLUS` (défaut
+`anthropic/claude-opus-4.8`) pour les comptes PLUS et l'essai. Les tâches de fond
+(synchros, mémoire, analytics) restent sur le modèle standard quel que soit le tier.
 
 **Principe de bridage** : seules les **quantités** qui ont un coût variable réel
 sont limitées (générations IA texte/image = appels OpenRouter ; projets). Toutes
@@ -34,10 +46,11 @@ on borne le volume. C'est honnête et facile à expliquer.
 > comptées : seules les actions initiées par l'utilisateur le sont.
 
 ### Essai « reverse trial » (15 jours, sans carte)
-Tout nouveau compte reçoit **15 jours d'accès complet Brasier** (`users.trialEndsAt`
-posé à l'inscription). À l'expiration, le compte **retombe automatiquement sur
-Braise** — rien ne se bloque, l'utilisateur garde tout son travail. C'est le
-schéma qui convertit le mieux (l'utilisateur goûte la pleine valeur avant le mur).
+Tout nouveau compte reçoit **15 jours d'accès complet Brasier PLUS** — Claude Opus
+inclus — (`users.trialEndsAt` posé à l'inscription). À l'expiration, le compte
+**retombe automatiquement sur Braise** — rien ne se bloque, l'utilisateur garde
+tout son travail. C'est le schéma qui convertit le mieux (l'utilisateur goûte la
+pleine valeur, IA premium comprise, avant le mur).
 
 ### Comptes existants (bêta)
 À la première migration, les comptes déjà créés reçoivent **30 jours de grâce**
@@ -45,12 +58,14 @@ en accès complet (`trialEndsAt = now + 30 j`, posé une seule fois). Cela honor
 promesse « les premiers utilisateurs seront prévenus avant tout changement ».
 
 ### Le tier « effectif »
-`getEffectiveTier()` renvoie **brasier** si :
-1. compte **fondateur** (`ADMIN_EMAILS`), OU
-2. abonnement Stripe **actif** (ou résilié/past_due mais période non expirée), OU
-3. **essai** non expiré.
+`getEffectiveTier()` renvoie :
+1. **plus** — compte **fondateur** (`ADMIN_EMAILS`), abonnement Stripe **PLUS**
+   actif (ou résilié/past_due mais période non expirée), ou **essai** non expiré ;
+2. **brasier** — abonnement Stripe Brasier actif (mêmes règles de grâce) ;
+3. **braise** — sinon.
 
-Sinon **braise**. Voir `src/services/entitlements.ts`.
+L'offre souscrite est stockée dans `users.subscriptionPlan` ('brasier' | 'plus'),
+déduite de l'ID de prix Stripe par le webhook. Voir `src/services/entitlements.ts`.
 
 ---
 
@@ -76,11 +91,11 @@ c'est l'alternative — au prix de ~3,5 points de marge en plus. Le code actuel 
 
 ## 3. Mise en place Stripe (pas à pas)
 
-### a) Produit et prix
-Dashboard Stripe → **Produits** → créer un produit **« Brasier »** avec **deux prix
+### a) Produits et prix
+Dashboard Stripe → **Produits** → créer **deux produits**, chacun avec **deux prix
 récurrents** :
-- **Mensuel** : 15,90 € / mois → note l'ID `price_...`
-- **Annuel** : 154,80 € / an (affiché 12,90 €/mois) → note l'ID `price_...`
+- **« Brasier »** : mensuel 29 €/mois · annuel 288 €/an (affiché 24 €/mois) → note les IDs `price_...`
+- **« Brasier PLUS »** : mensuel 59 €/mois · annuel 588 €/an (affiché 49 €/mois) → note les IDs `price_...`
 
 ### b) Clé API
 Dashboard → **Développeurs → Clés API** → copie la **clé secrète** (`sk_live_...`
@@ -111,10 +126,15 @@ Stripe calcule et collecte la TVA selon le pays du client.
 Dans `.env` (local) **et** `/root/launchforge/.env` (prod) :
 ```bash
 STRIPE_SECRET_KEY=sk_live_...
-STRIPE_PRICE_MONTHLY=price_...      # 15,90 €/mois
-STRIPE_PRICE_ANNUAL=price_...       # 154,80 €/an (12,90 €/mois)
+STRIPE_PRICE_MONTHLY=price_...        # Brasier 29 €/mois
+STRIPE_PRICE_ANNUAL=price_...         # Brasier 288 €/an (24 €/mois)
+STRIPE_PRICE_PLUS_MONTHLY=price_...   # Brasier PLUS 59 €/mois
+STRIPE_PRICE_PLUS_ANNUAL=price_...    # Brasier PLUS 588 €/an (49 €/mois)
 STRIPE_WEBHOOK_SECRET=whsec_...
-BILLING_ENFORCE_LIMITS=true         # 'false' = ne bride personne (lancement souple)
+BILLING_ENFORCE_LIMITS=true           # 'false' = ne bride personne (lancement souple)
+# Modèles IA (optionnel — les défauts conviennent)
+OPENROUTER_MODEL=deepseek/deepseek-v4-flash     # standard (Braise/Brasier + fond)
+OPENROUTER_MODEL_PLUS=anthropic/claude-opus-4.8 # premium (PLUS + essai)
 # APP_URL doit être correct : sert aux URLs de retour Checkout/portail.
 ```
 Sans `STRIPE_SECRET_KEY`, l'app fonctionne quand même : l'essai et l'offre Braise
@@ -175,8 +195,9 @@ Inscription ──► trialEndsAt = +15 j (accès Brasier) ──► (J+15) ─�
 
 ## 6. Checklist de mise en production
 
-- [ ] Produit « Brasier » + 2 prix créés dans Stripe (mode **live**).
+- [ ] Produits « Brasier » et « Brasier PLUS » + 4 prix créés dans Stripe (mode **live**).
 - [ ] `STRIPE_SECRET_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_ANNUAL`,
+      `STRIPE_PRICE_PLUS_MONTHLY`, `STRIPE_PRICE_PLUS_ANNUAL`,
       `STRIPE_WEBHOOK_SECRET` posés dans `/root/launchforge/.env`.
 - [ ] Endpoint webhook live créé et pointant sur le domaine de prod.
 - [ ] Portail client configuré (résiliation + factures).

@@ -111,6 +111,8 @@ export async function runMcpTask(
     throw new Error('Aucun outil disponible sur le serveur MCP Composio — connectez vos comptes sur dashboard.composio.dev');
   }
   const tools = toToolDefs(filterTools(allTools, keywords, priorityKeywords));
+  const tag = `[MCP ${keywords[0] ?? '?'}]`;
+  console.log(`${tag} outils disponibles=${allTools.length}, retenus=${tools.length} → [${tools.map((t) => t.name).join(', ')}]`);
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -123,12 +125,13 @@ export async function runMcpTask(
   let exhausted = true;
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const result = await chatComplete({ messages, tools, maxTokens: 2048 });
+    const result = await chatComplete({ messages, userId, tools, maxTokens: 2048 });
     // Certains modèles décorent leur réponse de markdown (« **ECHEC :** … ») :
     // on neutralise les décorations de tête pour que les préfixes OK:/ECHEC:
     // restent détectables par tous les appelants.
     if (result.content) lastContent = result.content.replace(/^[\s*_#>`]+/, '');
 
+    console.log(`${tag} itér.${i} : ${result.toolCalls.length} appel(s) d'outil${result.content ? ` · texte="${result.content.slice(0, 150).replace(/\s+/g, ' ')}"` : ''}`);
     if (result.toolCalls.length === 0) { exhausted = false; break; }
 
     messages.push(result.rawAssistantMessage);
@@ -137,9 +140,11 @@ export async function runMcpTask(
       try {
         output = await session.callTool(call.name, call.args);
         okCalls += 1;
+        console.log(`${tag}   ✓ ${call.name}(${JSON.stringify(call.args).slice(0, 300)}) → ${output.slice(0, 400).replace(/\s+/g, ' ')}`);
       } catch (err) {
         output = `ERREUR: ${err instanceof Error ? err.message : 'tool call failed'}`;
         failedCalls += 1;
+        console.error(`${tag}   ✗ ${call.name}(${JSON.stringify(call.args).slice(0, 300)}) → ${output}`);
       }
       messages.push({
         role: 'tool',
@@ -157,10 +162,11 @@ export async function runMcpTask(
       role: 'user',
       content: 'Tu as atteint la limite d\'appels d\'outils. Donne MAINTENANT ta réponse finale au format exact demandé dans ta mission (JSON ou OK:/ECHEC:), en te basant uniquement sur les données déjà obtenues. N\'appelle plus aucun outil.',
     });
-    const final = await chatComplete({ messages, maxTokens: 2048 });
+    const final = await chatComplete({ messages, userId, maxTokens: 2048 });
     if (final.content) lastContent = final.content.replace(/^[\s*_#>`]+/, '');
   }
 
+  console.log(`${tag} terminé : okCalls=${okCalls} failedCalls=${failedCalls} exhausted=${exhausted} · réponse="${lastContent.slice(0, 400).replace(/\s+/g, ' ')}"`);
   return { reply: lastContent, okCalls, failedCalls };
 }
 

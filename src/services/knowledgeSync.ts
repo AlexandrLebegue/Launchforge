@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 import * as cheerio from 'cheerio';
 import { chatComplete, sanitizeJson, isAIConfigured } from './aiClient';
 import { storage } from './storage';
+import { composioUserIdFor } from './composioConnect';
+import { executeComposioTool, ToolExecutor } from './composioDirect';
 import { KnowledgeCategory, KnowledgeEntry, KnowledgeSource, KnowledgeSourceType, KnowledgeSuggestion } from '../types';
 
 const UA = 'Mozilla/5.0 (compatible; LaunchForge/1.0; +https://launchforge.dev)';
@@ -160,6 +162,113 @@ export async function fetchWebsiteKnowledge(rawUrl: string, crawl = false): Prom
 
   if (!text.trim()) throw new Error(`Aucun texte exploitable sur ${url}`);
   return { type: 'website', url, label: main.title || origin.hostname, text: text.slice(0, 16000) };
+}
+
+// ── HubSpot (API Composio directe) ─────────────────────────────────────────────
+//
+// Lecture DÉTERMINISTE des objets HubSpot via l'API Composio (tools/execute,
+// aucun appel modèle), sur l'identité Composio de l'utilisateur. Chaque bloc est
+// ÉTIQUETÉ par catégorie cible pour que l'analyse IA range chaque fiche au bon
+// endroit (société → company, produits → product/offers, deals → learnings…).
+//
+// ⚠️ HubSpot Composio n'expose PAS les articles du Service Hub (Knowledge Base) :
+// le contenu éditorial le plus proche provient des emails marketing & campagnes.
+
+interface HubSpotRead {
+  slug: string;
+  args: Record<string, unknown>;
+  /** En-tête de section — oriente la catégorie attribuée par l'IA */
+  section: string;
+}
+
+/** Lectures HubSpot retenues (slugs vérifiés contre la toolkit Composio live). */
+const HUBSPOT_READS: HubSpotRead[] = [
+  {
+    slug: 'HUBSPOT_HUBSPOT_LIST_COMPANIES',
+    section: 'Société (catégorie : company)',
+    args: { limit: 25, properties: ['name', 'description', 'industry', 'domain', 'city', 'country'] },
+  },
+  {
+    slug: 'HUBSPOT_HUBSPOT_HUBSPOT_LIST_PRODUCTS_WITH_PAGING',
+    section: 'Produits & offres (catégorie : product / offers)',
+    args: { limit: 50, properties: ['name', 'description', 'price', 'hs_sku'] },
+  },
+  {
+    slug: 'HUBSPOT_HUBSPOT_LIST_DEALS',
+    section: 'Deals / opportunités (catégorie : learnings)',
+    args: { limit: 50, properties: ['dealname', 'dealstage', 'amount', 'description', 'pipeline'] },
+  },
+  {
+    slug: 'HUBSPOT_GET_ALL_MARKETING_EMAILS_FOR_A_HUB_SPOT_ACCOUNT',
+    section: 'Emails marketing (catégorie : tone / news / offers)',
+    args: { limit: 20 },
+  },
+  {
+    slug: 'HUBSPOT_LIST_FEEDBACK_SUBMISSIONS_PAGE',
+    section: 'Retours clients (catégorie : audience / learnings)',
+    args: { limit: 50, properties: ['hs_content', 'hs_survey_name', 'hs_value', 'hs_sentiment'] },
+  },
+];
+
+// Clés techniques sans valeur éditoriale — exclues de l'aplatissement.
+const HS_SKIP_KEYS = /^(hs_object_id|hs_lastmodifieddate|hs_createdate|createdate|lastmodifieddate|updatedat|createdat|id|archived)$/i;
+
+/** Aplati une réponse HubSpot (forme `{results:[{properties}]}`) en lignes de texte. */
+function flattenHubSpotRecords(data: any): string {
+  const rows: any[] =
+    Array.isArray(data?.results) ? data.results
+      : Array.isArray(data?.objects) ? data.objects
+        : Array.isArray(data?.items) ? data.items
+          : Array.isArray(data) ? data
+            : [];
+  const lines: string[] = [];
+  for (const row of rows.slice(0, 100)) {
+    const props = row?.properties && typeof row.properties === 'object' ? row.properties : row;
+    if (!props || typeof props !== 'object') continue;
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === '' || HS_SKIP_KEYS.test(k)) continue;
+      const val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      if (val.trim()) parts.push(`${k}: ${val.slice(0, 500)}`);
+    }
+    if (parts.length) lines.push(`- ${parts.join(' | ')}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Récupère le contenu HubSpot de l'utilisateur via l'API Composio directe.
+ * Une lecture qui échoue (objet absent, droit manquant) est ignorée ; on ne lève
+ * une erreur que si AUCUN bloc n'a pu être lu (HubSpot non connecté / compte vide).
+ * `execute` est injectable pour les tests (pas d'appel réseau).
+ */
+export async function fetchHubSpotKnowledge(
+  ownerUserId: string,
+  execute: ToolExecutor = executeComposioTool,
+): Promise<FetchedSource> {
+  const cuid = composioUserIdFor(ownerUserId);
+  if (!cuid) throw new Error('HubSpot non connecté — connectez-le depuis la vue Configuration');
+
+  const sections: string[] = [];
+  const failures: string[] = [];
+  for (const r of HUBSPOT_READS) {
+    try {
+      const data = await execute(cuid, r.slug, r.args);
+      const block = flattenHubSpotRecords(data);
+      if (block.trim()) sections.push(`### ${r.section}\n${block}`);
+    } catch (e) {
+      failures.push(e instanceof Error ? e.message : 'échec');
+    }
+  }
+
+  if (sections.length === 0) {
+    throw new Error(
+      failures.length
+        ? `Aucune donnée HubSpot exploitable (${failures[0].slice(0, 160)})`
+        : 'Aucune donnée HubSpot exploitable — vérifiez le compte connecté',
+    );
+  }
+  return { type: 'hubspot', url: 'hubspot', label: 'HubSpot', text: sections.join('\n\n=====\n\n').slice(0, 16000) };
 }
 
 // ── Analyse IA → propositions de fiches ──────────────────────────────────────
@@ -312,6 +421,7 @@ export function applySuggestionsToKnowledge(
 export interface SyncDeps {
   fetchGitHub?: (url: string) => Promise<FetchedSource>;
   fetchWebsite?: (url: string, crawl: boolean) => Promise<FetchedSource>;
+  fetchHubSpot?: (ownerUserId: string) => Promise<FetchedSource>;
   analyze?: (ownerUserId: string, planId: string | null, fetched: FetchedSource[]) => Promise<KnowledgeSuggestion[]>;
 }
 
@@ -337,6 +447,7 @@ export async function syncSourcesNow(
 ): Promise<SyncSourcesResult> {
   const fetchGh = deps.fetchGitHub ?? fetchGitHubKnowledge;
   const fetchWeb = deps.fetchWebsite ?? fetchWebsiteKnowledge;
+  const fetchHub = deps.fetchHubSpot ?? fetchHubSpotKnowledge;
   const analyze = deps.analyze ?? analyzeSourcesForKnowledge;
 
   const fetched: FetchedSource[] = [];
@@ -345,7 +456,9 @@ export async function syncSourcesNow(
 
   for (const src of sources) {
     try {
-      const f = src.type === 'github' ? await fetchGh(src.url) : await fetchWeb(src.url, crawl);
+      const f = src.type === 'github' ? await fetchGh(src.url)
+        : src.type === 'hubspot' ? await fetchHub(ownerUserId)
+          : await fetchWeb(src.url, crawl);
       fetched.push(f);
       syncedSourceIds.push(src.id);
     } catch (e) {

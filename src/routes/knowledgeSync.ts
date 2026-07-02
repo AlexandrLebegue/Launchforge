@@ -12,7 +12,7 @@ import { requireAuth } from '../middleware/auth';
 import { storage } from '../services/storage';
 import { isAIConfigured } from '../services/aiClient';
 import {
-  fetchGitHubKnowledge, fetchWebsiteKnowledge, analyzeSourcesForKnowledge,
+  fetchGitHubKnowledge, fetchWebsiteKnowledge, fetchHubSpotKnowledge, analyzeSourcesForKnowledge,
   applySuggestionsToKnowledge, syncSourcesNow,
   parseGitHubRepo, FetchedSource,
 } from '../services/knowledgeSync';
@@ -44,6 +44,9 @@ function canonicalUrl(type: KnowledgeSourceType, url: string): string {
     const p = parseGitHubRepo(url);
     return p ? `github.com/${p.owner}/${p.repo}` : url.trim();
   }
+  // HubSpot est lié au compte Composio connecté, pas à une URL : marqueur unique
+  // par projet (l'upsert dédoublonne donc à une seule source HubSpot).
+  if (type === 'hubspot') return 'hubspot';
   let u = url.trim();
   if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
   try { return new URL(u).toString(); } catch { return u; }
@@ -60,14 +63,18 @@ router.post('/sources', (req: Request, res: Response) => {
   const ctx = writableCtx(req, res); if (!ctx) return;
   const body = req.body as { type?: unknown; url?: unknown; label?: unknown };
   const type: KnowledgeSourceType | null =
-    body.type === 'github' ? 'github' : body.type === 'website' ? 'website' : null;
+    body.type === 'github' ? 'github'
+      : body.type === 'website' ? 'website'
+        : body.type === 'hubspot' ? 'hubspot'
+          : null;
   const url = String(body.url ?? '').trim();
-  if (!type) return res.status(400).json({ success: false, error: 'Type de source invalide (github ou website)' });
-  if (!url) return res.status(400).json({ success: false, error: 'URL requise' });
+  if (!type) return res.status(400).json({ success: false, error: 'Type de source invalide (github, website ou hubspot)' });
+  // HubSpot est lié au compte Composio connecté : pas d'URL à fournir. Les autres types en exigent une.
+  if (type !== 'hubspot' && !url) return res.status(400).json({ success: false, error: 'URL requise' });
   if (type === 'github' && !parseGitHubRepo(url)) {
     return res.status(400).json({ success: false, error: 'URL GitHub invalide (ex. github.com/utilisateur/depot)' });
   }
-  const label = String(body.label ?? '').trim().slice(0, 120);
+  const label = String(body.label ?? '').trim().slice(0, 120) || (type === 'hubspot' ? 'HubSpot' : '');
   const src = storage.upsertKnowledgeSource(ctx.ownerUserId, ctx.planId, type, canonicalUrl(type, url), label);
   res.status(201).json({ success: true, data: src });
 });
@@ -127,7 +134,9 @@ router.post('/sync/analyze', async (req: Request, res: Response) => {
     try {
       const f = t.type === 'github'
         ? await fetchGitHubKnowledge(t.url)
-        : await fetchWebsiteKnowledge(t.url, crawl);
+        : t.type === 'hubspot'
+          ? await fetchHubSpotKnowledge(ctx.ownerUserId)
+          : await fetchWebsiteKnowledge(t.url, crawl);
       fetched.push(f);
       // Mémorise la source (et l'horodate) pour pouvoir la re-synchroniser ensuite
       if (t.sourceId) {

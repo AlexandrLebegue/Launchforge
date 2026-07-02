@@ -62,6 +62,26 @@ async function composioApi(path: string, init?: RequestInit): Promise<any> {
   return body;
 }
 
+/**
+ * Slugs des toolkits ayant un compte ACTIF pour cet utilisateur LaunchForge.
+ * Source de vérité : l'API Composio (jamais le client). Sert à résoudre quel
+ * agenda / quelle boîte mail utiliser quand plusieurs sont connectés.
+ */
+export async function listConnectedToolkits(lfUserId: string): Promise<Set<string>> {
+  const userId = composioUserIdFor(lfUserId);
+  const connected = new Set<string>();
+  if (!userId || !process.env.COMPOSIO_API_KEY) return connected;
+  try {
+    const list = await composioApi(`/connected_accounts?limit=100&user_ids=${encodeURIComponent(userId)}`);
+    for (const item of list?.items || []) {
+      if (item?.status === 'ACTIVE' && item?.user_id === userId && item?.toolkit?.slug) {
+        connected.add(String(item.toolkit.slug).toLowerCase());
+      }
+    }
+  } catch { /* on renvoie ce qu'on sait */ }
+  return connected;
+}
+
 /** Champ d'identifiant exigé par un toolkit sans auth gérée (ex. X/Twitter) */
 export interface OwnAppField {
   name: string;
@@ -84,6 +104,21 @@ export class NeedsOwnAppError extends Error {
   }
 }
 
+/**
+ * Toolkits pour lesquels on impose l'app développeur DE L'UTILISATEUR même si
+ * Composio propose une auth « clé en main » :
+ *  - outlook (Microsoft) : la boîte mail est une donnée sensible — l'utilisateur
+ *    garde la maîtrise des scopes (Mail.Read/Mail.Send) et de la confidentialité
+ *    via sa propre app Azure. Un tuto pas-à-pas l'accompagne côté UI.
+ */
+const FORCE_OWN_APP = new Set(['outlook']);
+
+/** Champs OAuth2 par défaut d'une app perso quand Composio ne les détaille pas */
+const DEFAULT_OWN_APP_FIELDS: OwnAppField[] = [
+  { name: 'client_id', description: 'ID d\'application (client) de votre app' },
+  { name: 'client_secret', description: 'Valeur du secret client de votre app' },
+];
+
 /** Config d'auth existante pour ce toolkit, sinon création (auth gérée Composio) */
 async function ensureAuthConfig(toolkit: string): Promise<string> {
   const list = await composioApi('/auth_configs?limit=100');
@@ -92,11 +127,14 @@ async function ensureAuthConfig(toolkit: string): Promise<string> {
   );
   if (existing?.id) return existing.id;
 
-  // Le toolkit doit proposer une auth gérée par Composio — sinon l'utilisateur
-  // fournit les identifiants de sa propre app développeur (ex. X/Twitter, TikTok)
+  // Le toolkit doit proposer une auth gérée par Composio — sinon (ou si on impose
+  // l'app perso, cf. FORCE_OWN_APP) l'utilisateur fournit les identifiants de sa
+  // propre app développeur (ex. X/Twitter, TikTok, Outlook).
   const tk = await composioApi(`/toolkits/${toolkit}`).catch(() => null);
   if (!tk) throw new Error(`La plateforme « ${toolkit} » n'existe pas chez Composio`);
-  if (!Array.isArray(tk.composio_managed_auth_schemes) || tk.composio_managed_auth_schemes.length === 0) {
+  const hasManagedAuth = Array.isArray(tk.composio_managed_auth_schemes)
+    && tk.composio_managed_auth_schemes.length > 0;
+  if (!hasManagedAuth || FORCE_OWN_APP.has(toolkit)) {
     const details: any[] = Array.isArray(tk.auth_config_details) ? tk.auth_config_details : [];
     const scheme = details.find((s: any) => s?.mode === 'OAUTH2') ?? details[0];
     const creation = scheme?.fields?.auth_config_creation ?? {};
@@ -107,7 +145,9 @@ async function ensureAuthConfig(toolkit: string): Promise<string> {
       (creation.optional || []).find((f: any) => f?.name === 'oauth_redirect_uri')?.default
       ?? 'https://backend.composio.dev/api/v1/auth-apps/add',
     );
-    throw new NeedsOwnAppError(toolkit, fields, callbackUrl);
+    // Repli : un toolkit OAUTH2 à app perso exige toujours client_id + secret —
+    // on les pose si Composio ne renvoie aucun champ (sinon le formulaire serait vide).
+    throw new NeedsOwnAppError(toolkit, fields.length > 0 ? fields : DEFAULT_OWN_APP_FIELDS, callbackUrl);
   }
 
   const created = await composioApi('/auth_configs', {

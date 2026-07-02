@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import Loader from './Loader';
 import { createPortal } from 'react-dom';
 import { Download, CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 import {
@@ -94,7 +95,7 @@ export default function ImportHistoryModal({ onClose, onDone }: {
         </div>
 
         {loading ? (
-          <div className="loading">⏳ Chargement…</div>
+          <Loader text="Chargement…" variant="inline" />
         ) : result ? (
           <div className="post-editor">
             <div className="import-result-banner">

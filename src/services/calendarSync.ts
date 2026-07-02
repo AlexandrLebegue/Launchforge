@@ -7,9 +7,42 @@
 import { runMcpTask, isComposioConfigured } from './composio';
 import { isAIConfigured } from './aiClient';
 import { storage } from './storage';
+import { listConnectedToolkits } from './composioConnect';
 import { Post } from '../types';
 
-const CALENDAR_KEYWORDS = ['calendar', 'calendrier', 'event'];
+/** Agendas synchronisables (toolkits Composio), par ordre de défaut. */
+const CALENDAR_TOOLKITS = ['googlecalendar', 'outlook'];
+
+/**
+ * Mots-clés d'exposition des outils par fournisseur (filtre sur le préfixe du
+ * toolkit). 'outlook' capte tout le toolkit Outlook (mail+agenda) : le tri de
+ * priorité ['calendar','event'] fait ensuite remonter ses outils agenda.
+ */
+const PROVIDER_KEYWORDS: Record<string, string[]> = {
+  googlecalendar: ['googlecalendar', 'calendar', 'calendrier'],
+  outlook: ['outlook'],
+};
+
+// Repli quand on ne peut pas lister les comptes (pas de clé API Composio) : on
+// expose les deux fournisseurs et le modèle choisit (comportement historique).
+const ALL_CALENDAR_KEYWORDS = ['calendar', 'calendrier', 'event', 'outlook'];
+
+/**
+ * Mots-clés à exposer pour l'agenda de cet utilisateur :
+ *  - 1 seul agenda connecté → le sien (déterministe) ;
+ *  - 2 connectés → sa préférence (Configuration), sinon le premier par défaut ;
+ *  - indéterminable (pas de clé API) → les deux (repli historique).
+ */
+async function resolveCalendarKeywords(userId: string): Promise<string[]> {
+  if (!process.env.COMPOSIO_API_KEY) return ALL_CALENDAR_KEYWORDS;
+  const connected = await listConnectedToolkits(userId);
+  const available = CALENDAR_TOOLKITS.filter((c) => connected.has(c));
+  if (available.length === 0) return ALL_CALENDAR_KEYWORDS; // runMcpTask échouera proprement
+  if (available.length === 1) return PROVIDER_KEYWORDS[available[0]];
+  const preferred = storage.getPreferredCalendar(userId);
+  const chosen = preferred && available.includes(preferred) ? preferred : available[0];
+  return PROVIDER_KEYWORDS[chosen];
+}
 
 function eventLine(post: Post): string {
   const date = post.scheduledAt ? new Date(post.scheduledAt).toISOString() : '';
@@ -29,16 +62,22 @@ export async function syncPostsToCalendar(posts: Post[]): Promise<boolean> {
   if (!isComposioConfigured() || !isAIConfigured()) return false;
 
   try {
-    // Un lot = les posts d'UN utilisateur : son identité Composio s'applique
+    // Un lot = les posts d'UN utilisateur : son identité Composio s'applique.
+    // On cible l'agenda choisi (déterministe si un seul connecté, sinon préférence).
+    const keywords = await resolveCalendarKeywords(toSync[0].userId);
     const result = await runMcpTask(
       toSync[0].userId,
-      CALENDAR_KEYWORDS,
+      keywords,
       `Tu es un assistant calendrier. Tu disposes des outils calendrier de l'utilisateur (Google Calendar / Outlook) via Composio.
 Mission : créer UN événement par ligne fournie, dans le calendrier principal, avec exactement le titre, la date/heure de début (fournie en ISO UTC — laisse l'outil gérer le fuseau), la durée et la description indiquées. N'invente aucun autre événement.
 Quand tous les événements sont créés, réponds "OK:" suivi du nombre créé. Si aucun outil calendrier n'est disponible ou si tout échoue, réponds "ECHEC:" avec la raison.
 IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant.`,
       `Crée ces ${toSync.length} événement(s) :\n${toSync.map(eventLine).join('\n')}`,
-      ['create', 'event', 'quick', 'add', 'insert'],
+      // 'calendar' en tête : le tri de priorité teste le nom COMPLET de l'outil,
+      // ce qui fait remonter les outils agenda (googlecalendar_*, outlook_calendar_*)
+      // avant les outils mail/contacts d'Outlook — qui partagent le préfixe OUTLOOK
+      // mais n'ont rien à faire ici (sinon ils satureraient les 30 outils exposés).
+      ['calendar', 'event'],
     );
 
     // Anti-hallucination : OK exige au moins une création réellement exécutée

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
+import Loader from './Loader';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
-  MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, CheckCircle2, ExternalLink, Music2,
+  MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, CheckCircle2, ExternalLink, Music2, Inbox,
 } from 'lucide-react';
 import {
   getConfigStatus, connectToolkit, disconnectToolkit, recordActivePlatforms,
   ConfigStatus, ConfigToolkit, OwnAppField,
 } from '../api/client';
+import OwnAppGuide from './OwnAppGuide';
 
 /**
  * Tableau réutilisable de connexion des comptes (Composio) : une ligne par
@@ -17,7 +19,7 @@ import {
 
 const TOOLKIT_ICONS: Record<string, React.ReactNode> = {
   linkedin: <Briefcase size={18} />, twitter: <MessageCircle size={18} />, instagram: <Camera size={18} />,
-  facebook: <Users size={18} />, gmail: <Mail size={18} />, googlecalendar: <CalendarDays size={18} />,
+  facebook: <Users size={18} />, gmail: <Mail size={18} />, outlook: <Inbox size={18} />, googlecalendar: <CalendarDays size={18} />,
   reddit: <MessagesSquare size={18} />, youtube: <Play size={18} />, discord: <Gamepad2 size={18} />,
   slack: <Hash size={18} />, github: <GitBranch size={18} />, tiktok: <Music2 size={18} />,
 };
@@ -131,7 +133,7 @@ export default function PlatformConnectTable({
     }
   };
 
-  if (loading) return <div className="loading">⏳ Chargement des plateformes…</div>;
+  if (loading) return <Loader text="Chargement des plateformes…" />;
   if (!status) return <div className="error-banner">Impossible de charger les plateformes.</div>;
   if (!status.composio.configured) {
     return <div className="form-hint-inline">La connexion de comptes nécessite Composio (non configuré côté serveur pour l'instant).</div>;
@@ -197,6 +199,7 @@ export default function PlatformConnectTable({
                         {t.name} requiert votre propre app développeur. Renseignez vos identifiants
                         {ownApp[t.slug].callbackUrl && <> (URL de redirection à déclarer : <code>{ownApp[t.slug].callbackUrl}</code>)</>}.
                       </p>
+                      <OwnAppGuide slug={t.slug} />
                       {ownApp[t.slug].fields.map((f) => (
                         <label key={f.name} className="form-label-block">
                           {OWN_APP_FIELD_LABELS[f.name] ?? f.name}

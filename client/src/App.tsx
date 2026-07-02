@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import Loader from './components/Loader';
 import { useState, useEffect, useCallback } from 'react';
 import { getMe, User, setToken } from './api/client';
 import Layout from './components/Layout';
@@ -21,6 +22,8 @@ import ConfigPage from './pages/ConfigPage';
 import ContentHubPage from './pages/ContentHubPage';
 import CalendarPage from './pages/CalendarPage';
 import KnowledgePage from './pages/KnowledgePage';
+import CrmPage from './pages/CrmPage';
+import AutomationsPage from './pages/AutomationsPage';
 import TeamsPage from './pages/TeamsPage';
 import BillingPage from './pages/BillingPage';
 import AdminPage from './pages/AdminPage';
@@ -71,7 +74,7 @@ export default function App() {
   }, []);
 
   if (loading) {
-    return <div className="loading">Chargement…</div>;
+    return <Loader text="Chargement…" />;
   }
 
   return (
@@ -93,6 +96,8 @@ export default function App() {
             <Route path="assistant" element={<AssistantPage />} />
             <Route path="performance" element={<PerformancePage />} />
             <Route path="knowledge" element={<KnowledgePage />} />
+            <Route path="crm" element={<CrmPage />} />
+            <Route path="automations" element={<AutomationsPage />} />
             <Route path="teams" element={<TeamsPage />} />
             <Route path="billing" element={<BillingPage />} />
             {isAdminEmail(user.email) && (

@@ -6,7 +6,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Flame, Bot, Megaphone, BarChart3, Target, MessageSquare,
   PenLine, Send, TrendingUp, BookOpen, RefreshCw, ShieldCheck, Sparkles, CreditCard, History,
-  Briefcase, MessageCircle, Camera, Users, Music2, Play, MessagesSquare, Check, Minus, Maximize2, X,
+  Briefcase, MessageCircle, Camera, Users, Music2, Play, MessagesSquare, Check, Minus, Maximize2, X, BrainCircuit,
 } from 'lucide-react';
 import LogoEmbers from '../components/LogoEmbers';
 import { useLang, LangSwitch, Lang } from '../i18n';
@@ -197,9 +197,9 @@ const COPY: Record<Lang, {
       ],
     },
     pricing: {
-      title: 'Un prix simple, deux offres',
-      sub: 'Commencez gratuitement. Passez à Brasier quand la forge tourne à plein régime.',
-      trialNote: '15 jours d\'accès complet à Brasier offerts à l\'inscription — sans carte bancaire, puis bascule automatique sur Braise.',
+      title: 'Un prix simple, trois offres',
+      sub: 'Commencez gratuitement. Passez à Brasier quand la forge tourne à plein régime — et à PLUS pour l\'IA d\'élite.',
+      trialNote: '15 jours d\'accès complet (Brasier PLUS, Claude Opus inclus) offerts à l\'inscription — sans carte bancaire, puis bascule automatique sur Braise.',
       guarantee: 'Garantie 14 jours satisfait ou remboursé.',
       plans: [
         {
@@ -216,8 +216,8 @@ const COPY: Record<Lang, {
           ],
         },
         {
-          name: 'Brasier', price: '12,90 €', per: '/ mois', featured: true,
-          tagline: 'Facturé annuellement · ou 15,90 €/mois en mensuel.',
+          name: 'Brasier', price: '24 €', per: '/ mois', featured: true,
+          tagline: 'Facturé annuellement · ou 29 €/mois en mensuel.',
           cta: 'Passer à Brasier',
           features: [
             'Publication multi-plateformes & auto-publication',
@@ -228,12 +228,24 @@ const COPY: Record<Lang, {
             'Support prioritaire',
           ],
         },
+        {
+          name: 'Brasier PLUS', price: '49 €', per: '/ mois', featured: false,
+          tagline: 'Facturé annuellement · ou 59 €/mois. IA premium Claude Opus 4.8.',
+          cta: 'Choisir PLUS',
+          features: [
+            'Tout Brasier, plus :',
+            'Claude Opus 4.8 (Anthropic) sur tout — assistant, posts, plans, e-mails de vente',
+            'Raisonnement commercial & rédaction nettement supérieurs',
+            '2000 générations + 100 images IA / mois',
+            'Automatisations propulsées par Claude Opus',
+          ],
+        },
       ],
     },
     faq: {
       title: 'Questions directes, réponses directes',
       items: [
-        { q: 'Combien ça coûte ?', a: 'Deux offres. Braise est gratuite pour toujours : 1 projet, 30 contenus IA et 2 images IA par mois, le plan de croissance, le pipeline de vente et la rédaction manuelle. Brasier débloque la publication multi-plateformes, les analytics, la détection et la relance de leads par IA, les séries récurrentes et Telegram — avec un usage IA généreux — pour 12,90 €/mois en annuel (ou 15,90 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet à Brasier, sans carte bancaire — puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
+        { q: 'Combien ça coûte ?', a: 'Trois offres. Braise est gratuite pour toujours : 1 projet, 30 contenus IA et 2 images IA par mois, le plan de croissance, le pipeline de vente et la rédaction manuelle. Brasier débloque la publication multi-plateformes, les analytics, la détection et la relance de leads par IA, les séries récurrentes et Telegram — avec un usage IA généreux — pour 24 €/mois en annuel (ou 29 € en mensuel). Brasier PLUS ajoute l\'IA premium Claude Opus 4.8 d\'Anthropic sur tout (assistant, posts, e-mails de vente) et des plafonds doublés, pour 49 €/mois en annuel (ou 59 € en mensuel). Chaque inscription démarre par 15 jours d\'accès complet — Claude Opus inclus — sans carte bancaire, puis bascule automatiquement sur Braise. Garantie 14 jours satisfait ou remboursé.' },
         { q: 'L\'IA peut-elle publier sans mon accord ?', a: 'Non. La publication automatique est un réglage opt-in, post par post. Par défaut, tout contenu attend votre validation — dans l\'app ou directement depuis Telegram.' },
         { q: 'Comment mes comptes sociaux sont-ils connectés ?', a: 'Par OAuth via Composio : vous autorisez chaque plateforme dans une fenêtre officielle (LinkedIn, Google…), et vous pouvez révoquer chaque connexion en un clic depuis la Configuration. LaunchForge ne voit jamais vos mots de passe.' },
         { q: 'Et mes données ?', a: 'Export complet en JSON et suppression définitive du compte en libre-service (RGPD art. 17 et 20), depuis la vue Configuration. Pas de cookies tiers, pas de revente de données.' },
@@ -355,9 +367,9 @@ const COPY: Record<Lang, {
       ],
     },
     pricing: {
-      title: 'Simple pricing, two plans',
-      sub: 'Start for free. Move up to Brasier when the forge runs at full blast.',
-      trialNote: '15 days of full Brasier access on sign-up — no credit card, then it automatically switches to Braise.',
+      title: 'Simple pricing, three plans',
+      sub: 'Start for free. Move up to Brasier when the forge runs at full blast — and to PLUS for elite AI.',
+      trialNote: '15 days of full access (Brasier PLUS, Claude Opus included) on sign-up — no credit card, then it automatically switches to Braise.',
       guarantee: '14-day money-back guarantee.',
       plans: [
         {
@@ -374,8 +386,8 @@ const COPY: Record<Lang, {
           ],
         },
         {
-          name: 'Brasier', price: '€12.90', per: '/ month', featured: true,
-          tagline: 'Billed annually · or €15.90/month monthly.',
+          name: 'Brasier', price: '€24', per: '/ month', featured: true,
+          tagline: 'Billed annually · or €29/month monthly.',
           cta: 'Move up to Brasier',
           features: [
             'Multi-platform publishing & auto-publishing',
@@ -386,12 +398,24 @@ const COPY: Record<Lang, {
             'Priority support',
           ],
         },
+        {
+          name: 'Brasier PLUS', price: '€49', per: '/ month', featured: false,
+          tagline: 'Billed annually · or €59/month. Premium AI: Claude Opus 4.8.',
+          cta: 'Choose PLUS',
+          features: [
+            'Everything in Brasier, plus:',
+            'Claude Opus 4.8 (Anthropic) on everything — assistant, posts, plans, sales emails',
+            'Sharper business reasoning & writing',
+            '2000 generations + 100 AI images / month',
+            'Automations powered by Claude Opus',
+          ],
+        },
       ],
     },
     faq: {
       title: 'Straight questions, straight answers',
       items: [
-        { q: 'How much does it cost?', a: 'Two plans. Braise is free forever: 1 project, 30 AI contents and 2 AI images per month, the growth plan, the sales pipeline and manual writing. Brasier unlocks multi-platform publishing, analytics, AI lead detection & follow-ups, recurring series and Telegram — with generous AI usage — for €12.90/month billed annually (or €15.90 monthly). Every sign-up starts with 15 days of full Brasier access, no credit card — then automatically switches to Braise. 14-day money-back guarantee.' },
+        { q: 'How much does it cost?', a: 'Three plans. Braise is free forever: 1 project, 30 AI contents and 2 AI images per month, the growth plan, the sales pipeline and manual writing. Brasier unlocks multi-platform publishing, analytics, AI lead detection & follow-ups, recurring series and Telegram — with generous AI usage — for €24/month billed annually (or €29 monthly). Brasier PLUS adds Anthropic\'s premium Claude Opus 4.8 AI on everything (assistant, posts, sales emails) with doubled limits, for €49/month billed annually (or €59 monthly). Every sign-up starts with 15 days of full access — Claude Opus included — no credit card, then automatically switches to Braise. 14-day money-back guarantee.' },
         { q: 'Can the AI publish without my approval?', a: 'No. Auto-publishing is an opt-in setting, per post. By default, every piece of content waits for your approval — in the app or straight from Telegram.' },
         { q: 'How are my social accounts connected?', a: 'Through OAuth via Composio: you authorize each platform in its official window (LinkedIn, Google…), and you can revoke any connection in one click from Settings. LaunchForge never sees your passwords.' },
         { q: 'What about my data?', a: 'Full JSON export and permanent account deletion, self-service (GDPR art. 17 & 20), from the Settings view. No third-party cookies, no data resale.' },
@@ -832,16 +856,20 @@ export default function LandingPage() {
           <p className="landing-section-sub gs-reveal" style={{ marginTop: 14 }}>{c.pricing.sub}</p>
           <div
             className="gs-reveal"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 22, marginTop: 36, maxWidth: 820, marginInline: 'auto' }}
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 22, marginTop: 36, maxWidth: 1120, marginInline: 'auto' }}
           >
-            {c.pricing.plans.map((p) => (
+            {c.pricing.plans.map((p) => {
+              // La carte PLUS (IA premium Claude Opus) a son accent violet dédié
+              const isPlus = p.name.includes('PLUS');
+              const accent = isPlus ? '#a78bfa' : '#ff6b35';
+              return (
               <div
                 key={p.name}
                 style={{
                   position: 'relative', borderRadius: 16, padding: '26px 24px',
-                  border: p.featured ? '2px solid #ff6b35' : '1px solid rgba(255,255,255,0.12)',
-                  background: p.featured ? 'rgba(255,107,53,0.06)' : 'rgba(255,255,255,0.02)',
-                  boxShadow: p.featured ? '0 0 0 5px rgba(255,107,53,0.08)' : 'none',
+                  border: p.featured ? '2px solid #ff6b35' : isPlus ? '2px solid #a78bfa' : '1px solid rgba(255,255,255,0.12)',
+                  background: p.featured ? 'rgba(255,107,53,0.06)' : isPlus ? 'rgba(167,139,250,0.06)' : 'rgba(255,255,255,0.02)',
+                  boxShadow: p.featured ? '0 0 0 5px rgba(255,107,53,0.08)' : isPlus ? '0 0 0 5px rgba(167,139,250,0.08)' : 'none',
                 }}
               >
                 {p.featured && (
@@ -849,8 +877,15 @@ export default function LandingPage() {
                     POPULAIRE
                   </span>
                 )}
+                {isPlus && (
+                  <span style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: '#a78bfa', color: '#1a1030', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 99, letterSpacing: 0.5, whiteSpace: 'nowrap' }}>
+                    IA PREMIUM · CLAUDE OPUS
+                  </span>
+                )}
                 <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 22, margin: 0 }}>
-                  <Flame size={18} style={{ color: p.featured ? '#ff6b35' : 'inherit' }} /> {p.name}
+                  {isPlus
+                    ? <BrainCircuit size={18} style={{ color: accent }} />
+                    : <Flame size={18} style={{ color: p.featured ? '#ff6b35' : 'inherit' }} />} {p.name}
                 </h3>
                 <div style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', gap: 6 }}>
                   <span style={{ fontSize: 40, fontWeight: 800 }}>{p.price}</span>
@@ -860,19 +895,20 @@ export default function LandingPage() {
                 <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 0', display: 'grid', gap: 11 }}>
                   {p.features.map((f) => (
                     <li key={f} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 14, lineHeight: 1.45 }}>
-                      <Flame size={13} style={{ color: '#ff6b35', flexShrink: 0, marginTop: 4 }} /> <span>{f}</span>
+                      <Flame size={13} style={{ color: accent, flexShrink: 0, marginTop: 4 }} /> <span>{f}</span>
                     </li>
                   ))}
                 </ul>
                 <Link
                   to="/register"
                   className={`btn ${p.featured ? 'btn-primary btn-primary-glow' : 'btn-ghost'} btn-lg`}
-                  style={{ width: '100%', marginTop: 22, justifyContent: 'center' }}
+                  style={{ width: '100%', marginTop: 22, justifyContent: 'center', ...(isPlus ? { borderColor: accent, color: accent } : {}) }}
                 >
                   {p.cta}
                 </Link>
               </div>
-            ))}
+              );
+            })}
           </div>
           <div className="gs-reveal" style={{ textAlign: 'center', marginTop: 24, fontSize: 14, opacity: 0.85, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
             <span><Sparkles size={14} style={{ verticalAlign: -2, color: '#ff6b35' }} /> {c.pricing.trialNote}</span>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import Loader from '../components/Loader';
 import { Link } from 'react-router-dom';
 import { ClipboardCheck } from 'lucide-react';
 import { getApprovals, getApprovalHistory, approveRun, rejectRun, getAgents, ApprovalItem } from '../api/client';
@@ -75,7 +76,7 @@ export default function ApprovalsPage() {
     }
   };
 
-  if (loading) return <div className="loading">⏳ Chargement des validations…</div>;
+  if (loading) return <Loader text="Chargement des validations…" />;
 
   return (
     <div className="animate-fadeIn">

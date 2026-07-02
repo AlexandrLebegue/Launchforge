@@ -13,7 +13,9 @@ import { logEvent } from '../services/adminLogger';
 import { getEntitlementsView } from '../services/entitlements';
 import {
   isBillingConfigured,
+  isPlusConfigured,
   createCheckoutSession,
+  changeSubscriptionPlan,
   createPortalSession,
   processRefund,
   constructEvent,
@@ -25,7 +27,10 @@ const router = Router();
 // ── GET /api/billing/status — offre, essai, usage, prix (front) ───────────────
 router.get('/status', requireAuth, (req: Request, res: Response) => {
   const view = getEntitlementsView(req.user!.userId);
-  res.json({ success: true, data: { ...view, billingConfigured: isBillingConfigured() } });
+  res.json({
+    success: true,
+    data: { ...view, billingConfigured: isBillingConfigured(), plusConfigured: isPlusConfigured() },
+  });
 });
 
 // ── POST /api/billing/checkout — démarre le paiement (renvoie l'URL Stripe) ───
@@ -33,12 +38,27 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response) => {
   if (!isBillingConfigured()) {
     return res.status(503).json({ success: false, error: 'BILLING_NOT_CONFIGURED' });
   }
-  const interval = (req.body as { interval?: string }).interval === 'month' ? 'month' : 'year';
+  const body = req.body as { interval?: string; plan?: string };
+  const interval = body.interval === 'month' ? 'month' : 'year';
+  const plan = body.plan === 'plus' ? 'plus' : 'brasier';
+  if (plan === 'plus' && !isPlusConfigured()) {
+    return res.status(503).json({ success: false, error: 'BILLING_NOT_CONFIGURED' });
+  }
   try {
     const user = storage.getUserById(req.user!.userId);
     if (!user) return res.status(404).json({ success: false, error: 'Compte introuvable.' });
-    const url = await createCheckoutSession(user.id, user.email, interval);
-    logEvent(user.id, 'billing.checkout_started', user.id, { interval });
+    // Déjà abonné → changement d'offre sur l'abonnement existant (prorata),
+    // sinon Checkout créerait un SECOND abonnement en parallèle.
+    const sub = storage.getSubscription(user.id);
+    const hasLiveSub = Boolean(sub?.stripeSubscriptionId) &&
+      (sub!.status === 'active' || sub!.status === 'trialing' || sub!.status === 'past_due');
+    if (hasLiveSub) {
+      await changeSubscriptionPlan(user.id, interval, plan);
+      logEvent(user.id, 'billing.plan_changed', user.id, { interval, plan });
+      return res.json({ success: true, data: { upgraded: true } });
+    }
+    const url = await createCheckoutSession(user.id, user.email, interval, plan);
+    logEvent(user.id, 'billing.checkout_started', user.id, { interval, plan });
     res.json({ success: true, data: { url } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erreur de paiement';

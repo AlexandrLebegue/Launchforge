@@ -1,18 +1,20 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
+import Loader from '../components/Loader';
 import { Link } from 'react-router-dom';
 import {
   Briefcase, MessageCircle, Camera, Users, Mail, CalendarDays,
   MessagesSquare, Play, Gamepad2, Hash, GitBranch, Plug, Bot, Globe,
-  Sparkles, BookOpen, Presentation, Send, ShieldCheck, Music2,
+  Sparkles, BookOpen, Presentation, Send, ShieldCheck, Music2, Inbox, KeyRound,
 } from 'lucide-react';
 import {
   getConfigStatus, setPublishMode, getTelegramLinkCode, connectToolkit, disconnectToolkit,
-  setTelegramBot, removeTelegramBot, setMetricsSyncInterval,
+  setTelegramBot, removeTelegramBot, setApolloApiKey, removeApolloApiKey, setMetricsSyncInterval, setPreferredCalendar,
   setMarpTheme, customizeMarpTheme, themePreviewUrl,
   getKnowledgeSources, addKnowledgeSource, deleteKnowledgeSource, setKnowledgeSyncInterval,
   ConfigStatus, OwnAppField, KnowledgeSource,
 } from '../api/client';
 import AccountDataSection from '../components/AccountDataSection';
+import OwnAppGuide from '../components/OwnAppGuide';
 
 const SYNC_INTERVALS = [
   { value: 0,    label: 'Désactivée' },
@@ -43,9 +45,10 @@ const OWN_APP_FIELD_LABELS: Record<string, string> = {
 
 const TOOLKIT_ICONS: Record<string, React.ReactNode> = {
   linkedin: <Briefcase size={18} />, twitter: <MessageCircle size={18} />, instagram: <Camera size={18} />,
-  facebook: <Users size={18} />, gmail: <Mail size={18} />, googlecalendar: <CalendarDays size={18} />,
+  facebook: <Users size={18} />, gmail: <Mail size={18} />, outlook: <Inbox size={18} />, googlecalendar: <CalendarDays size={18} />,
   reddit: <MessagesSquare size={18} />, youtube: <Play size={18} />, discord: <Gamepad2 size={18} />,
   slack: <Hash size={18} />, github: <GitBranch size={18} />, tiktok: <Music2 size={18} />,
+  hubspot: <Plug size={18} />,
 };
 
 /**
@@ -72,11 +75,12 @@ export default function ConfigPage() {
   const [tgError, setTgError] = useState('');
   const [savingMode, setSavingMode] = useState(false);
   const [savingSync, setSavingSync] = useState(false);
+  const [savingCalendar, setSavingCalendar] = useState(false);
   // Base de connaissances : sources déclarées + fréquence de mise à jour auto
   const [kbSources,    setKbSources]    = useState<KnowledgeSource[]>([]);
   const [kbGithub,     setKbGithub]     = useState('');
   const [kbWebsite,    setKbWebsite]    = useState('');
-  const [kbSaving,     setKbSaving]     = useState<'github' | 'website' | null>(null);
+  const [kbSaving,     setKbSaving]     = useState<'github' | 'website' | 'hubspot' | null>(null);
   const [kbError,      setKbError]      = useState('');
   const [savingKbSync, setSavingKbSync] = useState(false);
   // Thème des présentations
@@ -87,6 +91,10 @@ export default function ConfigPage() {
   const [botToken,  setBotToken]  = useState('');
   const [botSaving, setBotSaving] = useState(false);
   const [botError,  setBotError]  = useState('');
+  // Clé API Apollo.io personnelle (enrichissement de contacts)
+  const [apolloKey,    setApolloKey]    = useState('');
+  const [apolloSaving, setApolloSaving] = useState(false);
+  const [apolloError,  setApolloError]  = useState('');
 
   // Connexion de comptes : lien OAuth généré + erreurs, par toolkit
   const [connectLinks,  setConnectLinks]  = useState<Record<string, string>>({});
@@ -203,6 +211,17 @@ export default function ConfigPage() {
     }
   };
 
+  /** Agenda à utiliser pour la synchro des posts (visible si Google + Outlook connectés) */
+  const handleCalendarChange = async (calendar: string) => {
+    if (!status) return;
+    setSavingCalendar(true);
+    const res = await setPreferredCalendar(calendar as 'googlecalendar' | 'outlook' | 'auto');
+    setSavingCalendar(false);
+    if (res.success) {
+      setStatus({ ...status, composio: { ...status.composio, preferredCalendar: res.data?.preferredCalendar ?? null } });
+    }
+  };
+
   // ── Base de connaissances ──────────────────────────────────────────────────
   const handleAddSource = async (type: 'github' | 'website') => {
     const url = (type === 'github' ? kbGithub : kbWebsite).trim();
@@ -217,6 +236,25 @@ export default function ConfigPage() {
       if (list.success && list.data) setKbSources(list.data);
     } else {
       setKbError(res.error || 'Source refusée.');
+    }
+  };
+
+  /** HubSpot : enregistre la source (liée au compte Composio) puis ouvre
+   *  l'autorisation OAuth si le compte n'est pas déjà connecté — la lecture
+   *  des objets HubSpot exige ce compte connecté. */
+  const handleAddHubSpot = async () => {
+    setKbSaving('hubspot');
+    setKbError('');
+    const res = await addKnowledgeSource({ type: 'hubspot' });
+    setKbSaving(null);
+    if (res.success && res.data) {
+      const list = await getKnowledgeSources();
+      if (list.success && list.data) setKbSources(list.data);
+      if (!status?.composio.toolkits.find((t) => t.slug === 'hubspot')?.connected) {
+        handleConnect('hubspot');
+      }
+    } else {
+      setKbError(res.error || 'HubSpot refusé.');
     }
   };
 
@@ -286,6 +324,28 @@ export default function ConfigPage() {
     }
   };
 
+  const handleSaveApolloKey = async () => {
+    setApolloError('');
+    setApolloSaving(true);
+    const res = await setApolloApiKey(apolloKey.trim());
+    setApolloSaving(false);
+    if (res.success) {
+      setApolloKey('');
+      setStatus((s) => s ? { ...s, apollo: { configured: true } } : s);
+    } else {
+      setApolloError(res.error || 'Clé refusée.');
+    }
+  };
+
+  const handleRemoveApolloKey = async () => {
+    setApolloError('');
+    setApolloSaving(true);
+    const res = await removeApolloApiKey();
+    setApolloSaving(false);
+    if (res.success) setStatus((s) => s ? { ...s, apollo: { configured: false } } : s);
+    else setApolloError(res.error || 'Suppression impossible.');
+  };
+
   const handleTelegramCode = async () => {
     setTgError('');
     const res = await getTelegramLinkCode();
@@ -295,7 +355,7 @@ export default function ConfigPage() {
       : res.error || 'Erreur');
   };
 
-  if (loading) return <div className="loading">⏳ Chargement de la configuration…</div>;
+  if (loading) return <Loader text="Chargement de la configuration…" />;
   if (!status) return <div className="error-banner">Impossible de charger la configuration</div>;
 
   const connectedCount = status.composio.toolkits.filter((t) => t.connected).length;
@@ -465,6 +525,21 @@ export default function ConfigPage() {
                     </button>
                   </div>
                 </label>
+
+                <label className="form-label-block" style={{ gridColumn: '1 / -1' }}>
+                  <span className="kb-sync-field-label"><Plug size={15} /> HubSpot (CRM &amp; marketing)</span>
+                  <div className="ai-assist-row">
+                    <span className="form-hint-inline" style={{ flex: 1, margin: 0 }}>
+                      Société, produits, deals, emails marketing &amp; retours clients.
+                    </span>
+                    <button className="btn btn-ghost" onClick={handleAddHubSpot}
+                      disabled={kbSaving === 'hubspot' || kbSources.some((s) => s.type === 'hubspot')}>
+                      {kbSaving === 'hubspot'
+                        ? '⏳…'
+                        : kbSources.some((s) => s.type === 'hubspot') ? 'Connecté' : 'Connecter'}
+                    </button>
+                  </div>
+                </label>
               </div>
 
               {kbError && <div className="chat-error">{kbError}</div>}
@@ -475,7 +550,9 @@ export default function ConfigPage() {
                   {kbSources.map((s) => (
                     <div key={s.id} className="kb-sync-source-row">
                       <span className="kb-sync-source-icon">
-                        {s.type === 'github' ? <GitBranch size={15} /> : <Globe size={15} />}
+                        {s.type === 'github' ? <GitBranch size={15} />
+                          : s.type === 'hubspot' ? <Plug size={15} />
+                            : <Globe size={15} />}
                       </span>
                       <span className="kb-sync-source-info">
                         <span className="kb-sync-source-label">{s.label || s.url}</span>
@@ -655,9 +732,11 @@ export default function ConfigPage() {
                         (gratuite) sur le portail développeur de la plateforme
                         {t.slug === 'twitter' && <> (<a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener noreferrer">developer.x.com</a> → Projects &amp; Apps → User authentication settings, type « Web App », et notez aussi le Bearer Token de l'app)</>}
                         {t.slug === 'tiktok' && <> (<a href="https://developers.tiktok.com/" target="_blank" rel="noopener noreferrer">developers.tiktok.com</a>)</>}
+                        {t.slug === 'outlook' && <> (<a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">portail Azure</a> → Microsoft Entra ID → Inscriptions d'applications)</>}
                         , déclarez l'URL de callback ci-dessous dans ses « Redirect URLs », puis collez ses
                         identifiants — ils restent chez Composio, jamais dans LaunchForge.
                       </p>
+                      <OwnAppGuide slug={t.slug} />
                       {ownApp[t.slug].callbackUrl && (
                         <div className="config-ownapp-callback">
                           <span>URL de callback à déclarer :</span>
@@ -705,11 +784,91 @@ export default function ConfigPage() {
                   </Fragment>
                 ))}
               </div>
+              {(() => {
+                // Sélection d'agenda : seulement si Google Calendar ET Outlook sont connectés
+                const tks = status.composio.toolkits;
+                const bothCalendars = Boolean(tks.find((t) => t.slug === 'googlecalendar')?.connected)
+                  && Boolean(tks.find((t) => t.slug === 'outlook')?.connected);
+                if (!bothCalendars || status.composio.canManage === false) return null;
+                return (
+                  <label className="form-label-block calendar-pref">
+                    <span className="kb-sync-field-label"><CalendarDays size={15} /> Agenda pour la synchro des posts</span>
+                    <select
+                      className="form-input"
+                      value={status.composio.preferredCalendar ?? 'auto'}
+                      onChange={(e) => handleCalendarChange(e.target.value)}
+                      disabled={savingCalendar}
+                    >
+                      <option value="auto">Automatique</option>
+                      <option value="googlecalendar">Google Calendar</option>
+                      <option value="outlook">Outlook</option>
+                    </select>
+                    <span className="form-hint-inline">
+                      Google Calendar et Outlook sont tous deux connectés : choisissez l'agenda où LaunchForge crée
+                      les événements de vos posts programmés.
+                    </span>
+                  </label>
+                );
+              })()}
               <p className="form-hint">
                 Cliquez sur « Connecter », autorisez l'accès dans l'onglet qui s'ouvre, et le compte
                 devient utilisable — publication, métriques, emails, agenda. Le statut se rafraîchit
                 automatiquement après l'autorisation.
               </p>
+            </div>
+          </div>
+
+          {/* ── Apollo.io : enrichissement de contacts avec la clé de l'utilisateur ── */}
+          <div className="settings-group-head" style={{ marginTop: 18 }}>
+            <div className="settings-group-head-main">
+              <h2 className="settings-group-title">Apollo.io — enrichissement de contacts</h2>
+              <p className="settings-group-sub">Complète vos contacts (poste, LinkedIn, email pro, fiche entreprise) avec votre propre compte Apollo.</p>
+            </div>
+            {status.apollo.configured
+              ? <span className="config-badge ok">Clé enregistrée</span>
+              : <span className="config-badge warn">Non configuré</span>}
+          </div>
+          <div className="settings-panel">
+            <div className="settings-body">
+              {status.apollo.configured ? (
+                <div className="config-toolkit on">
+                  <span className="config-toolkit-icon"><KeyRound size={18} /></span>
+                  <span className="config-toolkit-main">
+                    <span className="config-toolkit-name">Votre clé API Apollo est active</span>
+                    <span className="config-toolkit-cap">Bouton « Enrichir via Apollo » disponible sur chaque contact du CRM — les crédits consommés sont ceux de votre compte Apollo.</span>
+                  </span>
+                  <button className="btn btn-ghost btn-sm" onClick={handleRemoveApolloKey} disabled={apolloSaving}>
+                    Supprimer
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="config-desc">
+                    Créez une clé sur <a href="https://app.apollo.io/#/settings/integrations/api" target="_blank" rel="noopener noreferrer">apollo.io → Settings → API keys</a> (compte
+                    gratuit possible) et collez-la ici. Elle est stockée chiffrée et n'est jamais réaffichée.
+                    L'enrichissement ne récupère que des données professionnelles (poste, LinkedIn, email pro,
+                    entreprise) — jamais de téléphones ni d'emails personnels.
+                  </p>
+                  <div className="post-editor-row" style={{ alignItems: 'flex-end' }}>
+                    <label className="form-label-block" style={{ flex: 1 }}>Clé API Apollo
+                      <input
+                        className="form-input" type="password" value={apolloKey}
+                        onChange={(e) => setApolloKey(e.target.value)}
+                        placeholder="ex. aBcD3FgH1jKlMnOpQrSt"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <button
+                      type="button" className="btn btn-primary"
+                      onClick={handleSaveApolloKey}
+                      disabled={apolloSaving || !apolloKey.trim()}
+                    >
+                      {apolloSaving ? '⏳ Vérification…' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {apolloError && <div className="chat-error">{apolloError}</div>}
             </div>
           </div>
         </section>

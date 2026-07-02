@@ -24,7 +24,7 @@ export function createLaunchPlan(input: PlanInput, userId: string = 'anonymous')
 
 export async function createAILaunchPlan(input: PlanInput, userId: string = 'anonymous'): Promise<LaunchPlan> {
   try {
-    const planData = await generateAIPlan(input);
+    const planData = await generateAIPlan(input, userId === 'anonymous' ? undefined : userId);
     const plan: LaunchPlan = {
       id: uuidv4(),
       userId,

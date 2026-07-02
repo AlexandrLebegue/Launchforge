@@ -80,7 +80,22 @@ export interface CompanyProfile {
   notes?: string;
 }
 
-export interface PlanInput {
+export type PrimaryObjective = 'launch' | 'grow-revenue' | 'both';
+export type Traction = 'pre-revenue' | 'first-customers' | 'early-revenue' | 'scaling';
+export type SalesMotion = 'self-serve' | 'sales-led' | 'hybrid';
+
+/** Contexte go-to-market / commercial — oriente le plan, la base de
+ *  connaissances et les relances vers la vente. Tous optionnels. */
+export interface GoToMarket {
+  primaryObjective?: PrimaryObjective;
+  traction?: Traction;
+  salesMotion?: SalesMotion;
+  buyer?: string;
+  bottleneck?: string;
+  revenueGoal?: string;
+}
+
+export interface PlanInput extends GoToMarket {
   productName: string;
   description: string;
   targetAudience: string;
@@ -272,7 +287,7 @@ export interface OnboardingChatMessage {
   actions?: string[];
 }
 
-export interface OnboardingProfile {
+export interface OnboardingProfile extends GoToMarket {
   company: CompanyProfile;
   productName: string;
   description: string;
@@ -749,9 +764,9 @@ export async function deleteKnowledge(id: string): Promise<ApiResponse<null>> {
   return request(`/knowledge/${id}`, { method: 'DELETE' });
 }
 
-// ── Mise à jour automatique de la base (sources GitHub / site web) ────────────
+// ── Mise à jour automatique de la base (sources GitHub / site web / HubSpot) ──
 
-export type KnowledgeSourceType = 'github' | 'website';
+export type KnowledgeSourceType = 'github' | 'website' | 'hubspot';
 
 export interface KnowledgeSource {
   id: string;
@@ -785,7 +800,8 @@ export async function getKnowledgeSources(): Promise<ApiResponse<KnowledgeSource
 }
 
 export async function addKnowledgeSource(data: {
-  type: KnowledgeSourceType; url: string; label?: string;
+  // HubSpot est lié au compte Composio connecté : aucune URL à fournir.
+  type: KnowledgeSourceType; url?: string; label?: string;
 }): Promise<ApiResponse<KnowledgeSource>> {
   return request('/knowledge/sources', { method: 'POST', body: JSON.stringify(data) });
 }
@@ -820,18 +836,52 @@ export async function runKnowledgeSync(crawl = false): Promise<ApiResponse<{
 
 export type ContactType = 'prospect' | 'client' | 'partner';
 
+/** Étape du pipeline de vente (CRM). 'won'/'lost' = deal clos. */
+export type DealStage = 'new' | 'qualified' | 'discussion' | 'proposal' | 'won' | 'lost';
+export const DEAL_STAGES: DealStage[] = ['new', 'qualified', 'discussion', 'proposal', 'won', 'lost'];
+export const STAGE_LABELS: Record<DealStage, string> = {
+  new: 'Nouveau',
+  qualified: 'Qualifié',
+  discussion: 'En discussion',
+  proposal: 'Proposition',
+  won: 'Gagné',
+  lost: 'Perdu',
+};
+
 export interface Contact {
   id: string;
   userId: string;
   name: string;
   email: string | null;
   company: string | null;
+  companyId: string | null;
   type: ContactType;
+  /** Étape dans le pipeline de vente. Défaut 'new'. */
+  stage: DealStage;
+  /** Montant du deal (EUR), null si non chiffré */
+  amount: number | null;
+  /** Id de l'enregistrement source externe (HubSpot…) */
+  externalId: string | null;
+  /** Date de clôture estimée (ISO yyyy-mm-dd) */
+  expectedCloseDate: string | null;
+  /** Prochaine action commerciale à mener */
+  nextAction: string | null;
+  /** Échéance de la prochaine action (ISO yyyy-mm-dd) */
+  nextActionAt: string | null;
   source: string | null;
+  /** Poste occupé (ex. « Head of Sales ») — saisi ou enrichi via Apollo */
+  title: string | null;
+  /** URL du profil LinkedIn — saisie ou enrichie via Apollo */
+  linkedinUrl: string | null;
+  /** Téléphone — saisi ou livré par le webhook Apollo */
+  phone: string | null;
   interestScore: number | null;
   interestSummary: string | null;
   notes: string | null;
+  /** Derniers échanges — auto depuis les emails reçus (synchro) */
   lastInteraction: string | null;
+  /** Échanges saisis à la main — jamais écrasé par la synchro */
+  manualLog: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -844,6 +894,106 @@ export interface LeadCandidate {
   score: number;
   summary: string;
   excerpt: string;
+}
+
+// ── Comptes (entreprises) & emails des contacts ───────────────────────────────
+
+export interface Company {
+  id: string;
+  userId: string;
+  name: string;
+  domain: string | null;
+  sector: string | null;
+  size: string | null;
+  /** SIREN (9 chiffres) — récupéré via le registre SIRENE à l'enrichissement */
+  siren: string | null;
+  /** Raison sociale officielle (registre SIRENE) */
+  legalName: string | null;
+  /** Code NAF/APE (ex. « 62.01Z ») */
+  naf: string | null;
+  /** Adresse du siège social */
+  address: string | null;
+  /** CA du dernier exercice publié à l'INPI (« 311,4 M€ (2024) ») — null si comptes confidentiels */
+  revenue: string | null;
+  description: string | null;
+  /** Angles de vente (markdown, puces) — enrichissement IA */
+  salesAngles: string | null;
+  /** Objections probables + parades (markdown, puces) — enrichissement IA */
+  objections: string | null;
+  /** Brief d'intelligence commerciale (markdown) : activité, actualités */
+  intel: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyWithStats extends Company {
+  contactCount: number;
+  dealCount: number;
+  openValue: number;
+  wonValue: number;
+}
+
+export interface CompanyDetail extends CompanyWithStats {
+  contacts: Contact[];
+}
+
+export type EmailDirection = 'sent' | 'received';
+
+export interface ContactEmail {
+  id: string;
+  contactId: string;
+  direction: EmailDirection;
+  subject: string | null;
+  snippet: string | null;
+  sentAt: string;
+  externalId: string | null;
+  createdAt: string;
+}
+
+export async function getCompanies(): Promise<ApiResponse<CompanyWithStats[]>> {
+  return request('/companies');
+}
+export async function getCompany(id: string): Promise<ApiResponse<CompanyDetail>> {
+  return request(`/companies/${id}`);
+}
+export async function createCompany(data: { name: string; domain?: string }): Promise<ApiResponse<CompanyWithStats>> {
+  return request('/companies', { method: 'POST', body: JSON.stringify(data) });
+}
+export async function updateCompany(id: string, patch: Partial<Company>): Promise<ApiResponse<CompanyWithStats>> {
+  return request(`/companies/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export async function deleteCompany(id: string): Promise<ApiResponse<null>> {
+  return request(`/companies/${id}`, { method: 'DELETE' });
+}
+/** Enrichissement IA d'un compte (recherche web + brief commercial) */
+export async function enrichCompany(id: string): Promise<ApiResponse<CompanyWithStats>> {
+  return request(`/companies/${id}/enrich`, { method: 'POST' });
+}
+
+/** Emails journalisés d'un contact (timeline) */
+export async function getContactEmails(contactId: string): Promise<ApiResponse<ContactEmail[]>> {
+  return request(`/contacts/${contactId}/emails`);
+}
+/** Trace de diagnostic de la synchro emails (débogage) */
+export interface EmailSyncDebug {
+  address: string;
+  okCalls: number;
+  failedCalls: number;
+  parsedEmails: number;
+  replyPreview: string;
+  parseError?: string;
+  warning?: string;
+  source?: string;
+}
+/** Synchronise depuis la boîte mail les emails échangés avec ce contact */
+export async function syncContactEmails(contactId: string): Promise<ApiResponse<{ added: number; emails: ContactEmail[]; debug?: EmailSyncDebug }>> {
+  return request(`/contacts/${contactId}/emails/sync`, { method: 'POST' });
+}
+
+/** (Ré)analyse par l'IA le score d'intérêt d'un seul contact */
+export async function scoreContact(id: string): Promise<ApiResponse<Contact>> {
+  return request(`/contacts/${id}/score`, { method: 'POST' });
 }
 
 export async function getContacts(): Promise<ApiResponse<Contact[]>> {
@@ -868,13 +1018,49 @@ export async function analyzeLeads(text: string, source: string): Promise<ApiRes
 }
 
 /** Détection des leads dans la boîte mail (Composio MCP) */
-export async function scanInbox(): Promise<ApiResponse<LeadCandidate[]>> {
-  return request('/contacts/scan-inbox', { method: 'POST' });
+export interface InboxScanResult {
+  updated: { id: string; name: string; score: number | null }[];
+  candidates: LeadCandidate[];
+  scanned: number;
+  debug?: { rawCount: number; replyPreview: string };
+}
+export async function scanInbox(opts?: { maxEmails?: number; daysBack?: number; discoverNew?: boolean }): Promise<ApiResponse<InboxScanResult>> {
+  return request('/contacts/scan-inbox', { method: 'POST', body: JSON.stringify(opts ?? {}) });
 }
 
 /** Détection des leads dans les likes/commentaires d'un post publié (Composio MCP) */
 export async function scanPost(postId: string): Promise<ApiResponse<LeadCandidate[]>> {
   return request('/contacts/scan-post', { method: 'POST', body: JSON.stringify({ postId }) });
+}
+
+/** Candidat lu dans HubSpot (préversion de l'import CRM) */
+export interface HubSpotCandidate {
+  externalId: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  type: ContactType;
+  stage: DealStage;
+  amount: number | null;
+  expectedCloseDate: string | null;
+  source: string;
+  summary: string | null;
+  /** true = déjà importé (le ré-import mettra la fiche à jour) */
+  existing: boolean;
+}
+
+/** Liste les deals + contacts du CRM HubSpot SANS les importer (l'utilisateur choisit) */
+export async function previewHubSpot(): Promise<ApiResponse<HubSpotCandidate[]>> {
+  return request('/contacts/import-hubspot/preview');
+}
+
+/** Importe le CRM HubSpot (deals + contacts) dans le projet actif (Composio, déterministe).
+ *  `externalIds` restreint l'import à la sélection faite dans la préversion. */
+export async function importHubSpot(externalIds?: string[]): Promise<ApiResponse<{ imported: number; updated: number }>> {
+  return request('/contacts/import-hubspot', {
+    method: 'POST',
+    body: JSON.stringify(externalIds ? { externalIds } : {}),
+  });
 }
 
 export async function draftContactEmail(
@@ -890,6 +1076,119 @@ export async function sendContactEmail(
   body: string
 ): Promise<ApiResponse<{ result: string; contact: Contact }>> {
   return request(`/contacts/${id}/send-email`, { method: 'POST', body: JSON.stringify({ subject, body }) });
+}
+
+// ── Automatisations (cron jobs IA) ───────────────────────────────────────────
+
+export type CronFrequency = 'hourly' | 'every_3h' | 'every_6h' | 'daily' | 'weekly' | 'monthly';
+
+export const CRON_FREQUENCY_LABELS: Record<CronFrequency, string> = {
+  hourly: 'Toutes les heures',
+  every_3h: 'Toutes les 3 heures',
+  every_6h: 'Toutes les 6 heures',
+  daily: 'Chaque jour',
+  weekly: 'Chaque semaine',
+  monthly: 'Chaque mois',
+};
+
+/** Cadences « intraday » (plusieurs fois par jour) — pas d'heure fixe. */
+export function isIntradayFrequency(freq: CronFrequency): boolean {
+  return freq === 'hourly' || freq === 'every_3h' || freq === 'every_6h';
+}
+
+export const WEEKDAY_LABELS: { value: number; label: string }[] = [
+  { value: 1, label: 'Lundi' }, { value: 2, label: 'Mardi' }, { value: 3, label: 'Mercredi' },
+  { value: 4, label: 'Jeudi' }, { value: 5, label: 'Vendredi' }, { value: 6, label: 'Samedi' }, { value: 7, label: 'Dimanche' },
+];
+
+export type CronRunStatus = 'running' | 'ok' | 'error';
+
+export interface CronJob {
+  id: string;
+  userId: string;
+  planId: string | null;
+  title: string;
+  objective: string;
+  frequency: CronFrequency;
+  timeOfDay: string | null;
+  weekday: number | null;
+  dayOfMonth: number | null;
+  intervalMinutes: number;
+  enabled: number;
+  nextRunAt: string;
+  lastRunAt: string | null;
+  lastStatus: CronRunStatus | null;
+  lastResult: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Libellé lisible d'une cadence (« Chaque lundi à 9h », « Toutes les 3 heures »…). */
+export function describeCronSchedule(j: Pick<CronJob, 'frequency' | 'timeOfDay' | 'weekday' | 'dayOfMonth'>): string {
+  const t = j.timeOfDay || '09:00';
+  const [hh, mm] = t.split(':');
+  const pretty = mm === '00' ? `${Number(hh)}h` : `${Number(hh)}h${mm}`;
+  switch (j.frequency) {
+    case 'hourly':   return 'Toutes les heures';
+    case 'every_3h': return 'Toutes les 3 heures';
+    case 'every_6h': return 'Toutes les 6 heures';
+    case 'daily':    return `Chaque jour à ${pretty}`;
+    case 'weekly':   return `Chaque ${(WEEKDAY_LABELS.find((w) => w.value === (j.weekday ?? 1))?.label ?? 'lundi').toLowerCase()} à ${pretty}`;
+    case 'monthly':  return `Le ${j.dayOfMonth ?? 1} de chaque mois à ${pretty}`;
+    default:         return 'Périodique';
+  }
+}
+
+export interface CronRun {
+  id: string;
+  cronJobId: string;
+  userId: string;
+  status: CronRunStatus;
+  result: string | null;
+  actions: string | null;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface CronJobInput {
+  title: string;
+  objective: string;
+  frequency: CronFrequency;
+  /** « HH:MM » (Europe/Paris) pour daily/weekly/monthly. */
+  timeOfDay?: string | null;
+  /** 1=lundi … 7=dimanche (weekly). */
+  weekday?: number | null;
+  /** 1–28 (monthly). */
+  dayOfMonth?: number | null;
+  enabled?: boolean;
+}
+
+export async function getCronJobs(): Promise<ApiResponse<CronJob[]>> {
+  return request('/cron');
+}
+
+export async function createCronJob(data: CronJobInput): Promise<ApiResponse<CronJob>> {
+  return request('/cron', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateCronJob(
+  id: string,
+  data: Partial<CronJobInput>,
+): Promise<ApiResponse<CronJob>> {
+  return request(`/cron/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteCronJob(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
+  return request(`/cron/${id}`, { method: 'DELETE' });
+}
+
+/** Exécute maintenant (synchrone) — la réponse contient le compte rendu produit. */
+export async function runCronJob(id: string): Promise<ApiResponse<CronRun>> {
+  return request(`/cron/${id}/run`, { method: 'POST' });
+}
+
+export async function getCronRuns(id: string): Promise<ApiResponse<CronRun[]>> {
+  return request(`/cron/${id}/runs`);
 }
 
 // ── Vue d'ensemble (shell de l'app) ──────────────────────────────────────────
@@ -962,11 +1261,13 @@ export interface ConfigToolkit {
 
 export interface ConfigStatus {
   ai: { configured: boolean; model: string | null };
-  composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[]; canManage?: boolean; ownerName?: string | null };
+  composio: { configured: boolean; dashboardUrl: string; toolkits: ConfigToolkit[]; canManage?: boolean; ownerName?: string | null; preferredCalendar?: string | null };
   marp: { theme: string; hasCustomCss: boolean; themes: { value: string; label: string }[] };
   metricsSync: { intervalMinutes: number };
   knowledgeSync: { intervalMinutes: number };
   telegram: { configured: boolean; linked: boolean; ownBot: boolean; botUsername: string | null };
+  /** Clé API Apollo.io personnelle (enrichissement de contacts) — jamais renvoyée, juste l'état */
+  apollo: { configured: boolean };
   publishMode: 'auto' | 'manual';
 }
 
@@ -1014,6 +1315,51 @@ export async function setTelegramBot(token: string): Promise<ApiResponse<{ ownBo
 /** Supprime le bot Telegram personnel */
 export async function removeTelegramBot(): Promise<ApiResponse<{ ownBot: boolean }>> {
   return request('/config/telegram-bot', { method: 'DELETE' });
+}
+
+/** Enregistre la clé API Apollo.io personnelle (vérifiée auprès d'Apollo avant stockage) */
+export async function setApolloApiKey(key: string): Promise<ApiResponse<{ configured: boolean }>> {
+  return request('/config/apollo-key', { method: 'PATCH', body: JSON.stringify({ key }) });
+}
+
+/** Supprime la clé API Apollo.io personnelle */
+export async function removeApolloApiKey(): Promise<ApiResponse<{ configured: boolean }>> {
+  return request('/config/apollo-key', { method: 'DELETE' });
+}
+
+/** Fiche entreprise renvoyée par Apollo */
+export interface ApolloOrganization {
+  name: string | null; domain: string | null; industry: string | null;
+  size: string | null; description: string | null; linkedinUrl: string | null;
+  phone: string | null;
+}
+
+/** Données trouvées par Apollo pour un contact (aperçu post-enrichissement) */
+export interface ApolloEnrichment {
+  title: string | null;
+  headline: string | null;
+  linkedinUrl: string | null;
+  email: string | null;
+  /** Téléphone direct si présent — sinon livré plus tard par le webhook Apollo */
+  phone: string | null;
+  city: string | null;
+  country: string | null;
+  organization: ApolloOrganization | null;
+}
+
+/**
+ * Enrichit un contact via Apollo.io (clé personnelle — crédits Apollo de l'utilisateur).
+ * `enrichment` peut être null (personne introuvable ou plan Apollo sans people/match) :
+ * `organization` porte alors la fiche entreprise obtenue en repli, `warnings` explique.
+ */
+export async function enrichContactApollo(contactId: string): Promise<ApiResponse<{
+  contact: Contact;
+  company: Company | null;
+  enrichment: ApolloEnrichment | null;
+  organization: ApolloOrganization | null;
+  warnings: string[];
+}>> {
+  return request(`/contacts/${contactId}/enrich-apollo`, { method: 'POST' });
 }
 
 /** Génère un visuel IA hébergé (attaché au post si postId) ; publicUrl null = repli local (non public) */
@@ -1094,6 +1440,13 @@ export async function setMetricsSyncInterval(intervalMinutes: number): Promise<A
 /** Intervalle de mise à jour auto de la base de connaissances (minutes, 0 = désactivée) */
 export async function setKnowledgeSyncInterval(intervalMinutes: number): Promise<ApiResponse<{ intervalMinutes: number }>> {
   return request('/config/knowledge-sync', { method: 'PATCH', body: JSON.stringify({ intervalMinutes }) });
+}
+
+/** Agenda préféré pour la synchro des posts quand plusieurs sont connectés */
+export async function setPreferredCalendar(
+  calendar: 'googlecalendar' | 'outlook' | 'auto',
+): Promise<ApiResponse<{ preferredCalendar: string | null }>> {
+  return request('/config/calendar', { method: 'PATCH', body: JSON.stringify({ calendar }) });
 }
 
 export async function setPublishMode(mode: 'auto' | 'manual'): Promise<ApiResponse<{ publishMode: string }>> {
@@ -1284,6 +1637,16 @@ export async function streamPostChat(
   handlers: PostChatHandlers
 ): Promise<void> {
   return streamChat('/content/chat/stream', messages, handlers);
+}
+
+/** Copilote « prochaine action » d'un contact — SSE (deltas) */
+export async function streamContactNextAction(
+  contactId: string,
+  messages: { role: 'user' | 'assistant'; text: string }[],
+  handlers: Omit<PostChatHandlers, 'onSaved'>,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamChat(`/contacts/${contactId}/next-action/stream`, messages, handlers, signal);
 }
 
 /** Pièce jointe envoyée à l'assistant (fichier brut en base64) */
@@ -1537,9 +1900,10 @@ export async function getAdminActivity(limit = 50, before?: string): Promise<Api
   return request(`/admin/activity?${params}`);
 }
 
-// ── Abonnement & facturation (offres Braise / Brasier) ────────────────────────
+// ── Abonnement & facturation (offres Braise / Brasier / Brasier PLUS) ─────────
 
-export type PlanTier = 'braise' | 'brasier';
+export type PlanTier = 'braise' | 'brasier' | 'plus';
+export type PaidPlan = 'brasier' | 'plus';
 export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | 'canceled';
 
 export interface UsageMetric {
@@ -1548,19 +1912,30 @@ export interface UsageMetric {
   limit: number | null;
 }
 
+export interface PlanPricing {
+  monthly: number;
+  annualMonthly: number;
+  annualTotal: number;
+}
+
 export interface BillingStatus {
   tier: PlanTier;
   status: SubscriptionStatus;
+  /** Offre payante souscrite (null si jamais abonné) */
+  plan: PaidPlan | null;
   founder: boolean;
   trial: { active: boolean; endsAt: string | null; daysLeft: number };
   subscription: { interval: 'month' | 'year' | null; currentPeriodEnd: string | null; cancelAt: string | null };
   refundEligible: boolean;
   enforcement: boolean;
   usage: { aiGenerations: UsageMetric; aiImages: UsageMetric; projects: UsageMetric };
-  pricing: { currency: string; monthly: number; annualMonthly: number; annualTotal: number };
+  pricing: { currency: string; brasier: PlanPricing; plus: PlanPricing };
+  /** Libellés marketing des modèles IA (standard / premium) */
+  aiModels: { standard: string; plus: string };
   trialDays: number;
   refundDays: number;
   billingConfigured: boolean;
+  plusConfigured: boolean;
 }
 
 export interface RefundResult {
@@ -1575,9 +1950,10 @@ export async function getBillingStatus(): Promise<ApiResponse<BillingStatus>> {
   return request('/billing/status');
 }
 
-/** Démarre le paiement Stripe (renvoie l'URL Checkout à ouvrir) */
-export async function startCheckout(interval: 'month' | 'year'): Promise<ApiResponse<{ url: string }>> {
-  return request('/billing/checkout', { method: 'POST', body: JSON.stringify({ interval }) });
+/** Démarre le paiement Stripe (URL Checkout), ou change l'offre d'un abonné
+ *  existant (`upgraded: true`, prorata appliqué par Stripe) */
+export async function startCheckout(interval: 'month' | 'year', plan: PaidPlan = 'brasier'): Promise<ApiResponse<{ url?: string; upgraded?: boolean }>> {
+  return request('/billing/checkout', { method: 'POST', body: JSON.stringify({ interval, plan }) });
 }
 
 /** Ouvre le portail client Stripe (gérer/résilier) */

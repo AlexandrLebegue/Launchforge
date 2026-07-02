@@ -19,15 +19,19 @@ import { processAgentRun, publishContent } from './agentService';
 import { draftEmailForContact, sendEmailViaComposio, MAIL_KEYWORDS } from './leadAnalysis';
 import { markPublished, generateOccurrenceContent, crosspostTo, cleanupPublishedVideo } from './postPublisher';
 import { publishViaComposio, syncMetricsViaComposio, resolvePublishedUrl, isComposioConfigured, runMcpTask } from './composio';
+import { fetchHubSpotDeals, fetchHubSpotContacts, fetchHubSpotCrm, upsertHubSpotCandidates } from './hubspotCrm';
 import { webSearch, fetchPageText } from './research';
 import { generateImage, isImageGenConfigured } from './imageGen';
 import { generateDeckMarkdown, themeForUser } from './decks';
 import { analyzePost, generateCampaignReport } from './analytics';
+import { buildMemoryContext, refreshAssistantMemory } from './assistantMemory';
+import { toTelegramMarkdownV2 } from './telegramFormat';
 import { assertWithinUsage, recordUsage, assertFeature, QuotaError, FeatureError, Feature } from './entitlements';
 import { renderDeckGif, renderDeckMp4 } from './deckMedia';
 import { saveMediaFile } from './mediaStore';
 import { uploadPublicImage } from './imageGen';
-import { AgentRun, KnowledgeCategory, KnowledgeEntry, Post, Recurrence, Reminder } from '../types';
+import { AgentRun, Contact, CronJob, CronFrequency, CRON_FREQUENCY_MINUTES, DealStage, DEAL_STAGES, KnowledgeCategory, KnowledgeEntry, Post, Recurrence, Reminder, STAGE_LABELS } from '../types';
+import { normalizeSchedule, computeNextRunAt, describeCronSchedule, scheduleOf, nominalMinutes } from './cronSchedule';
 
 const API = 'https://api.telegram.org';
 const POLL_TIMEOUT_S = 30;
@@ -53,15 +57,33 @@ function api(token: string, method: string): string {
   return `${API}/bot${token}/${method}`;
 }
 
+/** Un appel sendMessage : renvoie true si Telegram a accepté (res.ok). */
+async function postSendMessage(token: string, payload: Record<string, unknown>): Promise<boolean> {
+  try {
+    const res = await fetch(api(token, 'sendMessage'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch {
+    return false; // best-effort (réseau) — jamais bloquant
+  }
+}
+
 export async function sendTelegramMessage(chatId: string, text: string, token?: string): Promise<void> {
   const t = token ?? process.env.TELEGRAM_BOT_TOKEN;
   if (!t) return;
-  // Texte brut (pas de parse_mode) : aucun risque d'erreur d'échappement
-  await fetch(api(t, 'sendMessage'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4000) }),
-  }).catch(() => { /* best-effort */ });
+  const raw = text.slice(0, 4000);
+  // On tente d'abord le rendu MarkdownV2 (gras, listes, liens, code…) à partir
+  // du markdown de l'IA. Si Telegram rejette le parsing (400), on renvoie le
+  // texte BRUT : une erreur d'échappement ne doit jamais faire perdre le message.
+  const formatted = toTelegramMarkdownV2(raw);
+  if (formatted.length <= 4096) {
+    const ok = await postSendMessage(t, { chat_id: chatId, text: formatted, parse_mode: 'MarkdownV2' });
+    if (ok) return;
+  }
+  await postSendMessage(t, { chat_id: chatId, text: raw });
 }
 
 /** Notifie tous les chats Telegram liés à un compte (no-op si aucun bot) */
@@ -93,10 +115,94 @@ export function consumeLinkCode(code: string): string | null {
 
 // ── Outils LaunchForge exposés au modèle ──────────────────────────────────────
 
+// ── Contexte commercial : adapte l'assistant au besoin réel de l'utilisateur ──
+const OBJECTIVE_LABELS: Record<string, string> = {
+  launch: 'lancer / trouver les premiers clients',
+  'grow-revenue': 'vendre plus / faire grandir le chiffre d\'affaires',
+  both: 'lancer et vendre plus',
+};
+const TRACTION_LABELS: Record<string, string> = {
+  'pre-revenue': 'pré-revenu (pas encore de client payant)',
+  'first-customers': 'premiers clients',
+  'early-revenue': 'revenu débutant',
+  scaling: 'passage à l\'échelle',
+};
+const SALES_MOTION_LABELS: Record<string, string> = {
+  'self-serve': 'libre-service',
+  'sales-led': 'vente assistée (démos/appels)',
+  hybrid: 'hybride',
+};
+const eur = (n: number): string => `${Math.round(n).toLocaleString('fr-FR')} €`;
+
+/**
+ * Bloc « contexte commercial + pipeline » injecté dans le prompt système de
+ * l'assistant (app ET Telegram) pour qu'il s'adapte AU BESOIN de l'utilisateur :
+ * son objectif, son stade, son frein, et l'état réel de son pipeline de vente.
+ */
+export function buildSalesContext(userId: string): string {
+  const project = storage.getActivePlan(userId);
+  if (!project) return '';
+  const gtm = project.input;
+  const need: string[] = [];
+  if (gtm.primaryObjective) need.push(`- Priorité du moment : ${OBJECTIVE_LABELS[gtm.primaryObjective] ?? gtm.primaryObjective}`);
+  if (gtm.traction) need.push(`- Stade commercial : ${TRACTION_LABELS[gtm.traction] ?? gtm.traction}`);
+  if (gtm.salesMotion) need.push(`- Mode de vente : ${SALES_MOTION_LABELS[gtm.salesMotion] ?? gtm.salesMotion}`);
+  if (gtm.buyer) need.push(`- Acheteur (qui décide) : ${gtm.buyer}`);
+  if (gtm.revenueGoal) need.push(`- Objectif de chiffre d'affaires : ${gtm.revenueGoal}`);
+  if (gtm.bottleneck) need.push(`- Frein n°1 à lever : ${gtm.bottleneck}`);
+
+  const contacts = storage.getContactsByPlan(userId, project.id);
+  const won = contacts.filter((c) => c.stage === 'won');
+  const open = contacts.filter((c) => c.stage === 'qualified' || c.stage === 'discussion' || c.stage === 'proposal');
+  const hot = contacts.filter((c) => (c.interestScore ?? 0) >= 70).length;
+  const pipe: string[] = [];
+  if (open.length) pipe.push(`${open.length} deals ouverts (${eur(open.reduce((s, c) => s + (c.amount ?? 0), 0))})`);
+  if (won.length) pipe.push(`${won.length} gagnés (${eur(won.reduce((s, c) => s + (c.amount ?? 0), 0))} de CA)`);
+  if (hot) pipe.push(`${hot} leads chauds à relancer`);
+
+  let block = '';
+  if (need.length) block += `\n\n## Contexte commercial — adapte-toi à CE besoin\n${need.join('\n')}`;
+  if (pipe.length) block += `\n\n## Pipeline actuel\n- ${pipe.join(' · ')}`;
+  return block;
+}
+
 export const TOOLS: ToolDef[] = [
   {
     name: 'get_overview',
-    description: 'Vue d\'ensemble : posts programmés, contenus à valider, leads chauds, prochaine publication, rappels à venir. Appelle ça pour « où en est-on ? », « statut », « résumé ».',
+    description: 'Vue d\'ensemble : posts programmés, contenus à valider, leads chauds, pipeline de vente, prochaine publication, rappels à venir. Appelle ça pour « où en est-on ? », « statut », « résumé ».',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_pipeline',
+    description: 'Liste les deals/contacts du pipeline de vente groupés par étape, avec montants, CA gagné et pipeline ouvert. Pour « mon pipeline », « où en sont mes deals », « combien de CA », « qui relancer ».',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'move_deal',
+    description: 'Fait avancer un contact/deal dans le pipeline de vente (et fixe éventuellement son montant). Étapes : new, qualified, discussion, proposal, won, lost. Pour « passe Marie en proposition », « marque le deal Acme gagné à 5000 ».',
+    parameters: {
+      type: 'object',
+      properties: {
+        contactName: { type: 'string', description: 'Nom (ou partie du nom) du contact/deal' },
+        stage: { type: 'string', description: 'new | qualified | discussion | proposal | won | lost' },
+        amount: { type: 'number', description: 'Montant du deal en € (optionnel)' },
+      },
+      required: ['contactName', 'stage'],
+    },
+  },
+  {
+    name: 'hubspot_list_deals',
+    description: 'Lit les DEALS du CRM HubSpot connecté (lecture directe Composio, sans import ni coût IA) : nom, étape, montant, date de closing. Pour « mes deals HubSpot », « qu\'est-ce qu\'il y a dans mon HubSpot ? ». Différent de list_pipeline (pipeline LaunchForge local).',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'hubspot_list_contacts',
+    description: 'Lit les CONTACTS du CRM HubSpot connecté (lecture directe Composio, sans import ni coût IA) : nom, email, société, étape déduite du cycle de vie. Pour « mes contacts HubSpot ».',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'hubspot_import_crm',
+    description: 'IMPORTE les deals et contacts HubSpot dans le pipeline de vente LaunchForge du projet actif (dédupliqué : un ré-import met à jour étapes/montants sans écraser les notes). Même action que le bouton « Importer depuis HubSpot » du CRM. Demande confirmation à l\'utilisateur avant.',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -326,6 +432,55 @@ export const TOOLS: ToolDef[] = [
     parameters: { type: 'object', properties: {} },
   },
   {
+    name: 'create_cron_job',
+    description: 'Crée une AUTOMATISATION (cron job IA) : une tâche récurrente que l\'IA exécutera toute seule, en utilisant TOUS ses outils (web, base de connaissances, métriques des posts, rédaction/programmation/publication de posts, emails, agenda…). Pour « chaque lundi à 9h rédige un post sur les actus », « tous les jours à 8h vérifie mes leads chauds et relance-les », « toutes les heures surveille X ». Décris l\'objectif de façon précise et autonome (il n\'y aura personne pour préciser au moment de l\'exécution). Le fuseau est Europe/Paris.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title:      { type: 'string', description: 'Titre court de l\'automatisation' },
+        objective:  { type: 'string', description: 'Objectif détaillé : ce que l\'IA doit accomplir à chaque exécution, et ce qu\'elle doit produire/faire (rédiger, programmer, envoyer, prévenir…).' },
+        frequency:  { type: 'string', enum: ['hourly', 'every_3h', 'every_6h', 'daily', 'weekly', 'monthly'], description: 'Périodicité. hourly/every_3h/every_6h = plusieurs fois par jour (pas d\'heure fixe) ; daily/weekly/monthly = à une heure précise (timeOfDay).' },
+        timeOfDay:  { type: 'string', description: 'Heure de déclenchement « HH:MM » (Europe/Paris) pour daily/weekly/monthly. Défaut 09:00.' },
+        weekday:    { type: 'number', description: 'Jour de la semaine pour weekly : 1=lundi, 2=mardi … 7=dimanche.' },
+        dayOfMonth: { type: 'number', description: 'Jour du mois pour monthly : 1 à 28.' },
+      },
+      required: ['title', 'objective', 'frequency'],
+    },
+  },
+  {
+    name: 'list_cron_jobs',
+    description: 'Liste les automatisations (cron jobs) configurées pour le projet : titre, objectif, cadence, état (active/en pause), prochaine exécution et dernier résultat.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'update_cron_job',
+    description: 'Modifie une automatisation existante (donne l\'id court renvoyé par list_cron_jobs) : change son titre, son objectif, sa périodicité/heure, ou met-la en pause / réactive-la (enabled).',
+    parameters: {
+      type: 'object',
+      properties: {
+        jobId:      { type: 'string', description: 'Id court de l\'automatisation' },
+        title:      { type: 'string' },
+        objective:  { type: 'string' },
+        frequency:  { type: 'string', enum: ['hourly', 'every_3h', 'every_6h', 'daily', 'weekly', 'monthly'] },
+        timeOfDay:  { type: 'string', description: 'Heure « HH:MM » (Europe/Paris) pour daily/weekly/monthly.' },
+        weekday:    { type: 'number', description: 'Jour de la semaine (weekly) : 1=lundi … 7=dimanche.' },
+        dayOfMonth: { type: 'number', description: 'Jour du mois (monthly) : 1 à 28.' },
+        enabled:    { type: 'boolean', description: 'true = active, false = en pause' },
+      },
+      required: ['jobId'],
+    },
+  },
+  {
+    name: 'delete_cron_job',
+    description: 'Supprime définitivement une automatisation (et son historique). Demande confirmation avant.',
+    parameters: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] },
+  },
+  {
+    name: 'run_cron_job',
+    description: 'Déclenche MAINTENANT une automatisation (elle s\'exécutera dans la minute qui suit) sans attendre sa prochaine échéance. Pour « lance tout de suite mon automatisation X ».',
+    parameters: { type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'] },
+  },
+  {
     name: 'list_recurring_posts',
     description: 'Liste les SÉRIES RÉCURRENTES du projet : cadence, prochaine occurrence, réglages IA (instruction, base de connaissances, actus, archivage veille, auto-publication) et nombre d\'occurrences déjà publiées. Pour « quels sont mes posts récurrents ? », « où en sont mes séries ? ».',
     parameters: { type: 'object', properties: {} },
@@ -390,6 +545,17 @@ export const TOOLS: ToolDef[] = [
     description: 'LISTE les fiches de la base de connaissances du projet actif (catégorie, titre, extrait) — pour vérifier ce que l\'IA sait déjà, éviter les doublons avant add_knowledge, ou répondre à « qu\'est-ce que tu sais sur nous ? ».',
     parameters: { type: 'object', properties: {} },
   },
+  {
+    name: 'search_conversations',
+    description: 'Recherche dans les ANCIENNES conversations de l\'utilisateur avec l\'assistant (remémoration inter-sessions). Pour « on avait dit quoi sur… ? », « qu\'est-ce que je t\'avais demandé à propos de X ? », retrouver une décision passée. Renvoie des extraits des fils correspondants.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Mots-clés à retrouver dans l\'historique (sujet, nom, décision…)' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 const fmtDate = (iso: string | null) =>
@@ -418,6 +584,9 @@ const FEATURE_TOOLS: Record<string, Feature> = {
   campaign_report: 'analytics',
   sync_post_metrics: 'analytics',
   send_email_to_contact: 'leads',
+  create_cron_job: 'automations',
+  update_cron_job: 'automations',
+  run_cron_job: 'automations',
 };
 
 /**
@@ -458,15 +627,92 @@ async function executeToolInner(userId: string, _chatId: string, name: string, a
         .filter((p) => p.scheduledAt)
         .sort((a, b) => a.scheduledAt!.localeCompare(b.scheduledAt!))[0];
       const approvals = storage.getPendingApprovalsByPlan(userId, planId);
-      const hotLeads = storage.getContactsByPlan(userId, planId).filter((c) => (c.interestScore ?? 0) >= 70);
+      const contacts = storage.getContactsByPlan(userId, planId);
+      const hotLeads = contacts.filter((c) => (c.interestScore ?? 0) >= 70);
+      const openDeals = contacts.filter((c) => c.stage === 'qualified' || c.stage === 'discussion' || c.stage === 'proposal');
+      const wonRevenue = contacts.filter((c) => c.stage === 'won').reduce((sum, c) => sum + (c.amount ?? 0), 0);
       const reminders = storage.getPendingRemindersByUserId(userId);
       return [
         `Posts programmés : ${scheduled.length}${nextPost ? ` (prochain : « ${nextPost.title} » sur ${nextPost.platform} le ${fmtDate(nextPost.scheduledAt)})` : ''}`,
         `Posts publiés : ${posts.filter((p) => p.status === 'published').length}`,
         `Contenus à valider : ${approvals.length}`,
         `Leads chauds (score ≥ 70) : ${hotLeads.length}${hotLeads[0] ? ` (top : ${hotLeads[0].name})` : ''}`,
+        `Pipeline : ${openDeals.length} deals ouverts${wonRevenue ? ` · ${eur(wonRevenue)} de CA gagné` : ''}`,
         `Rappels à venir : ${reminders.length}`,
       ].join('\n');
+    }
+
+    case 'list_pipeline': {
+      const contacts = storage.getContactsByPlan(userId, planId);
+      if (contacts.length === 0) return 'Pipeline vide — importe ton CRM HubSpot ou analyse tes leads pour le remplir.';
+      const lines: string[] = [];
+      for (const st of DEAL_STAGES) {
+        const col = contacts.filter((c) => c.stage === st);
+        if (col.length === 0) continue;
+        const total = col.reduce((sum, c) => sum + (c.amount ?? 0), 0);
+        const items = col.slice(0, 8).map((c) => `[${shortId(c.id)}] ${c.name}${c.amount != null ? ` ${eur(c.amount)}` : ''}`).join(', ');
+        lines.push(`${STAGE_LABELS[st]} (${col.length}${total ? `, ${eur(total)}` : ''}) : ${items}`);
+      }
+      const won = contacts.filter((c) => c.stage === 'won').reduce((sum, c) => sum + (c.amount ?? 0), 0);
+      const open = contacts.filter((c) => c.stage === 'qualified' || c.stage === 'discussion' || c.stage === 'proposal').reduce((sum, c) => sum + (c.amount ?? 0), 0);
+      return `${lines.join('\n')}\n\nCA gagné : ${eur(won)} · Pipeline ouvert : ${eur(open)}`;
+    }
+
+    case 'move_deal': {
+      const ref = String(args.contactName || '').toLowerCase();
+      const contact = storage.getContactsByPlan(userId, planId).find((c) => c.name.toLowerCase().includes(ref));
+      if (!contact) return `ERREUR : contact « ${args.contactName} » introuvable.`;
+      const stage = String(args.stage || '').toLowerCase() as DealStage;
+      if (!DEAL_STAGES.includes(stage)) return `ERREUR : étape « ${args.stage} » invalide (new, qualified, discussion, proposal, won, lost).`;
+      const patch: Partial<Contact> = { stage };
+      const amt = Number(args.amount);
+      if (Number.isFinite(amt) && amt >= 0) patch.amount = amt;
+      storage.updateContact(contact.id, patch);
+      const shownAmount = patch.amount ?? contact.amount;
+      return `${contact.name} déplacé en « ${STAGE_LABELS[stage]} »${shownAmount != null ? ` (${eur(shownAmount)})` : ''}.`;
+    }
+
+    // ── CRM HubSpot (lecture directe Composio, déterministe — aucun coût IA) ──
+    // Les projets d'équipe utilisent le compte HubSpot du PROPRIÉTAIRE du projet,
+    // comme le bouton « Importer depuis HubSpot » du CRM web.
+
+    case 'hubspot_list_deals': {
+      try {
+        const deals = await fetchHubSpotDeals(storage.resolveActiveProject(userId).ownerUserId);
+        if (deals.length === 0) return 'Aucun deal dans le CRM HubSpot connecté.';
+        const shown = deals.slice(0, 30);
+        const total = deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+        return `${shown.map((d) =>
+          `• ${d.name} — ${STAGE_LABELS[d.stage]}${d.amount != null ? ` · ${eur(d.amount)}` : ''}${d.expectedCloseDate ? ` · closing ${d.expectedCloseDate}` : ''}`
+        ).join('\n')}${deals.length > shown.length ? `\n… et ${deals.length - shown.length} autres deals` : ''}\n\nTotal : ${deals.length} deals${total ? ` · ${eur(total)}` : ''} (lecture directe HubSpot — hubspot_import_crm pour les ramener dans le pipeline).`;
+      } catch (e) {
+        return `ERREUR : ${e instanceof Error ? e.message : 'lecture des deals HubSpot échouée'}`;
+      }
+    }
+
+    case 'hubspot_list_contacts': {
+      try {
+        const people = await fetchHubSpotContacts(storage.resolveActiveProject(userId).ownerUserId);
+        if (people.length === 0) return 'Aucun contact dans le CRM HubSpot connecté.';
+        const shown = people.slice(0, 30);
+        return `${shown.map((c) =>
+          `• ${c.name}${c.email ? ` <${c.email}>` : ''}${c.company ? ` · ${c.company}` : ''} — ${STAGE_LABELS[c.stage]}${c.summary ? ` · ${c.summary}` : ''}`
+        ).join('\n')}${people.length > shown.length ? `\n… et ${people.length - shown.length} autres contacts` : ''}\n\nTotal : ${people.length} contacts (lecture directe HubSpot — hubspot_import_crm pour les ramener dans le pipeline).`;
+      } catch (e) {
+        return `ERREUR : ${e instanceof Error ? e.message : 'lecture des contacts HubSpot échouée'}`;
+      }
+    }
+
+    case 'hubspot_import_crm': {
+      const ctx = storage.resolveActiveProject(userId);
+      if (ctx.role === 'viewer') return 'ERREUR : rôle Lecteur sur ce projet — import non autorisé.';
+      try {
+        const candidates = await fetchHubSpotCrm(ctx.ownerUserId);
+        const { imported, updated } = upsertHubSpotCandidates(ctx.ownerUserId, ctx.planId, candidates);
+        return `Import HubSpot terminé : ${imported} nouvelle(s) fiche(s), ${updated} mise(s) à jour — deals et contacts sont dans le pipeline (list_pipeline pour le voir).`;
+      } catch (e) {
+        return `ERREUR : ${e instanceof Error ? e.message : 'import HubSpot échoué'}`;
+      }
     }
 
     case 'list_upcoming_posts': {
@@ -786,6 +1032,16 @@ Pour en faire un média de post : render_deck_media avec deckId="${shortId(deck.
       return report;
     }
 
+    case 'search_conversations': {
+      const query = String(args.query || '').trim();
+      if (query.length < 2) return 'ERREUR : précise un ou plusieurs mots-clés à rechercher.';
+      const hits = storage.searchConversations(userId, query, 5);
+      if (hits.length === 0) return `Aucune conversation passée ne mentionne « ${query} ».`;
+      return `Fils passés mentionnant « ${query} » :\n${hits
+        .map((h) => `- [${fmtDate(h.updatedAt)}] « ${h.title} »${h.snippet ? ` : ${h.snippet}` : ''}`)
+        .join('\n')}`;
+    }
+
     case 'sync_post_metrics': {
       if (!isComposioConfigured()) return 'ERREUR : Composio non configuré — synchro impossible.';
       const posts = storage.getPostsByPlan(userId, planId).filter((p) => p.status === 'published');
@@ -919,6 +1175,85 @@ IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant.`,
       return reminders.map((r) => `• ${fmtDate(r.dueAt)} — ${r.text}`).join('\n');
     }
 
+    case 'create_cron_job': {
+      const title = String(args.title || '').trim().slice(0, 120);
+      const objective = String(args.objective || '').trim().slice(0, 4000);
+      const freq = String(args.frequency || '') as CronFrequency;
+      if (!title || !objective) return 'ERREUR : titre et objectif requis.';
+      if (!CRON_FREQUENCY_MINUTES[freq]) return 'ERREUR : périodicité invalide (hourly, every_3h, every_6h, daily, weekly, monthly).';
+      const schedule = normalizeSchedule({ frequency: freq, timeOfDay: args.timeOfDay, weekday: args.weekday, dayOfMonth: args.dayOfMonth });
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const job: CronJob = {
+        id: uuid(), userId, planId,
+        title, objective,
+        frequency: schedule.frequency, timeOfDay: schedule.timeOfDay, weekday: schedule.weekday, dayOfMonth: schedule.dayOfMonth,
+        intervalMinutes: nominalMinutes(schedule.frequency), enabled: 1,
+        nextRunAt: computeNextRunAt(schedule, now),
+        lastRunAt: null, lastStatus: null, lastResult: null,
+        createdAt: nowIso, updatedAt: nowIso,
+      };
+      storage.saveCronJob(job);
+      return `Automatisation créée : [${shortId(job.id)}] « ${title} » — ${describeCronSchedule(schedule)}. Première exécution : ${fmtDate(job.nextRunAt)}. Elle tournera ensuite toute seule et t'enverra son compte rendu ici (et dans la section Automatisations de l'app).`;
+    }
+
+    case 'list_cron_jobs': {
+      const jobs = storage.getCronJobsByPlan(userId, planId);
+      if (jobs.length === 0) return 'Aucune automatisation configurée. Crée-en une avec create_cron_job.';
+      return jobs.map((j) =>
+        `[${shortId(j.id)}] « ${j.title} » — ${describeCronSchedule(scheduleOf(j))} · ${j.enabled ? 'active' : '⏸️ en pause'} · prochaine : ${fmtDate(j.nextRunAt)}` +
+        `${j.lastRunAt ? `\n  Dernier : ${j.lastStatus === 'ok' ? '✅' : '⚠️'} ${fmtDate(j.lastRunAt)} — ${(j.lastResult || '').slice(0, 160).replace(/\n+/g, ' ')}` : ''}` +
+        `\n  Objectif : ${j.objective.slice(0, 220)}`,
+      ).join('\n\n');
+    }
+
+    case 'update_cron_job': {
+      const jobs = storage.getCronJobsByPlan(userId, planId);
+      const job = findByShortId(jobs, String(args.jobId || ''));
+      if (!job) return 'ERREUR : automatisation introuvable.';
+      const patch: Partial<CronJob> = { updatedAt: new Date().toISOString() };
+      if (typeof args.title === 'string' && args.title.trim()) patch.title = args.title.trim().slice(0, 120);
+      if (typeof args.objective === 'string' && args.objective.trim()) patch.objective = args.objective.trim().slice(0, 4000);
+      const scheduleTouched = args.frequency !== undefined || args.timeOfDay !== undefined || args.weekday !== undefined || args.dayOfMonth !== undefined;
+      if (scheduleTouched) {
+        const freq = (args.frequency !== undefined ? String(args.frequency) : job.frequency) as CronFrequency;
+        if (!CRON_FREQUENCY_MINUTES[freq]) return 'ERREUR : périodicité invalide.';
+        const schedule = normalizeSchedule({
+          frequency: freq,
+          timeOfDay: args.timeOfDay !== undefined ? args.timeOfDay : job.timeOfDay,
+          weekday: args.weekday !== undefined ? args.weekday : job.weekday,
+          dayOfMonth: args.dayOfMonth !== undefined ? args.dayOfMonth : job.dayOfMonth,
+        });
+        patch.frequency = schedule.frequency;
+        patch.timeOfDay = schedule.timeOfDay;
+        patch.weekday = schedule.weekday;
+        patch.dayOfMonth = schedule.dayOfMonth;
+        patch.intervalMinutes = nominalMinutes(schedule.frequency);
+        patch.nextRunAt = computeNextRunAt(schedule, new Date());
+      }
+      if (args.enabled !== undefined) patch.enabled = args.enabled ? 1 : 0;
+      storage.updateCronJob(job.id, patch);
+      const fresh = storage.getCronJobById(job.id)!;
+      return `Automatisation mise à jour : [${shortId(fresh.id)}] « ${fresh.title} » — ${describeCronSchedule(scheduleOf(fresh))} · ${fresh.enabled ? 'active' : 'en pause'}.`;
+    }
+
+    case 'delete_cron_job': {
+      const jobs = storage.getCronJobsByPlan(userId, planId);
+      const job = findByShortId(jobs, String(args.jobId || ''));
+      if (!job) return 'ERREUR : automatisation introuvable.';
+      storage.deleteCronJob(job.id);
+      return `Automatisation « ${job.title} » supprimée.`;
+    }
+
+    case 'run_cron_job': {
+      const jobs = storage.getCronJobsByPlan(userId, planId);
+      const job = findByShortId(jobs, String(args.jobId || ''));
+      if (!job) return 'ERREUR : automatisation introuvable.';
+      const nowIso = new Date().toISOString();
+      storage.updateCronJob(job.id, { enabled: 1, nextRunAt: nowIso, updatedAt: nowIso });
+      return `Automatisation « ${job.title} » planifiée pour une exécution immédiate — elle tournera dans la minute et t'enverra son compte rendu.`;
+    }
+
     default:
       return `Outil inconnu : ${name}`;
   }
@@ -928,14 +1263,16 @@ IMPÉRATIF : ta réponse finale commence par "OK:" ou "ECHEC:" — rien avant.`,
 
 const conversations = new Map<string, ChatMessage[]>();
 
-function systemPrompt(): string {
+function systemPrompt(userId: string): string {
   const now = new Date();
-  return `Tu es l'assistant Telegram de LaunchForge, le hub de promotion de l'utilisateur (startup/petite entreprise). Tu réponds court et utile — c'est un chat mobile, pas un rapport. Tu tutoies l'utilisateur et tu réponds dans sa langue (français par défaut).
+  const memory = buildMemoryContext(userId, storage.getActivePlanId(userId));
+  return `Tu es l'assistant LaunchForge sur Telegram — le copilote de croissance et de vente de l'utilisateur (startup/petite entreprise). Ton objectif : l'aider à décrocher des clients et faire grandir son chiffre d'affaires. Tu réponds court et utile — c'est un chat mobile, pas un rapport. Tu tutoies l'utilisateur et tu réponds dans sa langue (français par défaut).${memory}
 
-Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).
+Date/heure actuelle : ${now.toISOString()} (utilise-la pour calculer « demain 9h », « dans 2h », etc. — l'utilisateur est en Europe/Paris).${buildSalesContext(userId)}
 
-Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), analyse de performance (analyze_post pour un post, campaign_report pour le bilan global — leurs enseignements améliorent automatiquement les générations suivantes), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck, puis render_deck_media pour en faire un GIF/MP4 animé), rappels.
+Tu agis via tes outils : état des activités, posts programmés/récurrents, validations de contenus, lancement d'agents, rédaction de posts (avec recherche web : actus, chiffres, tendances — utilise web_search proactivement quand ça renforce le contenu, et cite tes sources), emails (lecture de la boîte avec read_emails ; envoi à un contact avec send_email_to_contact ou à n'importe quelle adresse avec send_email), pipeline de vente (list_pipeline pour l'état des deals/CA, move_deal pour faire avancer un deal), CRM HubSpot connecté (hubspot_list_deals / hubspot_list_contacts pour lire directement le CRM, hubspot_import_crm pour l'importer dans le pipeline — avec confirmation), agenda Google Calendar (calendar_events, create_calendar_event), métriques des posts publiés (sync_post_metrics), analyse de performance (analyze_post pour un post, campaign_report pour le bilan global — leurs enseignements améliorent automatiquement les générations suivantes), visuels IA (generate_image — indispensable pour Instagram), présentations/carrousels (generate_deck, puis render_deck_media pour en faire un GIF/MP4 animé), rappels, automatisations récurrentes (create_cron_job pour programmer une tâche IA qui se relance toute seule à intervalle régulier ; list_cron_jobs / update_cron_job / delete_cron_job / run_cron_job).
 Règles :
+- Sois orienté VENTE : priorise ce qui rapproche d'un client payant. Si un frein commercial est indiqué dans le contexte, attaque-le. Propose proactivement de relancer les leads chauds (send_email_to_contact) et de faire avancer les deals (move_deal).
 - Pour toute action IRRÉVERSIBLE (publier un post, envoyer un email, valider un contenu), présente d'abord ce que tu vas faire et attends un « oui » explicite avant d'appeler l'outil.
 - Les ids courts entre crochets [xxxxxxxx] servent de référence pour les outils.
 - Médias : Instagram/TikTok/YouTube refusent un post sans visuel. Si l'utilisateur donne une URL d'image, attache-la au post avec set_post_image (ou via draft_post) AVANT de publier.
@@ -949,13 +1286,13 @@ async function handleUserMessage(chatId: string, userId: string, text: string): 
   history.push({ role: 'user', content: text });
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt() },
+    { role: 'system', content: systemPrompt(userId) },
     ...history.slice(-HISTORY_LIMIT),
   ];
 
   let reply = '';
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const result = await chatComplete({ messages, tools: TOOLS, maxTokens: 1200 });
+    const result = await chatComplete({ messages, userId, tools: TOOLS, maxTokens: 1200 });
     if (result.content) reply = result.content;
     if (result.toolCalls.length === 0) break;
 
@@ -977,6 +1314,28 @@ async function handleUserMessage(chatId: string, userId: string, text: string): 
   if (!reply) reply = 'Je n\'ai pas réussi à traiter ta demande — reformule ?';
   history.push({ role: 'assistant', content: reply });
   conversations.set(chatId, history.slice(-HISTORY_LIMIT * 2));
+
+  const planId = storage.getActivePlanId(userId);
+  // On ne retient que les tours texte utilisateur/assistant, pas les messages d'outils.
+  const turns = history
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+    .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.content as string }));
+
+  // Historisation du fil Telegram dans la MÊME table que l'assistant web (un fil
+  // roulant par chat, id stable) : la remémoration inter-sessions
+  // (search_conversations) devient symétrique entre les deux canaux, et
+  // l'historique survit aux redémarrages. Best-effort — ne casse jamais la réponse.
+  try {
+    if (turns.length > 0) {
+      storage.upsertConversation({ id: `tg-${chatId}`, userId, planId, messages: turns });
+    }
+  } catch (err) {
+    console.error('Telegram conversation persist error:', err);
+  }
+
+  // Mémoire inter-sessions (throttlée, best-effort).
+  void refreshAssistantMemory(userId, planId, turns);
+
   return reply;
 }
 

@@ -12,6 +12,24 @@ import { v4 as uuid } from 'uuid';
 import { storage } from './storage';
 import { OnboardingProfile, KnowledgeEntry, KnowledgeCategory } from '../types';
 
+// Libellés lisibles des champs commerciaux pour les fiches de connaissances.
+const OBJECTIVE_LABELS: Record<string, string> = {
+  launch: 'lancer / trouver les premiers clients',
+  'grow-revenue': 'vendre plus / faire grandir le chiffre d\'affaires',
+  both: 'lancer et vendre plus',
+};
+const TRACTION_LABELS: Record<string, string> = {
+  'pre-revenue': 'pré-revenu (pas encore de client payant)',
+  'first-customers': 'premiers clients',
+  'early-revenue': 'revenu débutant',
+  scaling: 'en passage à l\'échelle',
+};
+const SALES_MOTION_LABELS: Record<string, string> = {
+  'self-serve': 'libre-service (inscription autonome)',
+  'sales-led': 'vente assistée (démos / appels)',
+  hybrid: 'hybride (libre-service + vente assistée)',
+};
+
 function upsertEntry(userId: string, planId: string | null, category: KnowledgeCategory, title: string, content: string): boolean {
   if (!content.trim()) return false;
   const existing = storage.getKnowledgeByPlan(userId, planId).find(
@@ -51,11 +69,23 @@ export function bootstrapKnowledgeFromProfile(userId: string, planId: string | n
   if (upsertEntry(userId, planId, 'company', `Fiche entreprise — ${profile.company.name}`, companyLines)) created++;
 
   if (upsertEntry(userId, planId, 'product', `Produit — ${profile.productName}`, profile.description)) created++;
-  if (upsertEntry(userId, planId, 'audience', 'Audience cible', profile.targetAudience)) created++;
-  if (upsertEntry(
-    userId, planId, 'offers', 'Tarification',
-    `${profile.pricing}\n\nObjectifs de promotion : ${profile.goals.join(' ; ')}`,
-  )) created++;
+
+  const audienceLines = [
+    `Utilisateurs : ${profile.targetAudience}`,
+    profile.buyer && `Décideur / acheteur (qui paie) : ${profile.buyer}`,
+  ].filter(Boolean).join('\n');
+  if (upsertEntry(userId, planId, 'audience', 'Audience cible', audienceLines)) created++;
+
+  const commercialLines = [
+    `Tarification : ${profile.pricing}`,
+    profile.primaryObjective && `Priorité actuelle : ${OBJECTIVE_LABELS[profile.primaryObjective] ?? profile.primaryObjective}`,
+    profile.traction && `Stade commercial : ${TRACTION_LABELS[profile.traction] ?? profile.traction}`,
+    profile.salesMotion && `Mode de vente : ${SALES_MOTION_LABELS[profile.salesMotion] ?? profile.salesMotion}`,
+    profile.revenueGoal && `Objectif de chiffre d'affaires : ${profile.revenueGoal}`,
+    profile.bottleneck && `Frein principal à la vente : ${profile.bottleneck}`,
+    `Objectifs : ${profile.goals.join(' ; ')}`,
+  ].filter(Boolean).join('\n');
+  if (upsertEntry(userId, planId, 'offers', 'Offre & objectifs commerciaux', commercialLines)) created++;
 
   return created;
 }

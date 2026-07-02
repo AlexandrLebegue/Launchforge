@@ -173,6 +173,7 @@ export async function runPostChatTurn(
 
     const result = await chatComplete({
       messages,
+      userId,
       tools: TOOLS,
       maxTokens: 2500,
       onDelta: onEvent

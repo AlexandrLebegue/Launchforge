@@ -410,6 +410,54 @@ export function upsertLearnings(userId: string, planId: string | null, lines: st
 }
 
 /**
+ * Enseignements FACTUELS dérivés des agrégats du projet — pur calcul, zéro
+ * appel IA, zéro hallucination. Boucle d'apprentissage autonome : appelé depuis
+ * le rapport de campagne (à la demande ET automatiquement chaque lundi), il
+ * consigne dans la base de connaissances ce que les VRAIES métriques montrent
+ * (média, meilleur jour, meilleure plateforme…) sans que l'utilisateur ait à
+ * lancer une analyse. Ne renvoie des lignes que si le signal est suffisant.
+ */
+export function deriveStatsLearnings(stats: ProjectStats): string[] {
+  if (stats.withMetricsCount < 3) return []; // trop peu de données → bruit
+  const out: string[] = [];
+  const pct = (n: number | null) => (n === null ? 'n/a' : `${Math.round(n * 10) / 10} %`);
+
+  // Média vs sans média (au moins 2 posts de chaque, écart significatif)
+  const wm = stats.media.withMedia;
+  const wo = stats.media.withoutMedia;
+  if (wm.posts >= 2 && wo.posts >= 2 && wm.avgEngagement !== null && wo.avgEngagement !== null
+      && Math.abs(wm.avgEngagement - wo.avgEngagement) >= 0.5) {
+    out.push(wm.avgEngagement > wo.avgEngagement
+      ? `Les posts AVEC visuel engagent davantage (${pct(wm.avgEngagement)} vs ${pct(wo.avgEngagement)} sans média) — privilégie un visuel.`
+      : `Ici les posts SANS visuel engagent au moins autant (${pct(wo.avgEngagement)} vs ${pct(wm.avgEngagement)} avec média) — ne force pas le visuel quand le texte porte.`);
+  }
+
+  // Meilleur jour de publication observé
+  const days = stats.byDay.filter((d) => d.avgEngagement !== null);
+  if (days.length >= 2) {
+    const best = [...days].sort((a, b) => b.avgEngagement! - a.avgEngagement!)[0];
+    out.push(`Jour le plus engageant observé : ${best.day} (${pct(best.avgEngagement)} d'engagement moyen) — programmes-y tes posts importants.`);
+  }
+
+  // Plateforme la plus engageante
+  const plats = stats.byPlatform.filter((p) => p.avgEngagement !== null && p.posts >= 2);
+  if (plats.length >= 2) {
+    const best = [...plats].sort((a, b) => b.avgEngagement! - a.avgEngagement!)[0];
+    out.push(`Plateforme la plus engageante : ${best.platform} (${pct(best.avgEngagement)}) — capitalise dessus.`);
+  }
+
+  // Multi-plateformes : plateforme qui ressort le plus souvent en tête à contenu égal
+  const winners = stats.crossGroups.map((g) => g.bestPlatform).filter((p): p is string => Boolean(p));
+  if (winners.length >= 2) {
+    const tally = winners.reduce<Record<string, number>>((m, p) => { m[p] = (m[p] ?? 0) + 1; return m; }, {});
+    const [platform, count] = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+    if (count >= 2) out.push(`À contenu égal décliné sur plusieurs plateformes, ${platform} ressort le plus souvent en tête (${count} fois) — décline-le en priorité.`);
+  }
+
+  return out.slice(0, 4);
+}
+
+/**
  * Archive les faits d'actualité utilisés par l'IA dans une fiche « 📰 Veille »
  * du projet (opt-in par série récurrente) — visibles et éditables par
  * l'utilisateur dans la vue Connaissances, réinjectés dans les générations.
@@ -557,6 +605,12 @@ Si les données sont maigres (< 5 posts avec métriques), dis-le et concentre le
   });
 
   const report = result.content.trim();
+  // Boucle d'apprentissage autonome : les faits que montrent les métriques
+  // rejoignent la base de connaissances (à la demande ET au rapport hebdo du
+  // lundi) — les prochaines générations en tiennent compte sans action de
+  // l'utilisateur. Déterministe : aucun appel IA supplémentaire.
+  const derived = deriveStatsLearnings(stats);
+  if (derived.length > 0) upsertLearnings(userId, planId, derived);
   // Archive l'analyse pour pouvoir la relire plus tard (historique par projet)
   storage.saveCampaignReport({
     id: uuid(),

@@ -10,6 +10,7 @@ import { startTelegramBot } from './services/telegramBot';
 import { startMediaCleanup } from './services/mediaStore';
 import { startWeeklyReports } from './services/analytics';
 import { startConversationCleanup } from './services/conversationCleanup';
+import { startCronRunner } from './services/cronRunner';
 import { jwtSecretIsWeak } from './middleware/auth';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -40,6 +41,7 @@ async function main() {
     startMediaCleanup();
     startWeeklyReports();
     startConversationCleanup();
+    startCronRunner();
   });
 
   // Node coupe les requêtes à 300 s par défaut : un upload vidéo de 3 Go sur

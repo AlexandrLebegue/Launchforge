@@ -102,6 +102,7 @@ export async function generateContentCalendar(params: CalendarParams): Promise<P
       { role: 'system', content: systemParts.join('\n\n') },
       { role: 'user', content: `Génère le calendrier de ${total} posts.` },
     ],
+    userId: params.userId,
     maxTokens: 8192,
     jsonMode: true,
     timeoutMs: 240000,

@@ -18,6 +18,7 @@ export type AdminAction =
   | 'team.created'
   | 'team.joined'
   | 'billing.checkout_started'
+  | 'billing.plan_changed'
   | 'billing.refunded';
 
 export function logEvent(

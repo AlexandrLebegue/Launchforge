@@ -196,6 +196,7 @@ Réponds UNIQUEMENT avec le markdown Marp complet, sans fences ni commentaire au
       },
       { role: 'user', content: `Crée une présentation de ${n} slides : ${brief}` },
     ],
+    userId,
     maxTokens: 3000,
     timeoutMs: 180000,
   });
@@ -230,6 +231,7 @@ Réponds UNIQUEMENT avec le CSS, sans fences.`,
       },
       { role: 'user', content: `Crée le thème : ${instructions}` },
     ],
+    userId,
     maxTokens: 2000,
   });
 

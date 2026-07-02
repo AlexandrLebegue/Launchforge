@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
+import Loader from '../components/Loader';
 import { Link } from 'react-router-dom';
 import { BookOpen, RefreshCw, CheckCircle2, Settings } from 'lucide-react';
 import {
@@ -6,7 +7,6 @@ import {
   getKnowledgeSources, runKnowledgeSync, getConfigStatus,
   KnowledgeEntry, KnowledgeCategory, KnowledgeSource,
 } from '../api/client';
-import ContactsPanel from '../components/ContactsPanel';
 
 const CATEGORIES: { value: KnowledgeCategory; label: string; icon: string; hint: string }[] = [
   { value: 'company',  label: 'Entreprise',       icon: '', hint: 'Histoire, mission, valeurs, équipe…' },
@@ -132,7 +132,6 @@ function EntryEditor({ entry, defaultCategory, readOnly = false, onClose, onSave
 }
 
 export default function KnowledgePage() {
-  const [tab,      setTab]      = useState<'knowledge' | 'contacts'>('knowledge');
   const [entries,  setEntries]  = useState<KnowledgeEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [editing,  setEditing]  = useState<KnowledgeEntry | null | 'new'>(null);
@@ -214,7 +213,7 @@ export default function KnowledgePage() {
     null,
   );
 
-  if (loading) return <div className="loading">⏳ Chargement de la base de connaissances…</div>;
+  if (loading) return <Loader text="Chargement de la base de connaissances…" />;
 
   return (
     <div className="animate-fadeIn">
@@ -222,12 +221,10 @@ export default function KnowledgePage() {
         <div>
           <h1>Base de connaissances</h1>
           <p>
-            {tab === 'knowledge'
-              ? 'Tout ce que l\'IA doit savoir sur votre entreprise. Chaque fiche est injectée dans l\'assistant de contenu et les agents — écrivez une fois, réutilisé partout.'
-              : 'Vos prospects, clients et partenaires — détectés et scorés par l\'IA depuis vos commentaires et votre boîte mail.'}
+            Tout ce que l'IA doit savoir sur votre entreprise. Chaque fiche est injectée dans l'assistant de contenu et les agents — écrivez une fois, réutilisé partout.
           </p>
         </div>
-        {tab === 'knowledge' && !readOnly && (
+        {!readOnly && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {sources.length > 0 && (
               <button className="btn btn-ghost" data-tour="kb-sync" onClick={handleRunSync} disabled={syncing}>
@@ -237,21 +234,11 @@ export default function KnowledgePage() {
             <button className="btn btn-primary" data-tour="kb-new" onClick={() => setEditing('new')}>＋ Nouvelle fiche</button>
           </div>
         )}
-        {tab === 'knowledge' && readOnly && (
+        {readOnly && (
           <span className="chip chip-warning">👁️ Lecture seule</span>
         )}
       </div>
 
-      {/* Onglets */}
-      <div className="hub-tabs" data-tour="kb-tabs" style={{ marginTop: 4 }}>
-        <button className={`hub-tab${tab === 'knowledge' ? ' active' : ''}`} onClick={() => setTab('knowledge')}>Fiches</button>
-        <button className={`hub-tab${tab === 'contacts' ? ' active' : ''}`} onClick={() => setTab('contacts')}>Contacts</button>
-      </div>
-
-      {tab === 'contacts' ? (
-        <ContactsPanel />
-      ) : (
-      <>
       {/* État de la mise à jour automatique depuis les sources (réglée dans Configuration) */}
       {sources.length > 0 ? (
         <div className="kb-status-box" data-tour="kb-sync-status">
@@ -364,9 +351,6 @@ export default function KnowledgePage() {
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
         />
-      )}
-
-      </>
       )}
     </div>
   );
